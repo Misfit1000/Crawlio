@@ -8,11 +8,14 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { useState, useEffect } from "react";
+import { useState, useEffect, memo } from "react";
 import { Loader2 } from "lucide-react";
 import { KeywordData } from "../services/keywordService";
 
+import { useTheme } from "../contexts/ThemeContext";
+
 const CustomTooltip = ({ active, payload, label }: any) => {
+  const { theme } = useTheme();
   return (
     <AnimatePresence>
       {active && payload && payload.length && (
@@ -21,12 +24,12 @@ const CustomTooltip = ({ active, payload, label }: any) => {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 10, scale: 0.95 }}
           transition={{ duration: 0.2 }}
-          className="bg-slate-900/90 backdrop-blur-md border border-white/10 p-4 rounded-xl shadow-2xl"
+          className="bg-slate-900/90 dark:bg-slate-900/90 light:bg-white/90 backdrop-blur-md border border-white/10 dark:border-white/10 light:border-slate-200 p-4 rounded-xl shadow-2xl"
         >
-          <p className="text-slate-400 text-sm mb-1">{label}</p>
-          <p className="text-blue-400 font-bold text-xl">
+          <p className="text-slate-400 dark:text-slate-400 light:text-slate-500 text-sm mb-1">{label}</p>
+          <p className="text-blue-400 dark:text-blue-400 light:text-blue-600 font-bold text-xl">
             {payload[0].value.toLocaleString()}{" "}
-            <span className="text-sm font-normal text-slate-300">searches</span>
+            <span className="text-sm font-normal text-slate-300 dark:text-slate-300 light:text-slate-500">searches</span>
           </p>
         </motion.div>
       )}
@@ -45,13 +48,14 @@ const TIMEFRAMES: { label: string; value: Timeframe }[] = [
   { label: "5Y", value: "5y" },
 ];
 
-export default function TrendChart({
+export default memo(function TrendChart({
   data,
   loading,
 }: {
   data: KeywordData["trends"];
   loading?: boolean;
 }) {
+  const { theme } = useTheme();
   const [isMounted, setIsMounted] = useState(false);
   const [timeframe, setTimeframe] = useState<Timeframe>("1y");
 
@@ -67,10 +71,10 @@ export default function TrendChart({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6, delay: 0.6 }}
       whileHover={{ y: -5 }}
-      className="bg-slate-900/50 backdrop-blur-xl border border-white/5 rounded-3xl p-6 h-[450px] flex flex-col relative overflow-hidden group hover:border-blue-500/30 transition-colors"
+      className="bg-card/50 backdrop-blur-xl border border-border rounded-3xl p-6 h-[450px] flex flex-col relative overflow-hidden group hover:border-blue-500/30 transition-colors shadow-sm"
     >
       {loading && (
-        <div className="absolute inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center">
+        <div className="absolute inset-0 z-50 bg-background/50 backdrop-blur-sm flex items-center justify-center">
           <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
         </div>
       )}
@@ -78,13 +82,13 @@ export default function TrendChart({
 
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
-          <h3 className="text-lg font-bold text-white group-hover:text-blue-400 transition-colors">
+          <h3 className="text-lg font-bold text-foreground group-hover:text-blue-400 transition-colors">
             Search Volume Trend
           </h3>
-          <p className="text-sm text-slate-400">Real-time search interest</p>
+          <p className="text-xs text-slate-500">Historical search interest over selected timeframe.</p>
         </div>
 
-        <div className="flex items-center bg-slate-950/50 border border-white/10 rounded-lg p-1">
+        <div className="flex items-center bg-slate-950/50 dark:bg-slate-950/50 light:bg-slate-100 border border-white/10 dark:border-white/10 light:border-slate-200 rounded-lg p-1">
           {TIMEFRAMES.map((tf) => (
             <button
               key={tf.value}
@@ -92,7 +96,7 @@ export default function TrendChart({
               className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                 timeframe === tf.value
                   ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
-                  : "text-slate-400 hover:text-white hover:bg-white/5 border border-transparent"
+                  : "text-slate-500 dark:text-slate-400 hover:text-white dark:hover:text-white light:hover:text-blue-600 hover:bg-white/5 dark:hover:bg-white/5 light:hover:bg-white border border-transparent"
               }`}
             >
               {tf.label}
@@ -116,19 +120,19 @@ export default function TrendChart({
               </defs>
               <CartesianGrid
                 strokeDasharray="3 3"
-                stroke="#ffffff10"
+                stroke={theme === 'dark' ? "#ffffff10" : "#00000010"}
                 vertical={false}
               />
               <XAxis
                 dataKey="time"
-                stroke="#ffffff40"
+                stroke={theme === 'dark' ? "#ffffff40" : "#00000040"}
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
                 dy={10}
               />
               <YAxis
-                stroke="#ffffff40"
+                stroke={theme === 'dark' ? "#ffffff40" : "#00000040"}
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
@@ -139,7 +143,7 @@ export default function TrendChart({
               <Tooltip
                 content={<CustomTooltip />}
                 cursor={{
-                  stroke: "#ffffff20",
+                  stroke: theme === 'dark' ? "#ffffff20" : "#00000020",
                   strokeWidth: 1,
                   strokeDasharray: "4 4",
                 }}
@@ -166,4 +170,4 @@ export default function TrendChart({
       </div>
     </motion.div>
   );
-}
+});

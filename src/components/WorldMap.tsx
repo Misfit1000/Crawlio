@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import React, { memo, useState } from "react";
 import {
   ComposableMap,
   Geographies,
@@ -6,7 +6,7 @@ import {
   ZoomableGroup,
 } from "react-simple-maps";
 import { motion } from "motion/react";
-import { Globe, Loader2 } from "lucide-react";
+import { Globe, Loader2, Plus, Minus, RotateCcw } from "lucide-react";
 import { Tooltip } from "react-tooltip";
 import "react-tooltip/dist/react-tooltip.css";
 
@@ -25,45 +25,102 @@ const WorldMap = ({
   loading,
   regionalInterest = [],
 }: WorldMapProps) => {
+  const [position, setPosition] = useState({ coordinates: [0, 20] as [number, number], zoom: 1 });
+
   // Create a map for quick lookup
-  const interestMap = new Map(
+  const interestMap = React.useMemo(() => new Map(
     regionalInterest.map((item) => [item.country.toLowerCase(), item]),
-  );
+  ), [regionalInterest]);
+
+  const handleZoomIn = () => {
+    if (position.zoom >= 4) return;
+    setPosition((pos) => ({ ...pos, zoom: pos.zoom * 1.5 }));
+  };
+
+  const handleZoomOut = () => {
+    if (position.zoom <= 1) return;
+    setPosition((pos) => ({ ...pos, zoom: pos.zoom / 1.5 }));
+  };
+
+  const handleReset = () => {
+    setPosition({ coordinates: [0, 20], zoom: 1 });
+  };
+
+  const handleMoveEnd = (newPosition: { coordinates: [number, number]; zoom: number }) => {
+    setPosition(newPosition);
+  };
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6 }}
-      className="bg-slate-900/50 backdrop-blur-xl border border-white/5 rounded-3xl p-6 relative overflow-hidden"
+      className="bg-slate-900/50 dark:bg-slate-900/50 light:bg-white backdrop-blur-xl border border-white/5 dark:border-white/5 light:border-slate-200 rounded-3xl p-6 relative overflow-hidden shadow-sm"
     >
       {loading && (
         <div className="absolute inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center">
           <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
         </div>
       )}
-      <div className="flex items-center gap-3 mb-6 relative z-10">
-        <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400">
-          <Globe className="w-5 h-5" />
+      <div className="flex flex-col mb-6 relative z-10">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400">
+            <Globe className="w-5 h-5" />
+          </div>
+          <h3 className="text-lg font-bold text-white dark:text-white light:text-slate-900">Global Interest Map</h3>
+          <p className="text-sm text-slate-400 ml-auto hidden sm:block">
+            Click a country to view regional data
+          </p>
         </div>
-        <h3 className="text-lg font-bold text-white">Global Interest Map</h3>
-        <p className="text-sm text-slate-400 ml-auto">
-          Click a country to view regional data
-        </p>
+        <p className="text-slate-500 text-xs mt-2">Geographic distribution of search volume across the globe.</p>
       </div>
 
-      <div className="w-full h-[300px] md:h-[400px] bg-slate-950/50 rounded-2xl overflow-hidden border border-white/5 relative">
+      <div className="w-full h-[300px] md:h-[400px] bg-slate-950/50 dark:bg-slate-950/50 light:bg-slate-50 rounded-2xl overflow-hidden border border-white/5 dark:border-white/5 light:border-slate-200 relative">
+        {/* Zoom Controls */}
+        <div className="absolute bottom-4 right-4 z-20 flex flex-col gap-2">
+          <button 
+            onClick={handleZoomIn}
+            className="p-2 bg-slate-900/80 dark:bg-slate-900/80 light:bg-white border border-white/10 dark:border-white/10 light:border-slate-200 rounded-lg text-slate-400 hover:text-white dark:hover:text-white light:hover:text-blue-600 transition-colors shadow-lg"
+            title="Zoom In"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+          <button 
+            onClick={handleZoomOut}
+            className="p-2 bg-slate-900/80 dark:bg-slate-900/80 light:bg-white border border-white/10 dark:border-white/10 light:border-slate-200 rounded-lg text-slate-400 hover:text-white dark:hover:text-white light:hover:text-blue-600 transition-colors shadow-lg"
+            title="Zoom Out"
+          >
+            <Minus className="w-4 h-4" />
+          </button>
+          <button 
+            onClick={handleReset}
+            className="p-2 bg-slate-900/80 dark:bg-slate-900/80 light:bg-white border border-white/10 dark:border-white/10 light:border-slate-200 rounded-lg text-slate-400 hover:text-white dark:hover:text-white light:hover:text-blue-600 transition-colors shadow-lg"
+            title="Reset View"
+          >
+            <RotateCcw className="w-4 h-4" />
+          </button>
+        </div>
+
         <ComposableMap
           projection="geoMercator"
           projectionConfig={{
             scale: 120,
-            center: [0, 20],
           }}
           width={800}
           height={400}
           style={{ width: "100%", height: "100%" }}
         >
-          <ZoomableGroup zoom={1}>
+          <ZoomableGroup 
+            zoom={position.zoom} 
+            center={position.coordinates}
+            onMoveEnd={handleMoveEnd}
+            maxZoom={5}
+            minZoom={1}
+            translateExtent={[
+              [0, 0],
+              [800, 400]
+            ]}
+          >
             <Geographies geography={geoUrl}>
               {({ geographies }) =>
                 geographies.map((geo) => {

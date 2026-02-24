@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, Activity, LogOut, User, MapPin } from 'lucide-react';
+import { Search, Activity, LogOut, User, MapPin, Sun, Moon, Command } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Login from './components/Login';
+import Register from './components/Register';
 import Sidebar from './components/Sidebar';
 import CountrySelect from './components/CountrySelect';
-import { auth, logOut, onAuthStateChanged, isFirebaseConfigured } from './services/firebase';
+import CommandPalette from './components/CommandPalette';
+import { useAuth } from './contexts/AuthContext';
+import { useTheme } from './contexts/ThemeContext';
 
 const LOCATIONS = [
   { code: 'US', name: 'United States' },
@@ -54,36 +57,28 @@ const LOCATIONS = [
 ];
 
 export default function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(!isFirebaseConfigured); // Auto-login if Firebase is not configured
-  const [user, setUser] = useState<any>(null);
+  const { user, loading: authLoading, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [isSearching, setIsSearching] = useState(false);
   const [keyword, setKeyword] = useState('');
   const [searchedKeyword, setSearchedKeyword] = useState('');
   const [location, setLocation] = useState('US');
   const [searchedLocation, setSearchedLocation] = useState('US');
-  const [authLoading, setAuthLoading] = useState(isFirebaseConfigured);
   const [userLatLng, setUserLatLng] = useState<{latitude: number, longitude: number} | null>(null);
   const [searchedLatLng, setSearchedLatLng] = useState<{latitude: number, longitude: number} | null>(null);
   const [isLocating, setIsLocating] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
   useEffect(() => {
-    if (!isFirebaseConfigured || !auth) {
-      setAuthLoading(false);
-      return;
-    }
-
-    const unsubscribe = onAuthStateChanged(auth, (currentUser: any) => {
-      if (currentUser) {
-        setUser(currentUser);
-        setIsLoggedIn(true);
-      } else {
-        setUser(null);
-        setIsLoggedIn(false);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setIsCommandPaletteOpen(true);
       }
-      setAuthLoading(false);
-    });
-
-    return () => unsubscribe();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   const handleGetLocation = () => {
@@ -130,10 +125,12 @@ export default function App() {
     }
   };
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (keyword.trim()) {
-      setSearchedKeyword(keyword);
+  const handleSearch = (e?: React.FormEvent, manualKeyword?: string) => {
+    if (e) e.preventDefault();
+    const searchVal = manualKeyword || keyword;
+    if (searchVal.trim()) {
+      setKeyword(searchVal);
+      setSearchedKeyword(searchVal);
       setSearchedLocation(location);
       setSearchedLatLng(location.startsWith('CURRENT_LOCATION') ? userLatLng : null);
       setIsSearching(true);
@@ -141,16 +138,8 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    if (!isFirebaseConfigured) {
-       setIsLoggedIn(false);
-       setIsSearching(false);
-       setKeyword('');
-       setSearchedKeyword('');
-       return;
-    }
     try {
-      await logOut();
-      setIsLoggedIn(false);
+      await logout();
       setIsSearching(false);
       setKeyword('');
       setSearchedKeyword('');
@@ -167,17 +156,27 @@ export default function App() {
     );
   }
 
-  if (!isLoggedIn) {
-    return <Login onLogin={() => setIsLoggedIn(true)} />;
+  if (!user) {
+    return authMode === 'login' ? (
+      <Login onToggle={() => setAuthMode('register')} />
+    ) : (
+      <Register onToggle={() => setAuthMode('login')} />
+    );
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-50 font-sans overflow-x-hidden selection:bg-blue-500/30">
+    <div className="min-h-screen bg-background text-foreground font-sans overflow-x-hidden selection:bg-blue-500/30 transition-colors duration-300">
       {/* Background Glow */}
-      <div className="fixed inset-0 z-0 pointer-events-none">
-        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-blue-600/20 blur-[120px] rounded-full mix-blend-screen" />
-        <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-indigo-600/20 blur-[120px] rounded-full mix-blend-screen" />
+      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-blue-600/20 dark:bg-blue-600/20 light:bg-blue-400/10 blur-[120px] rounded-full mix-blend-screen dark:mix-blend-screen light:mix-blend-multiply" />
+        <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-indigo-600/20 dark:bg-indigo-600/20 light:bg-indigo-400/10 blur-[120px] rounded-full mix-blend-screen dark:mix-blend-screen light:mix-blend-multiply" />
       </div>
+
+      <CommandPalette 
+        isOpen={isCommandPaletteOpen} 
+        onClose={() => setIsCommandPaletteOpen(false)} 
+        onSearch={(k) => handleSearch(undefined, k)} 
+      />
 
       <div className="relative z-10 flex flex-col min-h-screen">
         <AnimatePresence mode="wait">
@@ -190,15 +189,18 @@ export default function App() {
               className="flex-1 flex flex-col items-center justify-center p-6"
             >
               <div className="absolute top-6 right-6 flex items-center gap-4">
-                <div className="flex items-center gap-2 text-slate-300 bg-slate-900/50 backdrop-blur-md border border-white/5 px-4 py-2 rounded-full cursor-pointer hover:bg-slate-800/50 transition-colors">
-                  {user?.photoURL ? (
-                    <img src={user.photoURL} alt="User" className="w-6 h-6 rounded-full" />
-                  ) : (
-                    <User className="w-4 h-4" />
-                  )}
-                  <span className="text-sm font-medium">{user?.displayName || 'Pro Account'}</span>
+                <button 
+                  onClick={toggleTheme}
+                  className="p-2 rounded-full bg-slate-900/50 dark:bg-slate-900/50 light:bg-white border border-white/5 dark:border-white/5 light:border-slate-200 text-slate-400 hover:text-white dark:hover:text-white light:hover:text-blue-600 transition-colors"
+                  title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                >
+                  {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                </button>
+                <div className="flex items-center gap-2 text-slate-300 dark:text-slate-300 light:text-slate-600 bg-slate-900/50 dark:bg-slate-900/50 light:bg-white backdrop-blur-md border border-white/5 dark:border-white/5 light:border-slate-200 px-4 py-2 rounded-full cursor-pointer hover:bg-slate-800/50 transition-colors">
+                  <User className="w-4 h-4" />
+                  <span className="text-sm font-medium">{user?.username || 'Pro Account'}</span>
                 </div>
-                <button onClick={handleLogout} className="text-slate-400 hover:text-white transition-colors p-2 rounded-full hover:bg-white/5" title="Sign out">
+                <button onClick={handleLogout} className="text-slate-400 hover:text-white dark:hover:text-white light:hover:text-red-500 transition-colors p-2 rounded-full hover:bg-white/5" title="Sign out">
                   <LogOut className="w-5 h-5" />
                 </button>
               </div>
@@ -209,26 +211,30 @@ export default function App() {
                 transition={{ delay: 0.2, duration: 0.8, ease: "easeOut" }}
                 className="text-center mb-12"
               >
-                <h1 className="text-5xl md:text-7xl font-bold tracking-tighter mb-4 bg-gradient-to-br from-white via-blue-100 to-blue-500 bg-clip-text text-transparent drop-shadow-[0_0_30px_rgba(59,130,246,0.5)]">
+                <h1 className="text-5xl md:text-7xl font-bold tracking-tighter mb-4 bg-gradient-to-br from-white via-blue-100 to-blue-500 dark:from-white dark:via-blue-100 dark:to-blue-500 light:from-slate-900 light:via-slate-800 light:to-blue-600 bg-clip-text text-transparent drop-shadow-[0_0_30px_rgba(59,130,246,0.5)]">
                   Keyword Intelligence
                 </h1>
-                <p className="text-slate-400 text-lg md:text-xl max-w-2xl mx-auto font-light">
+                <p className="text-slate-400 dark:text-slate-400 light:text-slate-500 text-lg md:text-xl max-w-2xl mx-auto font-light">
                   Uncover real-time search volumes, trends, and difficulty in a seamless, unified interface.
                 </p>
               </motion.div>
 
               <form onSubmit={handleSearch} className="w-full max-w-3xl relative group">
-                <motion.div layoutId="search-container" className="relative flex items-center bg-slate-900/80 backdrop-blur-xl border border-white/10 rounded-2xl p-2 shadow-2xl z-20">
+                <motion.div layoutId="search-container" className="relative flex items-center bg-slate-900/80 dark:bg-slate-900/80 light:bg-white backdrop-blur-xl border border-white/10 dark:border-white/10 light:border-slate-200 rounded-2xl p-2 shadow-2xl z-20">
                   <Search className="w-6 h-6 text-blue-400 ml-4" />
                   <input
                     type="text"
                     value={keyword}
                     onChange={(e) => setKeyword(e.target.value)}
                     placeholder="Enter a keyword (e.g., artificial intelligence)..."
-                    className="w-full bg-transparent border-none outline-none text-xl text-white px-4 py-4 placeholder:text-slate-500 font-light"
+                    className="w-full bg-transparent border-none outline-none text-xl text-white dark:text-white light:text-slate-900 px-4 py-4 placeholder:text-slate-500 font-light"
                     autoFocus
                   />
-                  <div className="h-8 w-px bg-white/10 mx-2 hidden md:block"></div>
+                  <div className="hidden md:flex items-center gap-2 px-3 py-1 bg-slate-800 dark:bg-slate-800 light:bg-slate-100 rounded-lg text-[10px] font-mono text-slate-500 border border-white/5 dark:border-white/5 light:border-slate-200">
+                    <Command className="w-3 h-3" />
+                    <span>K</span>
+                  </div>
+                  <div className="h-8 w-px bg-white/10 dark:bg-white/10 light:bg-slate-200 mx-2 hidden md:block"></div>
                   <div className="hidden md:flex items-center px-4 border-l border-transparent">
                     <CountrySelect 
                       locations={LOCATIONS}
@@ -257,7 +263,7 @@ export default function App() {
               className="flex-1 flex flex-col"
             >
               {/* Header */}
-              <header className="sticky top-0 z-50 bg-slate-950/80 backdrop-blur-xl border-b border-white/5 py-4 px-6 md:px-8 flex items-center justify-between">
+              <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border py-4 px-6 md:px-8 flex items-center justify-between transition-colors duration-300">
                 <div className="flex items-center gap-6 flex-1">
                   <motion.div 
                     initial={{ opacity: 0, x: -20 }}
@@ -271,15 +277,21 @@ export default function App() {
                   </motion.div>
                   
                   <form onSubmit={handleSearch} className="flex-1 max-w-3xl relative group">
-                    <motion.div layoutId="search-container" className="relative flex items-center bg-slate-900/80 backdrop-blur-md border border-white/10 rounded-xl p-1 z-20">
+                    <motion.div layoutId="search-container" className="relative flex items-center bg-slate-900/80 dark:bg-slate-900/80 light:bg-white backdrop-blur-md border border-white/10 dark:border-white/10 light:border-slate-200 rounded-xl p-1 z-20">
                       <Search className="w-5 h-5 text-blue-400 ml-3" />
                       <input
                         type="text"
                         value={keyword}
                         onChange={(e) => setKeyword(e.target.value)}
-                        className="w-full bg-transparent border-none outline-none text-white px-3 py-2 placeholder:text-slate-500"
+                        className="w-full bg-transparent border-none outline-none text-white dark:text-white light:text-slate-900 px-3 py-2 placeholder:text-slate-500"
+                        onFocus={() => setIsCommandPaletteOpen(true)}
+                        readOnly
                       />
-                      <div className="h-6 w-px bg-white/10 mx-2 hidden sm:block"></div>
+                      <div className="hidden sm:flex items-center gap-1 px-2 py-1 bg-slate-800 dark:bg-slate-800 light:bg-slate-100 rounded text-[10px] font-mono text-slate-500">
+                        <Command className="w-3 h-3" />
+                        <span>K</span>
+                      </div>
+                      <div className="h-6 w-px bg-white/10 dark:bg-white/10 light:bg-slate-200 mx-2 hidden sm:block"></div>
                       <div className="hidden sm:flex items-center px-2">
                         <CountrySelect 
                           locations={LOCATIONS}
@@ -302,6 +314,13 @@ export default function App() {
                   transition={{ delay: 0.2 }}
                   className="flex items-center gap-4 ml-6"
                 >
+                  <button 
+                    onClick={toggleTheme}
+                    className="p-2 rounded-full bg-slate-900/50 dark:bg-slate-900/50 light:bg-white border border-white/5 dark:border-white/5 light:border-slate-200 text-slate-400 hover:text-white dark:hover:text-white light:hover:text-blue-600 transition-colors"
+                    title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                  >
+                    {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                  </button>
                   <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-medium">
                     <span className="relative flex h-2 w-2">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -309,16 +328,12 @@ export default function App() {
                     </span>
                     Live Data
                   </div>
-                  <div className="h-6 w-px bg-white/10 hidden md:block"></div>
-                  <div className="hidden md:flex items-center gap-2 text-slate-300 bg-slate-900/50 backdrop-blur-md border border-white/5 px-3 py-1.5 rounded-full">
-                    {user?.photoURL ? (
-                      <img src={user.photoURL} alt="User" className="w-5 h-5 rounded-full" />
-                    ) : (
-                      <User className="w-4 h-4" />
-                    )}
-                    <span className="text-xs font-medium truncate max-w-[100px]">{user?.displayName || 'Pro Account'}</span>
+                  <div className="h-6 w-px bg-white/10 dark:bg-white/10 light:bg-slate-200 hidden md:block"></div>
+                  <div className="hidden md:flex items-center gap-2 text-slate-300 dark:text-slate-300 light:text-slate-600 bg-slate-900/50 dark:bg-slate-900/50 light:bg-white backdrop-blur-md border border-white/5 dark:border-white/5 light:border-slate-200 px-3 py-1.5 rounded-full">
+                    <User className="w-4 h-4" />
+                    <span className="text-xs font-medium truncate max-w-[100px]">{user?.username || 'Pro Account'}</span>
                   </div>
-                  <button onClick={handleLogout} className="text-slate-400 hover:text-white transition-colors p-2 rounded-full hover:bg-white/5" title="Sign out">
+                  <button onClick={handleLogout} className="text-slate-400 hover:text-white dark:hover:text-white light:hover:text-red-500 transition-colors p-2 rounded-full hover:bg-white/5" title="Sign out">
                     <LogOut className="w-5 h-5" />
                   </button>
                 </motion.div>

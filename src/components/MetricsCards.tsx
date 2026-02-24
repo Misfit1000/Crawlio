@@ -1,6 +1,8 @@
 import { motion, useSpring, useTransform } from 'motion/react';
-import { useEffect } from 'react';
-import { Target, TrendingUp, DollarSign, BarChart2, Loader2 } from 'lucide-react';
+import { memo, useEffect } from 'react';
+import { Target, TrendingUp, DollarSign, BarChart2, Loader2, Info } from 'lucide-react';
+import { Tooltip } from 'react-tooltip';
+import 'react-tooltip/dist/react-tooltip.css';
 import { KeywordData } from '../services/keywordService';
 
 function AnimatedNumber({ value, format = (v: number) => v.toString() }: { value: number, format?: (v: number) => string }) {
@@ -45,7 +47,7 @@ function CircularProgress({ value, colorClass }: { value: number, colorClass: st
   );
 }
 
-export default function MetricsCards({ data, loading }: { data: KeywordData, loading?: boolean }) {
+export default memo(function MetricsCards({ data, loading }: { data: KeywordData, loading?: boolean }) {
   const container = {
     hidden: { opacity: 0 },
     show: {
@@ -83,45 +85,67 @@ export default function MetricsCards({ data, loading }: { data: KeywordData, loa
       className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
     >
       {/* Total Volume */}
-      <motion.div variants={item} whileHover={{ y: -5, scale: 1.02 }} transition={{ type: "spring", stiffness: 400, damping: 25 }} className="bg-slate-900/50 backdrop-blur-xl border border-white/5 rounded-2xl p-6 relative overflow-hidden group hover:border-blue-500/30 transition-colors flex flex-col justify-between">
+      <motion.div 
+        variants={item} 
+        whileHover={{ y: -5, scale: 1.02 }} 
+        transition={{ type: "spring", stiffness: 400, damping: 25 }} 
+        className="bg-card/50 backdrop-blur-xl border border-border rounded-2xl p-6 relative overflow-hidden group hover:border-blue-500/30 transition-colors flex flex-col justify-between shadow-sm"
+        data-tooltip-id="metric-tooltip"
+        data-tooltip-content="The average number of times a specific keyword is searched for in a month."
+      >
         {loading && (
-          <div className="absolute inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center">
+          <div className="absolute inset-0 z-50 bg-background/50 backdrop-blur-sm flex items-center justify-center">
             <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
           </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
         <div className="flex justify-between items-start mb-4">
           <div>
-            <p className="text-slate-400 text-sm font-medium mb-1">Total Volume</p>
-            <h3 className="text-3xl font-bold text-white tracking-tight">
+            <div className="flex items-center gap-1.5 mb-1">
+              <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">Total Volume</p>
+              <Info className="w-3 h-3 text-slate-400 dark:text-slate-600" />
+            </div>
+            <h3 className="text-3xl font-bold text-foreground tracking-tight">
               <AnimatedNumber value={data.volume} format={(v) => Math.round(v).toLocaleString()} />
             </h3>
+            <p className="text-[10px] text-slate-500 mt-1 uppercase tracking-wider font-semibold">Monthly Search Demand</p>
           </div>
           <div className="p-3 bg-blue-500/10 rounded-xl text-blue-400 group-hover:scale-110 transition-transform duration-300">
             <BarChart2 className="w-6 h-6" />
           </div>
         </div>
         <div className="flex items-center gap-2 text-sm mt-4">
-          <TrendingUp className="w-4 h-4 text-emerald-400" />
-          <span className="text-emerald-400 font-medium">+12.5%</span>
+          <TrendingUp className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
+          <span className="text-emerald-600 dark:text-emerald-400 font-medium">+12.5%</span>
           <span className="text-slate-500">vs last month</span>
         </div>
       </motion.div>
 
       {/* Keyword Difficulty */}
-      <motion.div variants={item} whileHover={{ y: -5, scale: 1.02 }} transition={{ type: "spring", stiffness: 400, damping: 25 }} className="bg-slate-900/50 backdrop-blur-xl border border-white/5 rounded-2xl p-6 relative overflow-hidden group hover:border-orange-500/30 transition-colors flex flex-col justify-between">
+      <motion.div 
+        variants={item} 
+        whileHover={{ y: -5, scale: 1.02 }} 
+        transition={{ type: "spring", stiffness: 400, damping: 25 }} 
+        className="bg-card/50 backdrop-blur-xl border border-border rounded-2xl p-6 relative overflow-hidden group hover:border-orange-500/30 transition-colors flex flex-col justify-between shadow-sm"
+        data-tooltip-id="metric-tooltip"
+        data-tooltip-content="An estimate of how difficult it is to rank in the top 10 organic search results for a keyword."
+      >
         {loading && (
-          <div className="absolute inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center">
+          <div className="absolute inset-0 z-50 bg-background/50 backdrop-blur-sm flex items-center justify-center">
             <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
           </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-br from-orange-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
         <div className="flex justify-between items-start mb-4">
           <div>
-            <p className="text-slate-400 text-sm font-medium mb-1">Keyword Difficulty</p>
-            <div className="flex items-baseline gap-2 mt-2">
-              <span className={`${getKdColor(data.kd).replace('500', '400')} font-medium text-lg`}>{getKdLabel(data.kd)}</span>
+            <div className="flex items-center gap-1.5 mb-1">
+              <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">Keyword Difficulty</p>
+              <Info className="w-3 h-3 text-slate-400 dark:text-slate-600" />
             </div>
+            <div className="flex items-baseline gap-2 mt-2">
+              <span className={`${getKdColor(data.kd).replace('500', '600')} dark:${getKdColor(data.kd).replace('500', '400')} font-medium text-lg`}>{getKdLabel(data.kd)}</span>
+            </div>
+            <p className="text-[10px] text-slate-500 mt-1 uppercase tracking-wider font-semibold">Ranking Competition</p>
           </div>
           <div className="group-hover:scale-110 transition-transform duration-300">
             <CircularProgress value={data.kd} colorClass={getKdColor(data.kd)} />
@@ -131,50 +155,72 @@ export default function MetricsCards({ data, loading }: { data: KeywordData, loa
       </motion.div>
 
       {/* Average CPC */}
-      <motion.div variants={item} whileHover={{ y: -5, scale: 1.02 }} transition={{ type: "spring", stiffness: 400, damping: 25 }} className="bg-slate-900/50 backdrop-blur-xl border border-white/5 rounded-2xl p-6 relative overflow-hidden group hover:border-emerald-500/30 transition-colors flex flex-col justify-between">
+      <motion.div 
+        variants={item} 
+        whileHover={{ y: -5, scale: 1.02 }} 
+        transition={{ type: "spring", stiffness: 400, damping: 25 }} 
+        className="bg-card/50 backdrop-blur-xl border border-border rounded-2xl p-6 relative overflow-hidden group hover:border-emerald-500/30 transition-colors flex flex-col justify-between shadow-sm"
+        data-tooltip-id="metric-tooltip"
+        data-tooltip-content="The average amount advertisers pay for a click on their ad for this keyword."
+      >
         {loading && (
-          <div className="absolute inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center">
+          <div className="absolute inset-0 z-50 bg-background/50 backdrop-blur-sm flex items-center justify-center">
             <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
           </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
         <div className="flex justify-between items-start mb-4">
           <div>
-            <p className="text-slate-400 text-sm font-medium mb-1">Average CPC</p>
-            <h3 className="text-3xl font-bold text-white tracking-tight flex items-center">
+            <div className="flex items-center gap-1.5 mb-1">
+              <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">Average CPC</p>
+              <Info className="w-3 h-3 text-slate-400 dark:text-slate-600" />
+            </div>
+            <h3 className="text-3xl font-bold text-foreground tracking-tight flex items-center">
               $<AnimatedNumber value={data.cpc} format={(v) => v.toFixed(2)} />
             </h3>
+            <p className="text-[10px] text-slate-500 mt-1 uppercase tracking-wider font-semibold">Ad Cost Per Click</p>
           </div>
           <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-400 group-hover:scale-110 transition-transform duration-300">
             <DollarSign className="w-6 h-6" />
           </div>
         </div>
         <div className="flex items-center gap-2 text-sm mt-4">
-          <span className="text-slate-400 font-medium">High commercial value</span>
+          <span className="text-slate-500 dark:text-slate-400 font-medium">High commercial value</span>
         </div>
       </motion.div>
 
       {/* Search Intent */}
-      <motion.div variants={item} whileHover={{ y: -5, scale: 1.02 }} transition={{ type: "spring", stiffness: 400, damping: 25 }} className="bg-slate-900/50 backdrop-blur-xl border border-white/5 rounded-2xl p-6 relative overflow-hidden group hover:border-purple-500/30 transition-colors flex flex-col justify-between">
+      <motion.div 
+        variants={item} 
+        whileHover={{ y: -5, scale: 1.02 }} 
+        transition={{ type: "spring", stiffness: 400, damping: 25 }} 
+        className="bg-card/50 backdrop-blur-xl border border-border rounded-2xl p-6 relative overflow-hidden group hover:border-purple-500/30 transition-colors flex flex-col justify-between shadow-sm"
+        data-tooltip-id="metric-tooltip"
+        data-tooltip-content="The primary goal a user has when searching for a keyword (Informational, Navigational, Commercial, or Transactional)."
+      >
         {loading && (
-          <div className="absolute inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center">
+          <div className="absolute inset-0 z-50 bg-background/50 backdrop-blur-sm flex items-center justify-center">
             <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
           </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
         <div className="flex justify-between items-start mb-4">
           <div>
-            <p className="text-slate-400 text-sm font-medium mb-1">Search Intent</p>
-            <h3 className="text-2xl font-bold text-white tracking-tight mt-1">
+            <div className="flex items-center gap-1.5 mb-1">
+              <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">Search Intent</p>
+              <Info className="w-3 h-3 text-slate-400 dark:text-slate-600" />
+            </div>
+            <h3 className="text-2xl font-bold text-foreground tracking-tight mt-1">
               {intentLabel}
             </h3>
+            <p className="text-[10px] text-slate-500 mt-1 uppercase tracking-wider font-semibold">User Goal Analysis</p>
           </div>
           <div className="p-3 bg-purple-500/10 rounded-xl text-purple-400 group-hover:scale-110 transition-transform duration-300">
             <Target className="w-6 h-6" />
           </div>
         </div>
         <div>
-          <div className="w-full bg-slate-800 rounded-full h-2 mt-4 overflow-hidden flex">
+          <div className="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-2 mt-4 overflow-hidden flex">
             <motion.div 
               initial={{ width: 0 }} animate={{ width: `${data.intentBreakdown.info}%` }} transition={{ duration: 1, delay: 0.8 }}
               className="bg-purple-500 h-full" title={`Informational ${data.intentBreakdown.info}%`} 
@@ -199,6 +245,11 @@ export default function MetricsCards({ data, loading }: { data: KeywordData, loa
           </div>
         </div>
       </motion.div>
+
+      <Tooltip 
+        id="metric-tooltip" 
+        className="!bg-slate-900/95 dark:!bg-slate-900/95 light:!bg-white !backdrop-blur-md !border !border-white/10 dark:!border-white/10 light:!border-slate-200 !rounded-xl !shadow-2xl !p-3 !z-50 !max-w-[200px] !text-xs !leading-relaxed !text-slate-300 dark:!text-slate-300 light:!text-slate-600"
+      />
     </motion.div>
   );
-}
+});

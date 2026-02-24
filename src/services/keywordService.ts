@@ -1,6 +1,5 @@
-import { GoogleGenAI, Type } from "@google/genai";
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY as string });
+import { Type } from "@google/genai";
+import { generateWithRetry } from "./geminiClient";
 
 export interface KeywordData {
   volume: number;
@@ -57,11 +56,21 @@ export interface KeywordData {
   }[];
 }
 
+const cache = new Map<string, { data: KeywordData; timestamp: number }>();
+const CACHE_TTL = 1000 * 60 * 30; // 30 minutes
+
 export async function fetchKeywordData(
   keyword: string,
   location?: string,
   latLng?: { latitude: number; longitude: number } | null,
 ): Promise<KeywordData> {
+  const cacheKey = `${keyword.toLowerCase()}_${(location || 'global').toLowerCase()}_${latLng ? `${latLng.latitude}_${latLng.longitude}` : ''}`;
+  
+  const cached = cache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data;
+  }
+
   let locationContext = "";
   if (location === "Current Location" && latLng) {
     locationContext = ` Specifically tailor the data, search volume, CPC, and related keywords for the user's current location at coordinates: Latitude ${latLng.latitude}, Longitude ${latLng.longitude}.`;
@@ -70,7 +79,7 @@ export async function fetchKeywordData(
   }
   const prompt = `Act as an expert SEO tool like SEMrush. Provide highly accurate, realistic estimated SEO metrics for the keyword "${keyword}".${locationContext} Include total monthly search volume, keyword difficulty (0-100), average CPC in USD, primary search intent, a breakdown of search intent percentages (must sum to 100), trend data for multiple timeframes (1 hour, 24 hours, 7 days, 30 days, 1 year, 5 years) where each timeframe is an array of objects with 'time' and 'volume' properties, a list of AT LEAST 50 highly relevant related keywords with their metrics (including a 12-month trend array of numbers), a list of top 5 competitor domains ranking for this keyword with their estimated monthly traffic, keyword overlap percentage, top 3 keywords they rank for, and estimated domain authority (0-100), a list of SERP features present (e.g., 'Featured Snippet', 'People Also Ask', 'Video', 'Local Pack'), a list of the top 3 ranking pages with their title, URL, estimated traffic, backlinks, and estimated word count, an in-depth analysis object containing a brief summary of the keyword landscape, a list of 2-3 SEO opportunities, and a list of 1-2 potential threats or challenges, and finally, a regional interest breakdown showing the top 10 countries with the highest search volume for this keyword, including the country name, estimated volume, and percentage of total global volume.`;
 
-  const response = await ai.models.generateContent({
+  const response = await generateWithRetry({
     model: "gemini-3-flash-preview",
     contents: prompt,
     config: {
@@ -230,5 +239,64 @@ export async function fetchKeywordData(
     id: String(i + 1),
   }));
 
+  cache.set(cacheKey, { data, timestamp: Date.now() });
+
   return data as KeywordData;
+}
+
+const mapCache = new Map<string, { data: any[]; timestamp: number }>();
+
+export async function fetchLocalMapData(
+  keyword: string,
+  location?: string,
+  latLng?: { latitude: number; longitude: number } | null,
+): Promise<any[]> {
+  const cacheKey = `${keyword.toLowerCase()}_${(location || 'global').toLowerCase()}_${latLng ? `${latLng.latitude}_${latLng.longitude}` : ''}`;
+  
+  const cached = mapCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data;
+  }
+
+  const prompt = `Find the top local businesses or places related to "${keyword}" in ${location || 'the world'}.`;
+  
+  const config: any = {
+    tools: [{ googleMaps: {} }],
+  };
+
+  if (latLng) {
+    config.toolConfig = {
+      retrievalConfig: {
+        latLng: {
+          latitude: latLng.latitude,
+          longitude: latLng.longitude
+        }
+      }
+    };
+  }
+
+  const response = await generateWithRetry({
+    model: "gemini-2.5-flash",
+    contents: prompt,
+    config
+  });
+
+  const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+  const mapResults: any[] = [];
+
+  if (chunks) {
+    chunks.forEach((chunk: any) => {
+      if (chunk.maps) {
+        mapResults.push({
+          title: chunk.maps.title || 'Unknown Place',
+          uri: chunk.maps.uri || '#',
+        });
+      }
+    });
+  }
+
+  const uniqueResults = Array.from(new Map(mapResults.map(item => [item.uri, item])).values());
+  mapCache.set(cacheKey, { data: uniqueResults, timestamp: Date.now() });
+
+  return uniqueResults;
 }
