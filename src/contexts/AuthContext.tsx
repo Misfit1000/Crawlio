@@ -5,14 +5,22 @@ import {
   signOut, 
   onAuthStateChanged,
   sendEmailVerification,
+  updateProfile,
   User as FirebaseUser
 } from "firebase/auth";
 import { auth } from "../firebase";
+import { initUserProfile, getUserProfile, updateUserProfileData } from "../services/firestoreService";
 
-interface User {
+export interface User {
   id: string;
   username: string;
   email: string;
+  fullName: string;
+  bio: string;
+  photoURL: string;
+  creationTime: string;
+  lastSignInTime: string;
+  role: 'admin' | 'staff' | 'member';
 }
 
 interface AuthContextType {
@@ -21,6 +29,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  updateUserProfile: (data: Partial<User>) => Promise<void>;
   error: string | null;
   unverifiedEmail: string | null;
   setUnverifiedEmail: (email: string | null) => void;
@@ -35,13 +44,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser: FirebaseUser | null) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
       if (firebaseUser && firebaseUser.emailVerified) {
-        setUser({
-          id: firebaseUser.uid,
-          username: firebaseUser.email?.split('@')[0] || 'User',
-          email: firebaseUser.email || '',
-        });
+        try {
+          // Ensure user profile exists in Firestore
+          await initUserProfile(firebaseUser.uid, {
+            email: firebaseUser.email || '',
+            displayName: firebaseUser.displayName || (firebaseUser.email ? firebaseUser.email.split('@')[0] : 'User'),
+          });
+
+          // Load extra data from Firestore
+          const extraData = await getUserProfile(firebaseUser.uid) || {};
+          
+          setUser({
+            id: firebaseUser.uid,
+            username: extraData.username || firebaseUser.email?.split('@')[0] || 'User',
+            email: firebaseUser.email || '',
+            fullName: firebaseUser.displayName || extraData.fullName || extraData.displayName || '',
+            bio: extraData.bio || '',
+            photoURL: firebaseUser.photoURL || extraData.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${firebaseUser.uid}`,
+            creationTime: firebaseUser.metadata.creationTime || new Date().toISOString(),
+            lastSignInTime: firebaseUser.metadata.lastSignInTime || new Date().toISOString(),
+            role: extraData.role || 'member',
+          });
+        } catch (err) {
+          console.error("Error loading user profile:", err);
+          // Fallback to basic user info if Firestore fails
+          setUser({
+            id: firebaseUser.uid,
+            username: firebaseUser.email?.split('@')[0] || 'User',
+            email: firebaseUser.email || '',
+            fullName: firebaseUser.displayName || '',
+            bio: '',
+            photoURL: firebaseUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${firebaseUser.uid}`,
+            creationTime: firebaseUser.metadata.creationTime || new Date().toISOString(),
+            lastSignInTime: firebaseUser.metadata.lastSignInTime || new Date().toISOString(),
+            role: 'member',
+          });
+        }
       } else {
         setUser(null);
       }
@@ -86,12 +126,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const updateUserProfile = async (data: Partial<User>) => {
+    if (!auth.currentUser || !user) throw new Error("Not authenticated");
+    
+    // Update Firebase Auth profile
+    if (data.fullName !== undefined || data.photoURL !== undefined) {
+      await updateProfile(auth.currentUser, {
+        displayName: data.fullName !== undefined ? data.fullName : auth.currentUser.displayName,
+        photoURL: data.photoURL !== undefined ? data.photoURL : auth.currentUser.photoURL,
+      });
+    }
+
+    // Save extra data to Firestore
+    await updateUserProfileData(user.id, data);
+
+    // Update local state
+    setUser(prev => prev ? { ...prev, ...data } : null);
+  };
+
   const logout = async () => {
     await signOut(auth);
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, error, unverifiedEmail, setUnverifiedEmail }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, updateUserProfile, error, unverifiedEmail, setUnverifiedEmail }}>
       {children}
     </AuthContext.Provider>
   );

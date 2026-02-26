@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { LayoutDashboard, Search, BarChart3, Link, Settings, HelpCircle, X } from 'lucide-react';
+import { LayoutDashboard, Search, BarChart3, Link, Settings, HelpCircle, X, User } from 'lucide-react';
 import { TabType } from '../App';
 
 const navItems: { icon: any, label: string, id: TabType }[] = [
@@ -7,6 +7,7 @@ const navItems: { icon: any, label: string, id: TabType }[] = [
   { icon: Search, label: 'Keyword Magic Tool', id: 'keyword-magic' },
   { icon: BarChart3, label: 'Position Tracking', id: 'position-tracking' },
   { icon: Link, label: 'Backlink Analytics', id: 'backlink-analytics' },
+  { icon: User, label: 'User Profile', id: 'user-profile' },
 ];
 
 interface SidebarProps {

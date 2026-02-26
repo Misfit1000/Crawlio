@@ -10,10 +10,12 @@ import Register from './components/Register';
 import Sidebar from './components/Sidebar';
 import CountrySelect from './components/CountrySelect';
 import CommandPalette from './components/CommandPalette';
+import UserProfile from './components/UserProfile';
+import AdminDashboard from './components/AdminDashboard';
 import { useAuth } from './contexts/AuthContext';
 import { useTheme } from './contexts/ThemeContext';
 
-export type TabType = 'dashboard' | 'keyword-magic' | 'position-tracking' | 'backlink-analytics';
+export type TabType = 'dashboard' | 'keyword-magic' | 'position-tracking' | 'backlink-analytics' | 'user-profile' | 'admin-dashboard';
 
 const LOCATIONS = [
   { code: 'US', name: 'United States' },
@@ -243,6 +245,10 @@ export default function App() {
         return <PositionTracking keyword={searchedKeyword} location={locationName} />;
       case 'backlink-analytics':
         return <BacklinkAnalytics keyword={searchedKeyword} />;
+      case 'user-profile':
+        return <UserProfile />;
+      case 'admin-dashboard':
+        return <AdminDashboard />;
       default:
         return null;
     }
@@ -280,10 +286,16 @@ export default function App() {
                 >
                   {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
                 </button>
-                <div className="flex items-center gap-2 text-foreground bg-card/50 backdrop-blur-md border border-border px-4 py-2 rounded-full cursor-pointer hover:bg-muted/50 transition-colors">
+                <button 
+                  onClick={() => {
+                    setActiveTab('user-profile');
+                    setIsSearching(true);
+                  }}
+                  className="flex items-center gap-2 text-foreground bg-card/50 backdrop-blur-md border border-border px-4 py-2 rounded-full cursor-pointer hover:bg-muted/50 transition-colors"
+                >
                   <User className="w-4 h-4" />
                   <span className="text-sm font-medium">{user?.username || 'Pro Account'}</span>
-                </div>
+                </button>
                 <button onClick={handleLogout} className="text-muted-foreground hover:text-red-500 transition-colors p-2 rounded-full hover:bg-muted/50" title="Sign out">
                   <LogOut className="w-5 h-5" />
                 </button>
@@ -431,10 +443,13 @@ export default function App() {
                     Live Data
                   </div>
                   <div className="h-6 w-px bg-border hidden md:block"></div>
-                  <div className="hidden md:flex items-center gap-2 text-foreground bg-card/50 backdrop-blur-md border border-border px-3 py-1.5 rounded-full">
+                  <button 
+                    onClick={() => setActiveTab('user-profile')}
+                    className="hidden md:flex items-center gap-2 text-foreground bg-card/50 backdrop-blur-md border border-border px-3 py-1.5 rounded-full hover:bg-muted/50 transition-colors"
+                  >
                     <User className="w-4 h-4" />
                     <span className="text-xs font-medium truncate max-w-[100px]">{user?.username || 'Pro Account'}</span>
-                  </div>
+                  </button>
                   <button onClick={handleLogout} className="text-muted-foreground hover:text-red-500 transition-colors p-2 rounded-full hover:bg-muted/50" title="Sign out">
                     <LogOut className="w-5 h-5" />
                   </button>

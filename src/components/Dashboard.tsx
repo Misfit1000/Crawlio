@@ -22,6 +22,9 @@ import {
 import MetricsCards from "./MetricsCards";
 import { isRateLimitError } from "../services/geminiClient";
 import { fetchKeywordData, KeywordData } from "../services/keywordService";
+import KeywordProjects from "./KeywordProjects";
+import SavedKeywords from "./SavedKeywords";
+import TrackedCompetitors from "./TrackedCompetitors";
 
 // Lazy load heavy components
 const TrendChart = lazy(() => import("./TrendChart"));
@@ -355,6 +358,15 @@ export default function Dashboard({
 
         <KeywordTable data={data.relatedKeywords} loading={loading} />
       </Suspense>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-12">
+        <KeywordProjects />
+        <SavedKeywords />
+      </div>
+      
+      <div className="mt-8">
+        <TrackedCompetitors />
+      </div>
     </div>
   );
 }
