@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, Activity, LogOut, User, MapPin, Sun, Moon, Command, Menu } from 'lucide-react';
+import { Search, Activity, LogOut, User, MapPin, Sun, Moon, Command, Menu, Mail } from 'lucide-react';
 import Dashboard from './components/Dashboard';
-import KeywordTable from './components/KeywordTable';
+import KeywordMagicTool from './components/KeywordMagicTool';
 import PositionTracking from './components/PositionTracking';
 import BacklinkAnalytics from './components/BacklinkAnalytics';
 import Login from './components/Login';
@@ -62,7 +62,7 @@ const LOCATIONS = [
 ];
 
 export default function App() {
-  const { user, loading: authLoading, logout } = useAuth();
+  const { user, loading: authLoading, logout, unverifiedEmail, setUnverifiedEmail } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [isSearching, setIsSearching] = useState(false);
@@ -179,6 +179,35 @@ export default function App() {
     );
   }
 
+  if (unverifiedEmail) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="w-full max-w-md bg-slate-900/50 backdrop-blur-xl border border-white/10 rounded-3xl p-8 text-center shadow-2xl"
+        >
+          <div className="p-3 bg-blue-500/10 rounded-2xl text-blue-400 mb-4 inline-block">
+            <Mail className="w-12 h-12" />
+          </div>
+          <h1 className="text-2xl font-bold text-white mb-4">Verify your email</h1>
+          <p className="text-slate-400 mb-8">
+            We have sent you a verification email to <span className="text-white font-medium">{unverifiedEmail}</span>. Please verify it and log in.
+          </p>
+          <button
+            onClick={() => {
+              setUnverifiedEmail(null);
+              setAuthMode('login');
+            }}
+            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-500/20"
+          >
+            Login
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
+
   if (!user) {
     return authMode === 'login' ? (
       <Login onToggle={() => setAuthMode('register')} />
@@ -208,15 +237,7 @@ export default function App() {
         );
       case 'keyword-magic':
         return (
-          <div className="space-y-6">
-            <h2 className="text-3xl font-bold text-foreground mb-2 flex items-center gap-3">
-              Keyword Magic Tool for{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-accent to-indigo-400">
-                "{searchedKeyword}"
-              </span>
-            </h2>
-            <KeywordTable keyword={searchedKeyword} location={locationName} latLng={searchedLatLng} />
-          </div>
+          <KeywordMagicTool keyword={searchedKeyword} location={locationName} latLng={searchedLatLng} />
         );
       case 'position-tracking':
         return <PositionTracking keyword={searchedKeyword} location={locationName} />;

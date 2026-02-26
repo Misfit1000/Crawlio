@@ -1,14 +1,13 @@
 import { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { motion } from "motion/react";
-import { Lock, Mail, Loader2, UserPlus, CheckCircle2 } from "lucide-react";
+import { Lock, Mail, Loader2, UserPlus } from "lucide-react";
 
 export default function Register({ onToggle }: { onToggle: () => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
   const { register } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -17,32 +16,11 @@ export default function Register({ onToggle }: { onToggle: () => void }) {
     setError(null);
     try {
       await register(email, password);
-      setSuccess(true);
-      setTimeout(onToggle, 2000);
     } catch (err: any) {
       setError(err.message);
-    } finally {
       setLoading(false);
     }
   };
-
-  if (success) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="w-full max-w-md bg-slate-900/50 backdrop-blur-xl border border-white/10 rounded-3xl p-8 text-center"
-        >
-          <div className="p-3 bg-emerald-500/10 rounded-2xl text-emerald-400 mb-4 inline-block">
-            <CheckCircle2 className="w-12 h-12" />
-          </div>
-          <h1 className="text-2xl font-bold text-white mb-2">Account Created!</h1>
-          <p className="text-slate-400">Redirecting to login...</p>
-        </motion.div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4">
