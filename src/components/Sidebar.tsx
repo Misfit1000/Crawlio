@@ -1,13 +1,15 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { LayoutDashboard, Search, BarChart3, Link, Settings, HelpCircle, X, User } from 'lucide-react';
+import { LayoutDashboard, Search, BarChart3, Link, Settings, HelpCircle, X, User, ShieldAlert } from 'lucide-react';
 import { TabType } from '../App';
+import { useAuth } from '../contexts/AuthContext';
 
-const navItems: { icon: any, label: string, id: TabType }[] = [
+const navItems: { icon: any, label: string, id: TabType, adminOnly?: boolean }[] = [
   { icon: LayoutDashboard, label: 'Dashboard', id: 'dashboard' },
   { icon: Search, label: 'Keyword Magic Tool', id: 'keyword-magic' },
   { icon: BarChart3, label: 'Position Tracking', id: 'position-tracking' },
   { icon: Link, label: 'Backlink Analytics', id: 'backlink-analytics' },
   { icon: User, label: 'User Profile', id: 'user-profile' },
+  { icon: ShieldAlert, label: 'Admin Dashboard', id: 'admin-dashboard', adminOnly: true },
 ];
 
 interface SidebarProps {
@@ -18,6 +20,10 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab }: SidebarProps) {
+  const { user } = useAuth();
+  
+  const filteredNavItems = navItems.filter(item => !item.adminOnly || user?.role === 'admin');
+
   return (
     <>
       {/* Mobile overlay */}
@@ -53,7 +59,7 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab }: Si
                 </button>
               </div>
               <nav className="space-y-1">
-                {navItems.map((item) => {
+                {filteredNavItems.map((item) => {
                   const isActive = activeTab === item.id;
                   return (
                     <button

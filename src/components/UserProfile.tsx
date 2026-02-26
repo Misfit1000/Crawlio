@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { useAuth } from '../contexts/AuthContext';
-import { User, Mail, Calendar, Clock, Edit2, Save, X, Camera, Loader2 } from 'lucide-react';
+import { User, Mail, Calendar, Clock, Edit2, Save, X, Camera, Loader2, ShieldAlert } from 'lucide-react';
+import { makeUserAdmin } from '../services/firestoreService';
 
 export default function UserProfile() {
   const { user, updateUserProfile } = useAuth();
@@ -28,6 +29,16 @@ export default function UserProfile() {
   }, [user]);
 
   if (!user) return null;
+
+  const handleMakeAdmin = async () => {
+    if (!window.confirm("Make this user an admin?")) return;
+    try {
+      await makeUserAdmin(user.id);
+      window.location.reload();
+    } catch (err: any) {
+      alert("Failed to make admin: " + err.message);
+    }
+  };
 
   const handleSave = async () => {
     setLoading(true);
@@ -71,43 +82,55 @@ export default function UserProfile() {
           <h2 className="text-3xl font-bold text-foreground flex items-center gap-3">
             Profile Settings
           </h2>
-          {!isEditing ? (
-            <button
-              onClick={() => setIsEditing(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-colors shadow-lg shadow-blue-500/20"
-            >
-              <Edit2 className="w-4 h-4" />
-              Edit Profile
-            </button>
-          ) : (
-            <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3">
+            {user.role !== 'admin' && (
               <button
-                onClick={() => {
-                  setIsEditing(false);
-                  setFormData({
-                    fullName: user.fullName || '',
-                    username: user.username || '',
-                    bio: user.bio || '',
-                    photoURL: user.photoURL || '',
-                  });
-                  setError(null);
-                }}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl transition-colors"
-                disabled={loading}
+                onClick={handleMakeAdmin}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-600/20 hover:bg-purple-600/30 text-purple-400 border border-purple-500/30 rounded-xl transition-colors"
+                title="Make me an admin (for testing)"
               >
-                <X className="w-4 h-4" />
-                Cancel
+                <ShieldAlert className="w-4 h-4" />
+                Make Admin
               </button>
+            )}
+            {!isEditing ? (
               <button
-                onClick={handleSave}
-                disabled={loading}
-                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-colors shadow-lg shadow-emerald-500/20"
+                onClick={() => setIsEditing(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-colors shadow-lg shadow-blue-500/20"
               >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                Save Changes
+                <Edit2 className="w-4 h-4" />
+                Edit Profile
               </button>
-            </div>
-          )}
+            ) : (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    setIsEditing(false);
+                    setFormData({
+                      fullName: user.fullName || '',
+                      username: user.username || '',
+                      bio: user.bio || '',
+                      photoURL: user.photoURL || '',
+                    });
+                    setError(null);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl transition-colors"
+                  disabled={loading}
+                >
+                  <X className="w-4 h-4" />
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={loading}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-colors shadow-lg shadow-emerald-500/20"
+                >
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  Save Changes
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {error && (
