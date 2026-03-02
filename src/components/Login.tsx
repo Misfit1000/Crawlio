@@ -16,6 +16,7 @@ export default function Login({ onToggle, onClose }: { onToggle: () => void, onC
  setError(null);
  try {
  await login(email, password);
+ if (onClose) onClose();
  } catch (err: any) {
  setError(err.message);
  } finally {

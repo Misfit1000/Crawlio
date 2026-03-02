@@ -16,6 +16,7 @@ export default function Register({ onToggle, onClose }: { onToggle: () => void, 
  setError(null);
  try {
  await register(email, password);
+ if (onClose) onClose();
  } catch (err: any) {
  setError(err.message);
  setLoading(false);

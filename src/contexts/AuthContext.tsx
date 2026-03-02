@@ -45,7 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
-      if (firebaseUser && firebaseUser.emailVerified) {
+      if (firebaseUser) {
         try {
           // Ensure user profile exists in Firestore
           await initUserProfile(firebaseUser.uid, {
@@ -95,11 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setError(null);
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      if (!userCredential.user.emailVerified) {
-        await signOut(auth);
-        setUnverifiedEmail(email);
-        throw new Error("Please verify your email before logging in.");
-      }
+      // Removed email verification check to allow login
     } catch (err: any) {
       if (err.message === "Please verify your email before logging in.") {
         throw err;
@@ -115,9 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setError(null);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      await sendEmailVerification(userCredential.user);
-      await signOut(auth);
-      setUnverifiedEmail(email);
+      // Optional: sendEmailVerification(userCredential.user);
     } catch (err: any) {
       if (err.code === 'auth/email-already-in-use') {
         throw new Error("User already exists. Please sign in");
