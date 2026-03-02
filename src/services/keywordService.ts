@@ -13,12 +13,12 @@ export interface KeywordData {
     tx: number;
   };
   trends: {
-    '1h': { time: string; volume: number }[];
-    '24h': { time: string; volume: number }[];
-    '7d': { time: string; volume: number }[];
-    '30d': { time: string; volume: number }[];
-    '1y': { time: string; volume: number }[];
-    '5y': { time: string; volume: number }[];
+    '1h': { time: string; volume: number; cpc: number }[];
+    '24h': { time: string; volume: number; cpc: number }[];
+    '7d': { time: string; volume: number; cpc: number }[];
+    '30d': { time: string; volume: number; cpc: number }[];
+    '1y': { time: string; volume: number; cpc: number }[];
+    '5y': { time: string; volume: number; cpc: number }[];
   };
   relatedKeywords: {
     id: string;
@@ -68,8 +68,9 @@ export async function fetchKeywordData(
   keyword: string,
   location?: string,
   latLng?: { latitude: number; longitude: number } | null,
+  inDepth: boolean = false
 ): Promise<KeywordData> {
-  const cacheKey = `${keyword.toLowerCase()}_${(location || 'global').toLowerCase()}_${latLng ? `${latLng.latitude}_${latLng.longitude}` : ''}`;
+  const cacheKey = `${keyword.toLowerCase()}_${(location || 'global').toLowerCase()}_${latLng ? `${latLng.latitude}_${latLng.longitude}` : ''}_${inDepth}`;
   
   const cached = cache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
@@ -82,14 +83,20 @@ export async function fetchKeywordData(
   } else if (location && location !== "Current Location") {
     locationContext = ` Specifically tailor the data, search volume, CPC, and related keywords for the location: ${location}.`;
   }
-  const prompt = `Act as an expert SEO tool like SEMrush. Provide highly accurate, realistic estimated SEO metrics for the keyword "${keyword}".${locationContext} Include total monthly search volume, keyword difficulty (0-100), average CPC in USD, primary search intent, a breakdown of search intent percentages (must sum to 100), trend data for multiple timeframes (1 hour, 24 hours, 7 days, 30 days, 1 year, 5 years) where each timeframe is an array of objects with 'time' and 'volume' properties, a list of AT LEAST 50 highly relevant related keywords with their metrics (including a 12-month trend array of numbers), a list of top 5 competitor domains ranking for this keyword with their estimated monthly traffic, keyword overlap percentage, top 3 keywords they rank for, and estimated domain authority (0-100), a list of SERP features present (e.g., 'Featured Snippet', 'People Also Ask', 'Video', 'Local Pack'), an advanced SERP analysis listing the top 10 ranking pages with their title, URL, estimated organic traffic, estimated traffic value in USD (traffic * CPC), backlinks, estimated word count, domain authority (0-100), page authority (0-100), the top keyword difficulty (0-100) for that page, and an array of SERP features specific to that page (e.g., 'Featured Snippet', 'Video'), an in-depth analysis object containing a brief summary of the keyword landscape, a list of 2-3 SEO opportunities, and a list of 1-2 potential threats or challenges, and finally, a regional interest breakdown showing the top 10 countries with the highest search volume for this keyword, including the country name, estimated volume, and percentage of total global volume.`;
+  
+  let prompt = `Act as an expert SEO tool like SEMrush. Provide highly accurate, realistic estimated SEO metrics for the keyword "${keyword}".${locationContext} Include total monthly search volume, keyword difficulty (0-100), average CPC in USD, primary search intent, a breakdown of search intent percentages (must sum to 100), trend data for multiple timeframes (1 hour, 24 hours, 7 days, 30 days, 1 year, 5 years) where each timeframe is an array of objects with 'time', 'volume', and 'cpc' properties, a list of 15 highly relevant related keywords with their metrics (including a 12-month trend array of numbers), a list of top 3 competitor domains ranking for this keyword with their estimated monthly traffic, keyword overlap percentage, top 3 keywords they rank for, and estimated domain authority (0-100), a list of SERP features present (e.g., 'Featured Snippet', 'People Also Ask', 'Video', 'Local Pack'), an advanced SERP analysis listing the top 5 ranking pages with their title, URL, estimated organic traffic, estimated traffic value in USD (traffic * CPC), backlinks, estimated word count, domain authority (0-100), page authority (0-100), the top keyword difficulty (0-100) for that page, and an array of SERP features specific to that page (e.g., 'Featured Snippet', 'Video'), an in-depth analysis object containing a brief summary of the keyword landscape, a list of 2-3 SEO opportunities, and a list of 1-2 potential threats or challenges, and finally, a regional interest breakdown showing the top 5 countries with the highest search volume for this keyword, including the country name, estimated volume, and percentage of total global volume.`;
 
-  const response = await generateWithRetry({
-    model: "gemini-3-flash-preview",
-    contents: prompt,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
+  if (!inDepth) {
+    prompt = `Act as an expert SEO tool like SEMrush. Provide highly accurate, realistic estimated SEO metrics for the keyword "${keyword}".${locationContext} Include total monthly search volume, keyword difficulty (0-100), average CPC in USD, primary search intent, a breakdown of search intent percentages (must sum to 100), trend data for multiple timeframes (1 hour, 24 hours, 7 days, 30 days, 1 year, 5 years) where each timeframe is an array of objects with 'time', 'volume', and 'cpc' properties, a list of 5 highly relevant related keywords with their metrics (including a 12-month trend array of numbers), a list of top 3 competitor domains ranking for this keyword with their estimated monthly traffic, keyword overlap percentage, top 3 keywords they rank for, and estimated domain authority (0-100), a list of SERP features present (e.g., 'Featured Snippet', 'People Also Ask', 'Video', 'Local Pack'), an advanced SERP analysis listing the top 3 ranking pages with their title, URL, estimated organic traffic, estimated traffic value in USD (traffic * CPC), backlinks, estimated word count, domain authority (0-100), page authority (0-100), the top keyword difficulty (0-100) for that page, and an array of SERP features specific to that page (e.g., 'Featured Snippet', 'Video'), an in-depth analysis object containing a brief summary of the keyword landscape, a list of 1 SEO opportunities, and a list of 1 potential threats or challenges, and finally, a regional interest breakdown showing the top 5 countries with the highest search volume for this keyword, including the country name, estimated volume, and percentage of total global volume. Keep the response concise as this is a basic analysis.`;
+  }
+
+  try {
+    const response = await generateWithRetry({
+      model: "gemini-3-flash-preview",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
         type: Type.OBJECT,
         properties: {
           volume: {
@@ -118,12 +125,12 @@ export async function fetchKeywordData(
           trends: {
             type: Type.OBJECT,
             properties: {
-              '1h': { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { time: { type: Type.STRING }, volume: { type: Type.NUMBER } }, required: ["time", "volume"] } },
-              '24h': { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { time: { type: Type.STRING }, volume: { type: Type.NUMBER } }, required: ["time", "volume"] } },
-              '7d': { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { time: { type: Type.STRING }, volume: { type: Type.NUMBER } }, required: ["time", "volume"] } },
-              '30d': { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { time: { type: Type.STRING }, volume: { type: Type.NUMBER } }, required: ["time", "volume"] } },
-              '1y': { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { time: { type: Type.STRING }, volume: { type: Type.NUMBER } }, required: ["time", "volume"] } },
-              '5y': { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { time: { type: Type.STRING }, volume: { type: Type.NUMBER } }, required: ["time", "volume"] } }
+              '1h': { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { time: { type: Type.STRING }, volume: { type: Type.NUMBER }, cpc: { type: Type.NUMBER } }, required: ["time", "volume", "cpc"] } },
+              '24h': { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { time: { type: Type.STRING }, volume: { type: Type.NUMBER }, cpc: { type: Type.NUMBER } }, required: ["time", "volume", "cpc"] } },
+              '7d': { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { time: { type: Type.STRING }, volume: { type: Type.NUMBER }, cpc: { type: Type.NUMBER } }, required: ["time", "volume", "cpc"] } },
+              '30d': { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { time: { type: Type.STRING }, volume: { type: Type.NUMBER }, cpc: { type: Type.NUMBER } }, required: ["time", "volume", "cpc"] } },
+              '1y': { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { time: { type: Type.STRING }, volume: { type: Type.NUMBER }, cpc: { type: Type.NUMBER } }, required: ["time", "volume", "cpc"] } },
+              '5y': { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { time: { type: Type.STRING }, volume: { type: Type.NUMBER }, cpc: { type: Type.NUMBER } }, required: ["time", "volume", "cpc"] } }
             },
             required: ["1h", "24h", "7d", "30d", "1y", "5y"],
             description: "Trend data for various timeframes",
@@ -239,22 +246,82 @@ export async function fetchKeywordData(
     },
   });
 
-  const jsonStr = response.text;
-  if (!jsonStr) throw new Error("No data returned");
-  const data = JSON.parse(jsonStr);
+    const jsonStr = response.text;
+    if (!jsonStr) throw new Error("No data returned");
+    const data = JSON.parse(jsonStr);
 
-  // Add IDs to related keywords
-  data.relatedKeywords = data.relatedKeywords.map((k: any, i: number) => ({
-    ...k,
-    id: String(i + 1),
-  }));
+    // Add IDs to related keywords
+    data.relatedKeywords = data.relatedKeywords.map((k: any, i: number) => ({
+      ...k,
+      id: String(i + 1),
+    }));
 
-  cache.set(cacheKey, { data, timestamp: Date.now() });
+    cache.set(cacheKey, { data, timestamp: Date.now() });
 
-  return data as KeywordData;
+    return data as KeywordData;
+  } catch (error: any) {
+    console.error("Error in fetchKeywordData:", error);
+    
+    // Handle specific Gemini API errors
+    if (error.name === "GeminiError") {
+      if (error.status === 429 || error.message?.toLowerCase().includes("quota") || error.message?.toLowerCase().includes("rate limit")) {
+        throw new Error("API rate limit exceeded. Please wait a moment and try again.");
+      } else if (error.status === 400) {
+        throw new Error("Invalid request. Please check your keyword and try again.");
+      } else if (error.status === 403) {
+        throw new Error("API key is invalid or lacks permission.");
+      } else if (error.status === 500 || error.status === 503) {
+        throw new Error("The AI service is currently unavailable. Please try again later.");
+      }
+      throw new Error(`AI Service Error: ${error.message}`);
+    } else if (error instanceof SyntaxError) {
+      throw new Error("Failed to parse the response from the AI service. Please try again.");
+    }
+    
+    throw new Error(error.message || "An unexpected error occurred while fetching data.");
+  }
 }
 
 const mapCache = new Map<string, { data: any[]; timestamp: number }>();
+
+export async function fetchActualSearchResults(
+  keyword: string,
+  location?: string
+): Promise<{ title: string; uri: string; snippet: string }[]> {
+  const prompt = `Search for "${keyword}"${location ? ` in ${location}` : ''} and provide a summary of the top results.`;
+  
+  try {
+    const response = await generateWithRetry({
+      model: "gemini-3-flash-preview",
+      contents: prompt,
+      config: {
+        tools: [{ googleSearch: {} }],
+      },
+    });
+
+    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+    const searchResults: { title: string; uri: string; snippet: string }[] = [];
+
+    if (chunks) {
+      chunks.forEach((chunk: any) => {
+        if (chunk.web) {
+          searchResults.push({
+            title: chunk.web.title || 'Unknown Title',
+            uri: chunk.web.uri || '#',
+            snippet: chunk.web.snippet || '',
+          });
+        }
+      });
+    }
+
+    // Deduplicate by URI
+    const uniqueResults = Array.from(new Map(searchResults.map(item => [item.uri, item])).values());
+    return uniqueResults;
+  } catch (error) {
+    console.error("Error fetching actual search results:", error);
+    return [];
+  }
+}
 
 export async function fetchLocalMapData(
   keyword: string,

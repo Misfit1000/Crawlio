@@ -1,6 +1,14 @@
 import { GoogleGenAI, GenerateContentParameters, GenerateContentResponse } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY as string });
+let aiInstance: GoogleGenAI | null = null;
+
+export function getAI(): GoogleGenAI {
+  if (!aiInstance) {
+    const key = process.env.GEMINI_API_KEY;
+    aiInstance = new GoogleGenAI({ apiKey: key || 'dummy-key-to-prevent-crash' });
+  }
+  return aiInstance;
+}
 
 export class GeminiError extends Error {
   constructor(message: string, public status?: number, public originalError?: any) {
@@ -31,6 +39,7 @@ export async function generateWithRetry(
   initialDelay = 2000
 ): Promise<GenerateContentResponse> {
   let lastError: any;
+  const ai = getAI();
   
   for (let i = 0; i < maxRetries; i++) {
     try {
@@ -54,4 +63,9 @@ export async function generateWithRetry(
   throw lastError;
 }
 
-export { ai };
+// Export a proxy for backward compatibility if needed, though getAI() is safer
+export const ai = new Proxy({} as GoogleGenAI, {
+  get: (target, prop) => {
+    return (getAI() as any)[prop];
+  }
+});

@@ -8,7 +8,8 @@ import {
   orderBy, 
   serverTimestamp,
   setDoc,
-  getDoc
+  getDoc,
+  collectionGroup
 } from 'firebase/firestore';
 import { db } from '../firebase';
 
@@ -23,8 +24,11 @@ export interface SavedKeyword {
   id: string;
   term: string;
   projectId?: string;
+  group?: string;
   searchVolume: number;
   keywordDifficulty: number;
+  cpc?: number;
+  intent?: string;
   createdAt: any;
 }
 
@@ -68,7 +72,7 @@ export const makeUserAdmin = async (uid: string) => {
 
 // Admin Functions
 export const getAllUsers = async () => {
-  const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
+  const q = query(collection(db, 'users'));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
@@ -80,6 +84,47 @@ export const updateUserRole = async (uid: string, role: string) => {
 
 export const deleteUserDoc = async (uid: string) => {
   await deleteDoc(doc(db, 'users', uid));
+};
+
+export const getAllProjects = async () => {
+  const q = query(collectionGroup(db, 'projects'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ id: doc.id, userId: doc.ref.parent.parent?.id, ...doc.data() }));
+};
+
+export const getAllKeywords = async () => {
+  const q = query(collectionGroup(db, 'keywords'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ id: doc.id, userId: doc.ref.parent.parent?.id, ...doc.data() }));
+};
+
+export const getAllCompetitors = async () => {
+  const q = query(collectionGroup(db, 'competitors'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ id: doc.id, userId: doc.ref.parent.parent?.id, ...doc.data() }));
+};
+
+export const deleteAnyDocument = async (path: string) => {
+  await deleteDoc(doc(db, path));
+};
+
+export const getPlatformSettings = async () => {
+  const settingsRef = doc(db, 'system', 'settings');
+  const snap = await getDoc(settingsRef);
+  if (snap.exists()) {
+    return snap.data();
+  }
+  return {
+    platformName: 'Keyword Intelligence',
+    supportEmail: 'support@keywordintelligence.com',
+    requireEmailVerification: false,
+    publicRegistration: true
+  };
+};
+
+export const updatePlatformSettings = async (data: any) => {
+  const settingsRef = doc(db, 'system', 'settings');
+  await setDoc(settingsRef, data, { merge: true });
 };
 
 // Projects

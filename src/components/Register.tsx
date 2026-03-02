@@ -1,104 +1,110 @@
-import { useState } from "react";
-import { useAuth } from "../contexts/AuthContext";
-import { motion } from "motion/react";
-import { Lock, Mail, Loader2, UserPlus } from "lucide-react";
+import { useState } from"react";
+import { useAuth } from"../contexts/AuthContext";
+import { motion } from"motion/react";
+import { Lock, Mail, Loader2, UserPlus, X } from"lucide-react";
 
-export default function Register({ onToggle }: { onToggle: () => void }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const { register } = useAuth();
+export default function Register({ onToggle, onClose }: { onToggle: () => void, onClose?: () => void }) {
+ const [email, setEmail] = useState("");
+ const [password, setPassword] = useState("");
+ const [loading, setLoading] = useState(false);
+ const [error, setError] = useState<string | null>(null);
+ const { register } = useAuth();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    try {
-      await register(email, password);
-    } catch (err: any) {
-      setError(err.message);
-      setLoading(false);
-    }
-  };
+ const handleSubmit = async (e: React.FormEvent) => {
+ e.preventDefault();
+ setLoading(true);
+ setError(null);
+ try {
+ await register(email, password);
+ } catch (err: any) {
+ setError(err.message);
+ setLoading(false);
+ }
+ };
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-md bg-slate-900/50 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl"
-      >
-        <div className="flex flex-col items-center mb-8">
-          <div className="p-3 bg-blue-500/10 rounded-2xl text-blue-400 mb-4">
-            <UserPlus className="w-8 h-8" />
-          </div>
-          <h1 className="text-2xl font-bold text-white">Create Account</h1>
-          <p className="text-slate-400 text-sm mt-1">Join the SEO Insights community</p>
-        </div>
+ return (
+ <motion.div
+ initial={{ opacity: 0, scale: 0.95 }}
+ animate={{ opacity: 1, scale: 1 }}
+ className="w-full max-w-md bg-card border border-border rounded-3xl p-8 shadow-2xl relative"
+ >
+ {onClose && (
+ <button 
+ onClick={onClose}
+ className="absolute top-4 right-4 p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-full transition-colors"
+ >
+ <X className="w-5 h-5"/>
+ </button>
+ )}
+ <div className="flex flex-col items-center mb-8">
+ <div className="p-3 bg-blue-500/10 rounded-2xl text-blue-500 mb-4">
+ <UserPlus className="w-8 h-8"/>
+ </div>
+ <h1 className="text-2xl font-bold text-foreground">Create Account</h1>
+ <p className="text-muted-foreground text-sm mt-1">Join the SEO Insights community</p>
+ </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-300 ml-1">Email</label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-slate-950/50 border border-white/10 rounded-xl py-3 pl-11 pr-4 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
-                placeholder="Enter your email"
-                required
-              />
-            </div>
-          </div>
+ <form onSubmit={handleSubmit} className="space-y-6">
+ <div className="space-y-2">
+ <label className="text-sm font-medium text-foreground ml-1">Email</label>
+ <div className="relative">
+ <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground"/>
+ <input
+ type="email"
+ value={email}
+ onChange={(e) => setEmail(e.target.value)}
+ className="w-full bg-background border border-border rounded-xl py-3 pl-11 pr-4 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+ placeholder="Enter your email"
+ required
+ />
+ </div>
+ </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-300 ml-1">Password</label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-slate-950/50 border border-white/10 rounded-xl py-3 pl-11 pr-4 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
-                placeholder="••••••••"
-                required
-              />
-            </div>
-          </div>
+ <div className="space-y-2">
+ <label className="text-sm font-medium text-foreground ml-1">Password</label>
+ <div className="relative">
+ <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground"/>
+ <input
+ type="password"
+ value={password}
+ onChange={(e) => setPassword(e.target.value)}
+ className="w-full bg-background border border-border rounded-xl py-3 pl-11 pr-4 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+ placeholder="••••••••"
+ required
+ />
+ </div>
+ </div>
 
-          {error && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm text-center"
-            >
-              {error}
-            </motion.div>
-          )}
+ {error && (
+ <motion.div
+ initial={{ opacity: 0, y: -10 }}
+ animate={{ opacity: 1, y: 0 }}
+ className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm text-center"
+ >
+ {error}
+ </motion.div>
+ )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 text-white font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2"
-          >
-            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Create Account"}
-          </button>
-        </form>
+ <button
+ type="submit"
+ disabled={loading}
+ className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 text-white font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2"
+ >
+ {loading ? <Loader2 className="w-5 h-5 animate-spin"/> :"Create Account"}
+ </button>
+ </form>
 
-        <div className="mt-8 pt-6 border-t border-white/5 text-center">
-          <p className="text-slate-400 text-sm">
-            Already have an account?{" "}
-            <button
-              onClick={onToggle}
-              className="text-blue-400 hover:text-blue-300 font-medium transition-colors"
-            >
-              Sign in
-            </button>
-          </p>
-        </div>
-      </motion.div>
-    </div>
-  );
+ <div className="mt-8 pt-6 border-t border-border text-center">
+ <p className="text-muted-foreground text-sm">
+ Already have an account?{""}
+ <button
+ onClick={onToggle}
+ className="text-blue-500 hover:text-blue-600 font-medium transition-colors"
+ >
+ Sign in
+ </button>
+ </p>
+ </div>
+ </motion.div>
+ );
 }

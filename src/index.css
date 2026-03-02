@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -11,40 +12,39 @@
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --font-sans: 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Roboto Mono', monospace;
 }
 
 @layer base {
   :root {
-    --background: #f8fafc;
-    --foreground: #0f172a;
+    --background: #fafafa;
+    --foreground: #09090b;
     --card: #ffffff;
-    --card-foreground: #0f172a;
-    --border: #e2e8f0;
-    --accent: #2563eb;
-    --accent-foreground: #ffffff;
-    --muted: #f1f5f9;
-    --muted-foreground: #64748b;
+    --card-foreground: #09090b;
+    --border: #e4e4e7;
+    --accent: #18181b;
+    --accent-foreground: #fafafa;
+    --muted: #f4f4f5;
+    --muted-foreground: #71717a;
   }
 
   .dark {
-    --background: #0a0a0a;
+    --background: #09090b;
     --foreground: #fafafa;
-    --card: #141414;
+    --card: #18181b;
     --card-foreground: #fafafa;
-    --border: #262626;
-    --accent: #3b82f6;
-    --accent-foreground: #ffffff;
-    --muted: #171717;
-    --muted-foreground: #a3a3a3;
+    --border: #27272a;
+    --accent: #fafafa;
+    --accent-foreground: #09090b;
+    --muted: #27272a;
+    --muted-foreground: #a1a1aa;
   }
 
   body {
-    @apply bg-background text-foreground transition-colors duration-300 font-sans antialiased;
+    @apply bg-background text-foreground transition-colors duration-300 font-sans antialiased selection:bg-accent/20 selection:text-accent;
   }
 
   h1, h2, h3, h4, h5, h6 {
-    @apply tracking-tight;
+    @apply tracking-tight font-semibold;
   }
 }
 
@@ -57,8 +57,8 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-slate-300 dark:bg-slate-700 rounded-full;
+  @apply bg-border rounded-full;
 }
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-slate-400 dark:bg-slate-600;
+  @apply bg-muted-foreground;
 }
