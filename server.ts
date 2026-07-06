@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import Database from "better-sqlite3";
 import path from "path";
 import { fileURLToPath } from "url";
+import { apiRouter } from "./src/api/index";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,6 +28,9 @@ async function startServer() {
   const app = express();
   app.use(express.json());
   app.use(cookieParser());
+
+  // Mount tool APIs
+  app.use('/api/tools', apiRouter);
 
   // Auth Routes
   app.post("/api/auth/register", async (req, res) => {

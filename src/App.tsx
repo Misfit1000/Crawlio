@@ -11,15 +11,19 @@ import { useTheme } from './contexts/ThemeContext';
 
 // Lazy load heavy components
 const Dashboard = lazy(() => import('./components/Dashboard'));
-const KeywordMagicTool = lazy(() => import('./components/KeywordMagicTool'));
-const PositionTracking = lazy(() => import('./components/PositionTracking'));
-const BacklinkAnalytics = lazy(() => import('./components/BacklinkAnalytics'));
-const UserProfile = lazy(() => import('./components/UserProfile'));
+const KeywordResearch = lazy(() => import('./components/KeywordResearch'));
+const WebsiteAnalyzer = lazy(() => import('./components/WebsiteAnalyzer'));
+const KeywordClusters = lazy(() => import('./components/KeywordClusters'));
+const CompetitorGap = lazy(() => import('./components/CompetitorGap'));
+const ContentBriefs = lazy(() => import('./components/ContentBriefs'));
+const SeoAudit = lazy(() => import('./components/SeoAudit'));
+const RankTracker = lazy(() => import('./components/RankTracker'));
+const Imports = lazy(() => import('./components/Imports'));
+const Reports = lazy(() => import('./components/Reports'));
+const Settings = lazy(() => import('./components/Settings'));
 const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
-const KeywordProjects = lazy(() => import('./components/KeywordProjects'));
-const TrackedCompetitors = lazy(() => import('./components/TrackedCompetitors'));
 
-export type TabType = 'dashboard' | 'keyword-magic' | 'position-tracking' | 'backlink-analytics' | 'user-profile' | 'admin-dashboard' | 'keyword-projects' | 'tracked-competitors';
+export type TabType = 'dashboard' | 'keyword-research' | 'website-analyzer' | 'keyword-clusters' | 'competitor-gap' | 'content-briefs' | 'seo-audit' | 'rank-tracker' | 'imports' | 'reports' | 'settings' | 'admin-dashboard';
 
 const LOCATIONS = [
   { code: 'US', name: 'United States' },
@@ -340,22 +344,28 @@ export default function App() {
             onRunInDepth={() => handleSearch(undefined, searchedKeyword, true)}
           />
         );
-      case 'keyword-magic':
-        return (
-          <KeywordMagicTool keyword={searchedKeyword} location={locationName} latLng={searchedLatLng} />
-        );
-      case 'position-tracking':
-        return <PositionTracking keyword={searchedKeyword} location={locationName} />;
-      case 'backlink-analytics':
-        return <BacklinkAnalytics keyword={searchedKeyword} />;
-      case 'user-profile':
-        return <UserProfile />;
+      case 'keyword-research':
+        return <KeywordResearch keyword={searchedKeyword} />;
+      case 'website-analyzer':
+        return <WebsiteAnalyzer />;
+      case 'keyword-clusters':
+        return <KeywordClusters />;
+      case 'competitor-gap':
+        return <CompetitorGap />;
+      case 'content-briefs':
+        return <ContentBriefs />;
+      case 'seo-audit':
+        return <SeoAudit />;
+      case 'rank-tracker':
+        return <RankTracker />;
+      case 'imports':
+        return <Imports />;
+      case 'reports':
+        return <Reports />;
+      case 'settings':
+        return <Settings />;
       case 'admin-dashboard':
         return <AdminDashboard />;
-      case 'keyword-projects':
-        return <KeywordProjects />;
-      case 'tracked-competitors':
-        return <TrackedCompetitors />;
       default:
         return null;
     }
@@ -416,7 +426,7 @@ export default function App() {
                   <>
                     <button 
                       onClick={() => {
-                        setActiveTab('user-profile');
+                        setActiveTab('settings');
                         setIsSearching(true);
                       }}
                       className="flex items-center gap-2 text-foreground bg-card/50 backdrop-blur-md border border-border px-4 py-2 rounded-full cursor-pointer hover:bg-muted/50 transition-colors"
@@ -454,13 +464,14 @@ export default function App() {
               >
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/10 text-accent text-sm font-medium mb-6 border border-accent/20">
                   <TrendingUp className="w-4 h-4" />
-                  <span>Next-Gen SEO Intelligence</span>
+                  <span>Local SEO Analysis Tools</span>
                 </div>
                 <h1 className="text-6xl md:text-8xl font-bold tracking-tighter mb-6 text-foreground">
-                  Analyze <span className="text-transparent bg-clip-text bg-gradient-to-r from-accent to-green-400">Anything.</span>
+                  Keyword Intelligence <br/>
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-accent to-green-400">Without Expensive AI APIs.</span>
                 </h1>
                 <p className="text-muted-foreground text-lg md:text-2xl max-w-3xl mx-auto font-light leading-relaxed">
-                  Uncover real-time search volumes, trends, and difficulty in a seamless, unified interface.
+                  Deterministic, rule-based keyword research, clustering, and SEO auditing. Import real metrics, crawl sites locally, and own your data.
                 </p>
               </motion.div>
 
@@ -626,7 +637,7 @@ export default function App() {
                   {user ? (
                     <>
                       <button 
-                        onClick={() => setActiveTab('user-profile')}
+                        onClick={() => setActiveTab('settings')}
                         className="hidden md:flex items-center gap-2 text-foreground bg-muted/30 border border-border px-3 py-1.5 rounded-xl hover:bg-muted/60 transition-colors"
                       >
                         <User className="w-4 h-4 text-muted-foreground" />

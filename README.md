@@ -1,45 +1,41 @@
-# Keyword Intelligence Dashboard
+# KeywordsIntel
 
-A real-time keyword research tool powered by Gemini AI.
-
-## Vercel Deployment
-
-To deploy this application to Vercel, follow these steps:
-
-1.  **Push your code to a GitHub repository.**
-2.  **Import the project into Vercel.**
-3.  **Configure Environment Variables:**
-    In the Vercel project settings, add the following environment variables:
-    -   `GEMINI_API_KEY`: Your Google Gemini API Key.
-    -   `VITE_FIREBASE_API_KEY`: (Optional) Your Firebase API Key.
-    -   `VITE_FIREBASE_AUTH_DOMAIN`: (Optional) Your Firebase Auth Domain.
-    -   `VITE_FIREBASE_PROJECT_ID`: (Optional) Your Firebase Project ID.
-    -   `VITE_FIREBASE_STORAGE_BUCKET`: (Optional) Your Firebase Storage Bucket.
-    -   `VITE_FIREBASE_MESSAGING_SENDER_ID`: (Optional) Your Firebase Messaging Sender ID.
-    -   `VITE_FIREBASE_APP_ID`: (Optional) Your Firebase App ID.
-
-    *Note: If Firebase variables are not provided, the app will skip the login screen and use a guest session.*
-
-4.  **Build Settings:**
-    -   Framework Preset: `Vite`
-    -   Build Command: `npm run build`
-    -   Output Directory: `dist`
+KeywordsIntel has been rebuilt into a professional, full-featured SEO keyword research and SEO intelligence web app that operates **entirely without external AI/LLM APIs**.
 
 ## Features
 
--   **Real-time Analysis:** Get instant search volume, difficulty, and CPC data.
--   **Trend Visualization:** Interactive charts showing search interest over multiple timeframes (1h to 5y).
--   **Global Reach:** Interactive world map with regional interest tooltips.
--   **Competitor Insights:** Identify top domains ranking for your target keywords.
--   **Local Search:** Integrated Google Maps results for local intent keywords.
--   **AI Landscape Analysis:** Deep dive into keyword opportunities and threats.
+- **Local Keyword Research**: Deterministic, rule-based keyword variation generation using modifier templates and n-gram expansion.
+- **Website Keyword Extraction**: Built-in website crawler (`cheerio`) to extract meta tags, headers, paragraphs, and analyze term frequency (TF-IDF).
+- **Competitor Keyword Gap**: Compare extracted keyword topics from your site against competitors to find missing opportunities.
+- **Keyword Clustering**: Group related keywords automatically using local Jaccard similarity and string-matching algorithms.
+- **Content Brief Builder**: Generate rule-based SEO outlines from clusters without relying on AI APIs.
+- **SEO Page Audit**: Run over 15+ checks on any URL for on-page SEO issues, missing tags, and structure problems.
+- **Data Imports**: Support for CSV imports to integrate real search volume, CPC, and backlink data (since we no longer fake this data).
 
-## Tech Stack
+## Important Limitations & Setup
 
--   React 19
--   TypeScript
--   Tailwind CSS
--   Gemini AI API
--   Recharts
--   Framer Motion
--   Lucide Icons
+- **No AI Dependency**: This app does NOT use Gemini, OpenAI, Claude, or any paid AI API.
+- **Local Estimates**: Keyword difficulty and opportunity scores are *estimated* based on heuristics (keyword length, commercial intent modifiers, etc.).
+- **Real Data via Import**: To view real search volume, live Google rankings, and CPC, you must import a CSV or integrate a compliant third-party provider (e.g., DataForSEO, Semrush) via the Settings panel (disabled by default).
+- **Backlinks**: Backlink analytics requires imported data.
+
+## Getting Started
+
+1. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+2. **Run the development server:**
+   ```bash
+   npm run dev
+   ```
+
+3. **Build for production:**
+   ```bash
+   npm run build
+   ```
+
+## Deployment
+
+This app can be deployed seamlessly to Vercel or any Node.js hosting environment running Express and Vite.

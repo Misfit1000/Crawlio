@@ -1,16 +1,19 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { LayoutDashboard, Search, BarChart3, Link, Settings, HelpCircle, X, User, ShieldAlert, Folder, Target } from 'lucide-react';
+import { LayoutDashboard, Search, Globe, Target, FileText, Activity, BarChart3, Upload, PieChart, Settings, HelpCircle, X, User, ShieldAlert, Folder, Layers } from 'lucide-react';
 import { TabType } from '../App';
 import { useAuth } from '../contexts/AuthContext';
 
 const navItems: { icon: any, label: string, id: TabType, adminOnly?: boolean }[] = [
  { icon: LayoutDashboard, label: 'Dashboard', id: 'dashboard' },
- { icon: Search, label: 'Keyword Magic Tool', id: 'keyword-magic' },
- { icon: Folder, label: 'Keyword Projects', id: 'keyword-projects' },
- { icon: BarChart3, label: 'Position Tracking', id: 'position-tracking' },
- { icon: Target, label: 'Tracked Competitors', id: 'tracked-competitors' },
- { icon: Link, label: 'Backlink Analytics', id: 'backlink-analytics' },
- { icon: User, label: 'User Profile', id: 'user-profile' },
+ { icon: Search, label: 'Keyword Research', id: 'keyword-research' },
+ { icon: Globe, label: 'Website Analyzer', id: 'website-analyzer' },
+ { icon: Layers, label: 'Keyword Clusters', id: 'keyword-clusters' },
+ { icon: Target, label: 'Competitor Gap', id: 'competitor-gap' },
+ { icon: FileText, label: 'Content Briefs', id: 'content-briefs' },
+ { icon: Activity, label: 'SEO Audit', id: 'seo-audit' },
+ { icon: BarChart3, label: 'Rank Tracker', id: 'rank-tracker' },
+ { icon: Upload, label: 'Imports', id: 'imports' },
+ { icon: PieChart, label: 'Reports', id: 'reports' },
 ];
 
 interface SidebarProps {
