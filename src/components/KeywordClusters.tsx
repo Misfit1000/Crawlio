@@ -25,12 +25,14 @@ export default function KeywordClusters() {
     setError(null);
     try {
       // First generate full keywords
-      const genResponse = await fetch('/api/tools/keyword/research', {
+      const genResponse = await safeJsonFetch<any>('/api/tools/keyword/research', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ seed: rawKeywords[0] }) // just use first as seed for demo
       });
-      const genData = await genResponse.json();
+      
+      if (!genResponse.success) throw new Error((genResponse as any).error || 'Failed to fetch keywords');
+      const genData = (genResponse as any).data;
       
       if (genData.keywords) {
          const dataResp = await safeJsonFetch<any>(API_ROUTES.clusters, {
@@ -38,9 +40,9 @@ export default function KeywordClusters() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ keywords: genData.keywords })
         });
-      const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
-        if (!dataResp.success) throw new Error(data.error || 'Failed to cluster keywords');
-        setResults(data.data.clusters);
+        
+        if (!dataResp.success) throw new Error((dataResp as any).error || 'Failed to cluster keywords');
+        setResults((dataResp as any).data.clusters || (dataResp as any).data.data?.clusters);
       }
     } catch (err: any) {
       setError(err.message);

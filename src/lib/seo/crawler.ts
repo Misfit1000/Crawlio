@@ -151,6 +151,11 @@ export async function crawlDomain(startUrl: string, options: CrawlOptions = {}):
               const pageSizeBytes = Buffer.byteLength(html, 'utf8');
               const parsedData = parseHtml(html, response.url);
               
+              if (options.auditId) {
+                eventEmitter.emitPageCrawled(options.auditId, url);
+                eventEmitter.emitAuditEvent(options.auditId, { progress: 5 + Math.floor((results.length / (options.maxPages || 25)) * 50) });
+              }
+
               results.push({
                 url,
                 finalUrl: response.url,

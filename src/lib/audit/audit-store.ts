@@ -98,7 +98,7 @@ export const auditStore = {
       pagesDiscovered: eventData.pagesDiscovered ?? job.pagesDiscovered,
       pagesCrawled: eventData.pagesCrawled ?? job.pagesCrawled,
       checksTotal: eventData.checksTotal ?? job.checksTotal,
-      checksCompleted: eventData.checksCompleted ?? job.checksCompleted,
+      checksCompleted: eventData.checksCompleted ?? (eventData.type === 'check_completed' ? (job.checksCompleted || 0) + 1 : job.checksCompleted),
       issuesFound: eventData.issuesFound ?? (eventData.type === 'issue_found' ? (job.issuesFound || 0) + 1 : job.issuesFound),
       ...eventData
     };

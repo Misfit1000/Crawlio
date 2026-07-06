@@ -25,7 +25,7 @@ export async function runAuditJob(jobId: string, maxPages = 10) {
     eventEmitter.emitAuditEvent(jobId, { progress: 10, message: 'Checking redirects' });
 
     // 1. Crawl (crawler.ts emits pages and robots/sitemap logic)
-    const crawlResults = await crawlDomain(job.targetUrl, { maxPages, auditId: jobId });
+    const crawlResults = await crawlDomain(job.url, { maxPages, auditId: jobId });
     
     auditStore.updateJob(jobId, { status: 'analyzing', pagesCrawled: crawlResults.length });
     eventEmitter.emitStepCompleted(jobId, 'Crawling', 'Crawl complete');
@@ -80,7 +80,7 @@ export async function runAuditJob(jobId: string, maxPages = 10) {
     // Add domain-level checks (robots.txt and sitemap)
     eventEmitter.emitStepStarted(jobId, 'Domain Checks', 'Checking robots.txt and sitemap');
     try {
-      const parsedUrl = new URL(job.targetUrl);
+      const parsedUrl = new URL(job.url);
       const robotsUrl = `${parsedUrl.protocol}//${parsedUrl.host}/robots.txt`;
       const sitemapUrl = `${parsedUrl.protocol}//${parsedUrl.host}/sitemap.xml`;
       
