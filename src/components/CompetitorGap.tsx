@@ -149,7 +149,7 @@ export default function CompetitorGap() {
               </button>
             </div>
             <div className="p-4">
-              <p className="text-sm font-medium text-blue-500 mb-4 bg-blue-500/10 p-3 rounded-lg border border-blue-500/20 inline-block">
+              <p className="text-sm font-medium text-accent mb-4 bg-accent/10 p-3 rounded-lg border border-accent/20 inline-block">
                 Label clearly: Content keyword gaps extracted from website copy, not live Google rankings.
               </p>
               <div className="overflow-x-auto">
@@ -174,7 +174,7 @@ export default function CompetitorGap() {
                             <span className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold ${
                               r.gapType === 'Missing' ? 'bg-red-500/10 text-red-500' :
                               r.gapType === 'Unique' ? 'bg-green-500/10 text-green-500' :
-                              r.gapType === 'Shared' ? 'bg-blue-500/10 text-blue-500' :
+                              r.gapType === 'Shared' ? 'bg-accent/10 text-accent' :
                               'bg-orange-500/10 text-orange-500'
                             }`}>
                               {r.gapType}

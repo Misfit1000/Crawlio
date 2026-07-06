@@ -19,7 +19,7 @@ export default function Dashboard(props: any) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Total Projects', value: '4', icon: Folder, color: 'text-blue-500' },
+          { label: 'Total Projects', value: '4', icon: Folder, color: 'text-accent' },
           { label: 'Keywords Analyzed', value: '12,403', icon: Search, color: 'text-green-500' },
           { label: 'Total Clusters', value: '142', icon: Layers, color: 'text-purple-500' },
           { label: 'Avg Opp. Score', value: '72/100', icon: TrendingUp, color: 'text-orange-500' }
@@ -29,15 +29,15 @@ export default function Dashboard(props: any) {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.1 }}
-            className="bg-card border border-border rounded-2xl p-6 shadow-sm"
+            className="bg-card border border-border rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow group"
           >
             <div className="flex items-center gap-4">
-              <div className={`p-3 bg-muted rounded-xl ${stat.color}`}>
+              <div className={`p-3 bg-muted rounded-xl ${stat.color} group-hover:scale-110 transition-transform`}>
                 <stat.icon className="w-6 h-6" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground font-medium">{stat.label}</p>
-                <p className="text-2xl font-bold">{stat.value}</p>
+                <p className="text-3xl font-display font-bold">{stat.value}</p>
               </div>
             </div>
           </motion.div>

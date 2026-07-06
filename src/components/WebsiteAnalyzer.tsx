@@ -127,9 +127,9 @@ export default function WebsiteAnalyzer() {
             <div className="bg-card border border-border p-6 rounded-2xl flex items-center justify-between shadow-sm">
               <div>
                 <p className="text-sm text-muted-foreground">Initial Page Words</p>
-                <p className="text-3xl font-bold text-blue-500">{result.data?.wordCount || 0}</p>
+                <p className="text-3xl font-bold text-accent">{result.data?.wordCount || 0}</p>
               </div>
-              <FileText className="w-8 h-8 text-blue-500/20" />
+              <FileText className="w-8 h-8 text-accent/20" />
             </div>
           </div>
 
@@ -193,7 +193,7 @@ export default function WebsiteAnalyzer() {
                         <span className="text-xs px-2 py-0.5 rounded-md bg-muted text-muted-foreground border border-border">{issue.category}</span>
                       </div>
                       <p className="text-sm text-muted-foreground mt-1">{issue.description}</p>
-                      <p className="text-xs mt-1 text-blue-500 break-all">{issue.affectedUrl}</p>
+                      <p className="text-xs mt-1 text-accent break-all">{issue.affectedUrl}</p>
                       <div className="mt-2 text-sm bg-muted/50 p-2 rounded-lg border border-border inline-block">
                         <span className="font-semibold">Recommendation:</span> {issue.recommendation}
                       </div>

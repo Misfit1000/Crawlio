@@ -9,7 +9,7 @@ export default function Reports() {
     // Simulate export generation
     setTimeout(() => {
       const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ 
-        report: "KeywordsIntel Export",
+        report: "SEOIntel Export",
         date: new Date().toISOString()
       }, null, 2));
       const downloadAnchorNode = document.createElement('a');

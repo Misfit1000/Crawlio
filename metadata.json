@@ -1,5 +1,6 @@
 {
-  "name": "Keyword Intelligence",
-  "description": "A modern, highly interactive Keyword Planning Web Application with real-time data visualization.",
-  "requestFramePermissions": ["geolocation"]
+  "name": "SEOIntel",
+  "description": "A comprehensive SEO audit suite and technical analysis platform.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

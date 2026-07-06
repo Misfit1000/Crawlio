@@ -80,7 +80,7 @@ export default function KeywordResearch({ keyword: initialKeyword }: { keyword?:
             </div>
             <div className="bg-card border border-border p-4 rounded-xl">
               <p className="text-sm text-muted-foreground">Transactional</p>
-              <p className="text-2xl font-bold text-blue-500">{results.filter(r => r.intent === 'Transactional').length}</p>
+              <p className="text-2xl font-bold text-accent">{results.filter(r => r.intent === 'Transactional').length}</p>
             </div>
           </div>
 
@@ -107,7 +107,7 @@ export default function KeywordResearch({ keyword: initialKeyword }: { keyword?:
                     <tr key={r.id} className="hover:bg-muted/30 transition-colors">
                       <td className="px-6 py-4 font-medium">{r.keyword}</td>
                       <td className="px-6 py-4">
-                        <span className="inline-flex px-2 py-1 rounded-full bg-blue-500/10 text-blue-500 text-xs font-semibold">
+                        <span className="inline-flex px-2 py-1 rounded-full bg-accent/10 text-accent text-xs font-semibold">
                           {r.intent}
                         </span>
                       </td>

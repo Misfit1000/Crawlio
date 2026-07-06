@@ -278,33 +278,33 @@ export default function App() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-accent/30 border-t-accent rounded-full animate-spin" />
       </div>
     );
   }
 
   if (unverifiedEmail) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4">
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="w-full max-w-md bg-slate-900/50 backdrop-blur-xl border border-white/10 rounded-3xl p-8 text-center shadow-2xl"
+          className="w-full max-w-md bg-card border border-border rounded-3xl p-8 text-center shadow-2xl"
         >
-          <div className="p-3 bg-blue-500/10 rounded-2xl text-blue-400 mb-4 inline-block">
+          <div className="p-3 bg-accent/10 rounded-2xl text-accent mb-4 inline-block">
             <Mail className="w-12 h-12" />
           </div>
-          <h1 className="text-2xl font-bold text-white mb-4">Verify your email</h1>
-          <p className="text-slate-400 mb-8">
-            We have sent you a verification email to <span className="text-white font-medium">{unverifiedEmail}</span>. Please verify it and log in.
+          <h1 className="text-2xl font-bold font-display text-foreground mb-4">Verify your email</h1>
+          <p className="text-muted-foreground mb-8">
+            We have sent you a verification email to <span className="text-foreground font-medium">{unverifiedEmail}</span>. Please verify it and log in.
           </p>
           <button
             onClick={() => {
               setUnverifiedEmail(null);
               setAuthMode('login');
             }}
-            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-500/20"
+            className="w-full bg-accent hover:bg-accent/90 text-accent-foreground font-semibold py-3 rounded-xl transition-all shadow-lg shadow-accent/20"
           >
             Login
           </button>
@@ -375,8 +375,8 @@ export default function App() {
     <div className="min-h-screen bg-background text-foreground font-sans overflow-x-hidden selection:bg-accent/30 transition-colors duration-300">
       {/* Background Glow */}
       <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-accent/5 blur-[120px] rounded-full dark:bg-accent/10" />
-        <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-purple-600/5 blur-[120px] rounded-full dark:bg-purple-600/10" />
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-accent/10 blur-[120px] rounded-full dark:bg-accent/15" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-500/10 blur-[120px] rounded-full dark:bg-blue-500/15" />
       </div>
 
       <CommandPalette 
@@ -462,22 +462,22 @@ export default function App() {
                 transition={{ delay: 0.2, duration: 0.8, ease: "easeOut" }}
                 className="text-center mb-16"
               >
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/10 text-accent text-sm font-medium mb-6 border border-accent/20">
+                <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-accent/10 text-accent text-sm font-medium mb-8 border border-accent/20">
                   <TrendingUp className="w-4 h-4" />
-                  <span>Local SEO Analysis Tools</span>
+                  <span>Professional SEO Intelligence</span>
                 </div>
-                <h1 className="text-6xl md:text-8xl font-bold tracking-tighter mb-6 text-foreground">
-                  Keyword Intelligence <br/>
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-accent to-green-400">Without Expensive AI APIs.</span>
+                <h1 className="text-6xl md:text-8xl font-bold tracking-tighter mb-6 text-foreground font-display">
+                  SEO<span className="text-accent">Intel</span> <br/>
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-accent to-blue-400">Technical SEO Auditor.</span>
                 </h1>
                 <p className="text-muted-foreground text-lg md:text-2xl max-w-3xl mx-auto font-light leading-relaxed">
-                  Deterministic, rule-based keyword research, clustering, and SEO auditing. Import real metrics, crawl sites locally, and own your data.
+                  Deterministic, rule-based SEO auditing, performance testing, and technical analysis. Import real metrics, crawl sites locally, and own your data.
                 </p>
               </motion.div>
 
               <form onSubmit={handleSearch} className="w-full max-w-4xl relative group">
                 <motion.div layoutId="search-container" className="relative flex flex-col md:flex-row items-center bg-card/80 backdrop-blur-xl border border-border rounded-3xl p-2 shadow-2xl z-20 transition-all duration-300 focus-within:ring-2 focus-within:ring-accent/50 focus-within:border-accent">
-                  <div className="absolute -inset-1 bg-gradient-to-r from-accent to-green-400 rounded-3xl blur opacity-20 group-hover:opacity-40 transition duration-500 -z-10"></div>
+                  <div className="absolute -inset-1 bg-gradient-to-r from-accent to-blue-500 rounded-3xl blur opacity-10 group-hover:opacity-30 transition duration-500 -z-10"></div>
                   <div className="flex items-center w-full flex-1 px-4 py-4">
                     <Search className="w-8 h-8 text-muted-foreground mr-4" />
                     <input
@@ -588,7 +588,7 @@ export default function App() {
                       <div className="bg-accent text-accent-foreground p-1.5 rounded-lg">
                         <TrendingUp className="w-5 h-5" />
                       </div>
-                      <span className="hidden md:inline text-xl">Keywords<span className="text-accent">Intel</span></span>
+                      <span className="hidden md:inline text-xl">SEO<span className="text-accent">Intel</span></span>
                     </motion.div>
                   </div>
                   
@@ -676,7 +676,7 @@ export default function App() {
                 <main className="flex-1 p-6 md:p-8 w-full">
                   <Suspense fallback={
                     <div className="flex items-center justify-center h-64">
-                      <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+                      <Loader2 className="w-8 h-8 text-accent animate-spin" />
                     </div>
                   }>
                     {renderContent()}

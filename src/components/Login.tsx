@@ -39,10 +39,10 @@ export default function Login({ onToggle, onClose }: { onToggle: () => void, onC
  </button>
  )}
  <div className="flex flex-col items-center mb-8">
- <div className="p-3 bg-blue-500/10 rounded-2xl text-blue-500 mb-4">
+ <div className="p-3 bg-accent/10 rounded-2xl text-accent mb-4">
  <ShieldCheck className="w-8 h-8"/>
  </div>
- <h1 className="text-2xl font-bold text-foreground">Welcome Back</h1>
+ <h1 className="text-2xl font-bold font-display text-foreground">Welcome Back</h1>
  <p className="text-muted-foreground text-sm mt-1">Sign in to access SEO Insights</p>
  </div>
 
@@ -55,7 +55,7 @@ export default function Login({ onToggle, onClose }: { onToggle: () => void, onC
  type="email"
  value={email}
  onChange={(e) => setEmail(e.target.value)}
- className="w-full bg-background border border-border rounded-xl py-3 pl-11 pr-4 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+ className="w-full bg-background border border-border rounded-xl py-3 pl-11 pr-4 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent/50 transition-all"
  placeholder="Enter your email"
  required
  />
@@ -70,7 +70,7 @@ export default function Login({ onToggle, onClose }: { onToggle: () => void, onC
  type="password"
  value={password}
  onChange={(e) => setPassword(e.target.value)}
- className="w-full bg-background border border-border rounded-xl py-3 pl-11 pr-4 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+ className="w-full bg-background border border-border rounded-xl py-3 pl-11 pr-4 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent/50 transition-all"
  placeholder="••••••••"
  required
  />
@@ -90,7 +90,7 @@ export default function Login({ onToggle, onClose }: { onToggle: () => void, onC
  <button
  type="submit"
  disabled={loading}
- className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 text-white font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2"
+ className="w-full bg-accent hover:bg-accent/90 disabled:bg-accent/50 text-accent-foreground font-semibold py-3 rounded-xl transition-all shadow-lg shadow-accent/20 flex items-center justify-center gap-2"
  >
  {loading ? <Loader2 className="w-5 h-5 animate-spin"/> :"Sign In"}
  </button>
@@ -101,7 +101,7 @@ export default function Login({ onToggle, onClose }: { onToggle: () => void, onC
  Don't have an account?{""}
  <button
  onClick={onToggle}
- className="text-blue-500 hover:text-blue-600 font-medium transition-colors"
+ className="text-accent hover:text-accent/80 font-medium transition-colors"
  >
  Create one
  </button>

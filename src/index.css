@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -12,31 +12,32 @@
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --font-sans: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
 }
 
 @layer base {
   :root {
-    --background: #fafafa;
-    --foreground: #09090b;
+    --background: #f8fafc;
+    --foreground: #0f172a;
     --card: #ffffff;
-    --card-foreground: #09090b;
-    --border: #e4e4e7;
-    --accent: #18181b;
-    --accent-foreground: #fafafa;
-    --muted: #f4f4f5;
-    --muted-foreground: #71717a;
+    --card-foreground: #0f172a;
+    --border: #e2e8f0;
+    --accent: #2563eb;
+    --accent-foreground: #ffffff;
+    --muted: #f1f5f9;
+    --muted-foreground: #64748b;
   }
 
   .dark {
-    --background: #09090b;
-    --foreground: #fafafa;
-    --card: #18181b;
-    --card-foreground: #fafafa;
-    --border: #27272a;
-    --accent: #fafafa;
-    --accent-foreground: #09090b;
-    --muted: #27272a;
-    --muted-foreground: #a1a1aa;
+    --background: #020617;
+    --foreground: #f8fafc;
+    --card: #0f172a;
+    --card-foreground: #f8fafc;
+    --border: #1e293b;
+    --accent: #3b82f6;
+    --accent-foreground: #ffffff;
+    --muted: #1e293b;
+    --muted-foreground: #94a3b8;
   }
 
   body {
@@ -44,7 +45,7 @@
   }
 
   h1, h2, h3, h4, h5, h6 {
-    @apply tracking-tight font-semibold;
+    @apply font-display tracking-tight font-semibold text-foreground;
   }
 }
 

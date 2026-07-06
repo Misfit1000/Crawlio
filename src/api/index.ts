@@ -5,8 +5,43 @@ import { generateKeywords } from '../lib/keywords/generator';
 import { clusterKeywords } from '../lib/keywords/clustering';
 import { buildContentBrief } from '../lib/keywords/content-brief';
 import { analyzeCompetitorGap } from '../lib/keywords/competitor-gap';
+import { auditStore } from '../lib/audit/audit-store';
+import { runAuditJob } from '../lib/audit/audit-runner';
 
 export const apiRouter = Router();
+
+apiRouter.post('/audit/start', (req, res) => {
+  const { url, maxPages } = req.body;
+  if (!url) return res.status(400).json({ error: 'URL is required' });
+  
+  const jobId = auditStore.createJob(url);
+  // Start job asynchronously
+  runAuditJob(jobId, maxPages || 25);
+  
+  res.json({ jobId });
+});
+
+apiRouter.get('/audit/status/:id', (req, res) => {
+  const job = auditStore.getJob(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  res.json({ status: job.status, jobId: job.jobId, pagesCrawled: job.pagesCrawled });
+});
+
+apiRouter.get('/audit/result/:id', (req, res) => {
+  const job = auditStore.getJob(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  res.json(job);
+});
+
+apiRouter.post('/audit/rerun/:id', (req, res) => {
+  const job = auditStore.getJob(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  
+  auditStore.updateJob(job.jobId, { status: 'pending', pagesCrawled: 0, error: undefined });
+  runAuditJob(job.jobId, 25);
+  
+  res.json({ success: true });
+});
 
 apiRouter.post('/keyword/research', (req, res) => {
   const { seed } = req.body;

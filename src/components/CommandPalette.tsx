@@ -135,12 +135,12 @@ export default function CommandPalette({ isOpen, onClose, onSearch }: CommandPal
  <div className="p-2">
  <button
  onClick={() => handleSearch(query)}
- className="w-full flex items-center gap-3 px-3 py-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 group transition-colors"
+ className="w-full flex items-center gap-3 px-3 py-3 rounded-xl bg-accent/10 border border-accent/20 text-accent group transition-colors"
  >
  <Sparkles className="w-5 h-5"/>
  <div className="text-left">
- <div className="font-medium">Analyze"{query}"</div>
- <div className="text-xs text-blue-400/60">Run full keyword analysis with AI insights</div>
+ <div className="font-medium">Analyze "{query}"</div>
+ <div className="text-xs text-accent/60">Run full SEO analysis</div>
  </div>
  </button>
  </div>

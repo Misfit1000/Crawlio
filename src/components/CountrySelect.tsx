@@ -51,7 +51,7 @@ export default function CountrySelect({ locations, value, onChange, onGetLocatio
  className={`flex items-center gap-2 bg-transparent text-muted-foreground hover:text-foreground transition-colors outline-none cursor-pointer ${compact ? 'py-1' : 'py-2'}`}
  >
  {isCurrentLocation ? (
- <Navigation className={`${compact ? 'w-4 h-4' : 'w-5 h-5'} text-blue-500`} />
+ <Navigation className={`${compact ? 'w-4 h-4' : 'w-5 h-5'} text-accent`} />
  ) : (
  <MapPin className={`${compact ? 'w-4 h-4' : 'w-5 h-5'} text-muted-foreground`} />
  )}
@@ -78,7 +78,7 @@ export default function CountrySelect({ locations, value, onChange, onGetLocatio
  placeholder="Search countries..."
  value={searchQuery}
  onChange={(e) => setSearchQuery(e.target.value)}
- className="w-full bg-muted/50 border border-border rounded-lg py-1.5 pl-8 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+ className="w-full bg-muted/50 border border-border rounded-lg py-1.5 pl-8 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all"
  autoFocus
  />
  </div>
@@ -93,7 +93,7 @@ export default function CountrySelect({ locations, value, onChange, onGetLocatio
  setSearchQuery('');
  }}
  disabled={isLocating}
- className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 hover:bg-muted transition-colors ${isCurrentLocation ? 'text-blue-500 bg-blue-500/10' : 'text-blue-500'}`}
+ className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 hover:bg-muted transition-colors ${isCurrentLocation ? 'text-accent bg-accent/10' : 'text-accent'}`}
  >
  <Navigation className={`w-4 h-4 ${isLocating ? 'animate-pulse' : ''}`} />
  <span className="font-medium">{isLocating ? 'Locating...' : 'Use Current Location'}</span>
@@ -109,7 +109,7 @@ export default function CountrySelect({ locations, value, onChange, onGetLocatio
  setIsOpen(false);
  setSearchQuery('');
  }}
- className={`w-full text-left px-4 py-2 text-sm flex items-center justify-between hover:bg-muted transition-colors ${value === loc.code ? 'text-blue-500 bg-blue-500/10 font-medium' : 'text-foreground'}`}
+ className={`w-full text-left px-4 py-2 text-sm flex items-center justify-between hover:bg-muted transition-colors ${value === loc.code ? 'text-accent bg-accent/10 font-medium' : 'text-foreground'}`}
  >
  <span>{loc.name}</span>
  <span className="text-xs text-muted-foreground">{loc.code}</span>

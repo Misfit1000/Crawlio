@@ -5,15 +5,15 @@ import { useAuth } from '../contexts/AuthContext';
 
 const navItems: { icon: any, label: string, id: TabType, adminOnly?: boolean }[] = [
  { icon: LayoutDashboard, label: 'Dashboard', id: 'dashboard' },
- { icon: Search, label: 'Keyword Research', id: 'keyword-research' },
- { icon: Globe, label: 'Website Analyzer', id: 'website-analyzer' },
- { icon: Layers, label: 'Keyword Clusters', id: 'keyword-clusters' },
- { icon: Target, label: 'Competitor Gap', id: 'competitor-gap' },
+ { icon: Activity, label: 'Full SEO Audit', id: 'seo-audit' },
+ { icon: Target, label: 'Competitor Content Gap', id: 'competitor-gap' },
+ { icon: Globe, label: 'Crawl Website', id: 'website-analyzer' },
+ { icon: Upload, label: 'Data Sources / Imports', id: 'imports' },
+ { icon: PieChart, label: 'Reports & Exports', id: 'reports' },
+ { icon: Search, label: 'Content Opportunities', id: 'keyword-research' },
+ { icon: Layers, label: 'Topic Clusters', id: 'keyword-clusters' },
  { icon: FileText, label: 'Content Briefs', id: 'content-briefs' },
- { icon: Activity, label: 'SEO Audit', id: 'seo-audit' },
- { icon: BarChart3, label: 'Rank Tracker', id: 'rank-tracker' },
- { icon: Upload, label: 'Imports', id: 'imports' },
- { icon: PieChart, label: 'Reports', id: 'reports' },
+ { icon: BarChart3, label: 'Rankings Data', id: 'rank-tracker' },
 ];
 
 interface SidebarProps {
