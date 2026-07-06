@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "verify:seo": "node scripts/verify-seo-package.mjs",
+    "smoke:seo": "node scripts/smoke-seo-audit.mjs",
     "dev": "tsx server.ts",
-    "build": "vite build",
+    "start": "node dist/server.cjs",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit"
@@ -54,6 +56,7 @@
     "@types/react-simple-maps": "^3.0.6",
     "@types/stopword": "^2.0.3",
     "autoprefixer": "^10.4.21",
+    "esbuild": "^0.28.1",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",

@@ -24,7 +24,27 @@ export default function Reports() {
   const handleExportCsv = (type: string) => {
     setLoading(`csv-${type}`);    
     setTimeout(() => {      
-      const csvStr = "data:text/csv;charset=utf-8," + encodeURIComponent(`URL,Title,Issue,Severity\nhttps://example.com,Home,Missing H1,High\n`);      
+      let csvContent = "No data available";
+            if (type === 'search') {
+                const gsc = localStorage.getItem('seo_gsc_data');
+                if (gsc) {
+                    const parsed = JSON.parse(gsc);
+                    if (parsed.length) {
+                        csvContent = Object.keys(parsed[0]).join(',') + '\n' + parsed.map(r => Object.values(r).join(',')).join('\n');
+                    }
+                }
+            } else if (type === 'keywords') {
+                const kw = localStorage.getItem('seo_keyword_data');
+                if (kw) {
+                    const parsed = JSON.parse(kw);
+                    if (parsed.length) {
+                        csvContent = Object.keys(parsed[0]).join(',') + '\n' + parsed.map(r => Object.values(r).join(',')).join('\n');
+                    }
+                }
+            } else {
+                csvContent = "URL,Title,Issue,Severity\nhttps://example.com,Home,Missing H1,High\n"; // Placeholder for other audits
+            }
+            const csvStr = "data:text/csv;charset=utf-8," + encodeURIComponent(csvContent);      
       const a = document.createElement('a');      
       a.href = csvStr;      
       a.download = `seointel-${type}-export.csv`;      

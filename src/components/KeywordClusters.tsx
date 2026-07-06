@@ -38,7 +38,7 @@ export default function KeywordClusters() {
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Failed to cluster keywords');
-        setResults(data.clusters);
+        setResults(data.data.clusters);
       }
     } catch (err: any) {
       setError(err.message);

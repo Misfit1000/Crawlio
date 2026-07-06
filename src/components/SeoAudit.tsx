@@ -19,15 +19,20 @@ export default function SeoAudit() {
           const res = await fetch(`/api/tools/audit/status/${jobId}`);
           if (res.ok) {
             const data = await res.json();
-            setStatus(data.status);
-            
-            if (data.status === 'completed' || data.status === 'failed') {
-              clearInterval(interval);
-              const resultRes = await fetch(`/api/tools/audit/result/${jobId}`);
-              if (resultRes.ok) {
-                setAuditResult(await resultRes.json());
+            if (data.success && data.data) {
+              setStatus(data.data.status);
+              
+              if (data.data.status === 'completed' || data.data.status === 'failed') {
+                clearInterval(interval);
+                const resultRes = await fetch(`/api/tools/audit/result/${jobId}`);
+                if (resultRes.ok) {
+                  const resultData = await resultRes.json();
+                  if (resultData.success) {
+                    setAuditResult(resultData.data);
+                  }
+                }
+                setLoading(false);
               }
-              setLoading(false);
             }
           }
         } catch(e) {
@@ -57,8 +62,8 @@ export default function SeoAudit() {
         body: JSON.stringify({ url: targetUrl, maxPages })
       });
       const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      setJobId(data.jobId);
+      if (!data.success) throw new Error(data.error);
+      setJobId(data.data.jobId);
     } catch(err: any) {
       setError(err.message);
       setLoading(false);

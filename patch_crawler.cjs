@@ -1,7 +1,10 @@
+const fs = require('fs');
 
+const code = `
 import { parseHtml, ParsedPageData } from './html-parser';
 import { normalizeUrl, isSameDomain, stripTrackingParams } from './url-utils';
-import { fetchRobotsTxt, isBlockedByRobots, getSitemapUrlsFromRobots, parseRobotsTxt } from './robots';
+import { fetchRobotsTxt, isBlockedByRobots, getSitemapUrlsFromRobots } from './robots';
+import { discoverSitemaps } from './sitemap';
 
 export interface CrawlResult {
   url: string;
@@ -40,9 +43,9 @@ export async function crawlDomain(startUrl: string, options: CrawlOptions = {}):
   let robotsTxt = '';
   if (respectRobots) {
     const origin = new URL(startUrl).origin;
-    const r = await fetchRobotsTxt(origin);
-    if (r) {
-      robotsTxt = r;
+    const r = await fetchRobotsTxt(origin + '/robots.txt');
+    if (r.found && r.content) {
+      robotsTxt = r.content;
     }
   }
 
@@ -78,7 +81,7 @@ export async function crawlDomain(startUrl: string, options: CrawlOptions = {}):
         if (visited.has(currentUrl)) continue;
         visited.add(currentUrl);
         
-        if (respectRobots && robotsTxt && isBlockedByRobots(currentUrl, parseRobotsTxt(robotsTxt))) {
+        if (respectRobots && robotsTxt && isBlockedByRobots(robotsTxt, 'SEOIntelBot', currentUrl)) {
           results.push({
             url: currentUrl,
             finalUrl: currentUrl,
@@ -180,3 +183,6 @@ export async function crawlDomain(startUrl: string, options: CrawlOptions = {}):
     processQueue();
   });
 }
+`;
+
+fs.writeFileSync('src/lib/seo/crawler.ts', code);

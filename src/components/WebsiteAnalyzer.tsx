@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Globe, Loader2, FileText, AlertTriangle, CheckCircle2, Layers } from 'lucide-react';
 import { ParsedPageData } from '../lib/seo/html-parser';
-import { AuditResult } from '../lib/seo/page-audit';
+import { AuditResult } from '../lib/audit/types';
 
 export default function WebsiteAnalyzer() {
   const [url, setUrl] = useState('');
@@ -36,10 +36,10 @@ export default function WebsiteAnalyzer() {
       if (!data.success) throw new Error(data.error || 'Failed to analyze website');
       
       setResult({ 
-        data: data.data, 
-        audit: data.audit, 
-        crawledPages: data.crawledPages,
-        fullAudit: data.fullAudit 
+        data: data.data.data, 
+        audit: data.data.audit, 
+        crawledPages: data.data.crawledPages,
+        fullAudit: data.data.fullAudit 
       });
     } catch (err: any) {
       setError(err.message);

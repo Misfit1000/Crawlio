@@ -35,7 +35,7 @@ export default function ContentBriefs() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to generate brief');
       
-      setBrief(data.brief);
+      setBrief(data.data.brief);
     } catch (err: any) {
       setError(err.message);
     } finally {

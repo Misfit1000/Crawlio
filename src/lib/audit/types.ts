@@ -49,3 +49,11 @@ export interface FullAuditResult {
   allIssues: AuditIssue[];
   crawledPages: CrawledPageInfo[];
 }
+
+export interface AuditResult {
+  score: number;
+  categoryScores: Record<string, number>;
+  counts: { critical: number; high: number; medium: number; low: number };
+  passedChecks: string[];
+  issues: AuditIssue[];
+}

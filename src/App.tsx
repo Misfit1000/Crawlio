@@ -77,7 +77,7 @@ const POPULAR_KEYWORDS = [
   "artificial intelligence", "machine learning", "saas marketing", "seo tools",
   "content marketing", "digital marketing", "social media marketing", "email marketing",
   "affiliate marketing", "ecommerce seo", "local seo", "link building",
-  "keyword research", "chatgpt", "openai", "python programming",
+  "keyword research", "technical seo", "on-page seo", "python programming",
   "javascript frameworks", "react js", "next js", "tailwind css",
   "web development", "app development", "ui ux design", "graphic design",
   "video editing", "data science", "data analytics", "business intelligence",

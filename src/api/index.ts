@@ -11,51 +11,71 @@ import { runAuditJob } from '../lib/audit/audit-runner';
 export const apiRouter = Router();
 
 apiRouter.post('/audit/start', (req, res) => {
-  const { url, maxPages } = req.body;
-  if (!url) return res.status(400).json({ error: 'URL is required' });
-  
-  const jobId = auditStore.createJob(url);
-  // Start job asynchronously
-  runAuditJob(jobId, maxPages || 25);
-  
-  res.json({ jobId });
+  try {
+    const { url, maxPages } = req.body;
+    if (!url) return res.status(400).json({ success: false, error: 'URL is required' });
+    
+    const jobId = auditStore.createJob(url);
+    // Start job asynchronously
+    runAuditJob(jobId, maxPages || 25);
+    
+    res.json({ success: true, data: { jobId } });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message || 'Internal Server Error' });
+  }
 });
 
 apiRouter.get('/audit/status/:id', (req, res) => {
-  const job = auditStore.getJob(req.params.id);
-  if (!job) return res.status(404).json({ error: 'Job not found' });
-  res.json({ status: job.status, jobId: job.jobId, pagesCrawled: job.pagesCrawled });
+  try {
+    const job = auditStore.getJob(req.params.id);
+    if (!job) return res.status(404).json({ success: false, error: 'Job not found' });
+    res.json({ success: true, data: { status: job.status, jobId: job.jobId, pagesCrawled: job.pagesCrawled } });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message || 'Internal Server Error' });
+  }
 });
 
 apiRouter.get('/audit/result/:id', (req, res) => {
-  const job = auditStore.getJob(req.params.id);
-  if (!job) return res.status(404).json({ error: 'Job not found' });
-  res.json(job);
+  try {
+    const job = auditStore.getJob(req.params.id);
+    if (!job) return res.status(404).json({ success: false, error: 'Job not found' });
+    res.json({ success: true, data: job });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message || 'Internal Server Error' });
+  }
 });
 
 apiRouter.post('/audit/rerun/:id', (req, res) => {
-  const job = auditStore.getJob(req.params.id);
-  if (!job) return res.status(404).json({ error: 'Job not found' });
-  
-  auditStore.updateJob(job.jobId, { status: 'pending', pagesCrawled: 0, error: undefined });
-  runAuditJob(job.jobId, 25);
-  
-  res.json({ success: true });
+  try {
+    const job = auditStore.getJob(req.params.id);
+    if (!job) return res.status(404).json({ success: false, error: 'Job not found' });
+    
+    auditStore.updateJob(job.jobId, { status: 'pending', pagesCrawled: 0, error: undefined });
+    runAuditJob(job.jobId, 25);
+    
+    res.json({ success: true, data: { success: true } });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message || 'Internal Server Error' });
+  }
 });
 
 apiRouter.post('/keyword/research', (req, res) => {
-  const { seed } = req.body;
-  if (!seed) return res.status(400).json({ error: 'Seed keyword is required' });
-  
-  const keywords = generateKeywords(seed);
-  res.json({ keywords });
+  try {
+    const { seed } = req.body;
+    if (!seed) return res.status(400).json({ success: false, error: 'Seed keyword is required' });
+    
+    const keywords = generateKeywords(seed);
+    res.json({ success: true, data: { keywords } });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message || 'Internal Server Error' });
+  }
 });
 
 apiRouter.post('/website/analyze', async (req, res) => {
-  const { url, maxPages } = req.body;
-  if (!url) return res.status(400).json({ error: 'URL is required' });
-  
   try {
+    const { url, maxPages } = req.body;
+    if (!url) return res.status(400).json({ success: false, error: 'URL is required' });
+    
     const crawls = await crawlDomain(url, { maxPages: maxPages || 25 });
     const audit = auditFullCrawl(crawls);
     
@@ -64,36 +84,46 @@ apiRouter.post('/website/analyze', async (req, res) => {
     
     res.json({ 
       success: true, 
-      crawledPages: crawls.length,
-      data: initialCrawl?.data, 
-      fullAudit: audit,
-      audit: audit.pageResults.find(p => p.url === initialCrawl?.url)?.audit || audit.pageResults[0]?.audit
+      data: {
+        crawledPages: crawls.length,
+        data: initialCrawl?.data, 
+        fullAudit: audit,
+        audit: audit.pageResults.find(p => p.url === initialCrawl?.url)?.audit || audit.pageResults[0]?.audit
+      }
     });
   } catch(e: any) {
-    res.status(500).json({ success: false, error: e.message });
+    res.status(500).json({ success: false, error: e.message || 'Internal Server Error' });
   }
 });
 
 apiRouter.post('/clusters', (req, res) => {
-  const { keywords } = req.body;
-  if (!keywords || !Array.isArray(keywords)) return res.status(400).json({ error: 'Keywords array is required' });
-  
-  const clusters = clusterKeywords(keywords);
-  res.json({ clusters });
+  try {
+    const { keywords } = req.body;
+    if (!keywords || !Array.isArray(keywords)) return res.status(400).json({ success: false, error: 'Keywords array is required' });
+    
+    const clusters = clusterKeywords(keywords);
+    res.json({ success: true, data: { clusters } });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message || 'Internal Server Error' });
+  }
 });
 
 apiRouter.post('/content-brief', (req, res) => {
-  const { cluster } = req.body;
-  if (!cluster) return res.status(400).json({ error: 'Cluster object is required' });
-  
-  const brief = buildContentBrief(cluster);
-  res.json({ brief });
+  try {
+    const { cluster } = req.body;
+    if (!cluster) return res.status(400).json({ success: false, error: 'Cluster object is required' });
+    
+    const brief = buildContentBrief(cluster);
+    res.json({ success: true, data: { brief } });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message || 'Internal Server Error' });
+  }
 });
 
 apiRouter.post('/competitor-gap', async (req, res) => {
-  const { myUrl, competitorUrls, maxPages } = req.body;
-  
   try {
+    const { myUrl, competitorUrls, maxPages } = req.body;
+    
     const myCrawls = await crawlDomain(myUrl, { maxPages: maxPages || 25 });
     const myPhrases = new Set<string>();
     myCrawls.forEach(c => c.data?.topPhrases.forEach(p => myPhrases.add(p)));
@@ -117,8 +147,8 @@ apiRouter.post('/competitor-gap', async (req, res) => {
     }
     
     const gaps = analyzeCompetitorGap(myKeywords, competitorKeywords);
-    res.json({ gaps, crawledCounts });
+    res.json({ success: true, data: { gaps, crawledCounts } });
   } catch(e: any) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ success: false, error: e.message || 'Internal Server Error' });
   }
 });

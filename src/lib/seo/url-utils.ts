@@ -17,3 +17,16 @@ export function isSameDomain(url1: string, url2: string): boolean {
     return false;
   }
 }
+
+export function stripTrackingParams(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const trackingParams = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'fbclid'];
+    for (const param of trackingParams) {
+      parsed.searchParams.delete(param);
+    }
+    return parsed.href;
+  } catch (e) {
+    return url;
+  }
+}

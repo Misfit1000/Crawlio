@@ -1,4 +1,6 @@
+const fs = require('fs');
 
+const code = `
 import { CrawlResult } from './crawler';
 import { AuditResult, AuditIssue } from '../audit/types';
 import { runAllChecks } from './checks/runner';
@@ -39,7 +41,7 @@ export function auditPage(crawl: CrawlResult): AuditResult {
   return {
     score: scoring.overallScore,
     categoryScores: scoring.categoryScores,
-    counts: { critical: scoring.criticalCount, high: scoring.highCount, medium: scoring.mediumCount, low: scoring.lowCount },
+    counts: scoring.counts,
     passedChecks: scoring.passedChecks,
     issues: issues
   };
@@ -60,3 +62,6 @@ export function auditFullCrawl(crawls: CrawlResult[]): { overallScore: number, a
   const overallScore = crawls.length > 0 ? Math.round(totalScore / crawls.length) : 0;
   return { overallScore, allIssues, pageResults };
 }
+`;
+
+fs.writeFileSync('src/lib/seo/page-audit.ts', code);

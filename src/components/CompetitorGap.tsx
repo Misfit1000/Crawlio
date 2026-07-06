@@ -39,7 +39,7 @@ export default function CompetitorGap() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to analyze competitor gap');
       
-      setResults({ gaps: data.gaps, crawledCounts: data.crawledCounts });
+      setResults({ gaps: data.data.gaps, crawledCounts: data.data.crawledCounts });
     } catch (err: any) {
       setError(err.message);
     } finally {

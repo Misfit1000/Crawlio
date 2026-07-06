@@ -23,7 +23,7 @@ export default function KeywordResearch({ keyword: initialKeyword }: { keyword?:
       if (!response.ok) throw new Error('Failed to fetch keywords');
       
       const data = await response.json();
-      setResults(data.keywords || []);
+      setResults(data.data.keywords || []);
     } catch (err: any) {
       setError(err.message);
     } finally {

@@ -1,23 +1,22 @@
 import { AuditIssue } from '../../audit/types';
+import { CHECK_REGISTRY } from './registry';
 
-export function runContentChecks(pageData: any): AuditIssue[] {
+export function run(pageData: any): AuditIssue[] {
   const issues: AuditIssue[] = [];
   const url = pageData.url || '';
-  
-  if (pageData.wordCount !== undefined) {
-    if (pageData.wordCount < 300 && pageData.status === 200) {
-      issues.push({ id: 'low-word-count', category: 'content', severity: 'medium', title: 'Low Word Count', description: `Page has only ${pageData.wordCount} words (less than 300).`, affectedUrl: url });
+  const d = pageData;
+
+  const p = (id: string, evidence: string) => {
+    const c = CHECK_REGISTRY[id];
+    if (c) {
+      issues.push({ id: c.id, category: c.category, severity: c.severity, title: c.title, description: c.description, recommendation: c.recommendation, affectedUrl: url, evidence });
     }
-  }
-  
-  // Simulated spelling/grammar check (we don't have this, so we use dummy for now or skip)
-  if (pageData.imagesWithoutAlt && pageData.imagesWithoutAlt > 0) {
-    issues.push({ id: 'missing-image-alt', category: 'content', severity: 'medium', title: 'Missing Image Alt Text', description: `${pageData.imagesWithoutAlt} images are missing alt text.`, affectedUrl: url });
-  }
-  
-  if (pageData.topPhrases && pageData.topPhrases.includes('lorem ipsum')) {
-     issues.push({ id: 'lorem-ipsum', category: 'content', severity: 'high', title: 'Placeholder Content', description: 'Page contains "Lorem Ipsum" placeholder text.', affectedUrl: url });
-  }
+  };
+
+  // Evaluate checks
+  if (d.fakeCondition) p('thin-content', 'Evidence');
+  if (d.wordCount < 100) p('very-low-word-count', d.wordCount + ' words');
+  else if (d.wordCount < 300) p('thin-content', d.wordCount + ' words');
 
   return issues;
 }
