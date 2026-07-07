@@ -17,7 +17,7 @@ if (!process.env.SEOINTEL_E2E_TSX_LOADED) {
 const http = await import('node:http');
 const expressModule = await import('express');
 const { apiRouter } = await import('../src/api/index.ts');
-const { auditRepository } = await import('../src/lib/firebase/audit-repository.ts');
+const { auditRepository } = await import('../src/lib/supabase/audit-repository.ts');
 const { runOneAudit } = await import('../src/workers/audit-worker.ts');
 
 const express = expressModule.default;
@@ -51,23 +51,24 @@ function close(server) {
   return new Promise((resolve) => server.close(resolve));
 }
 
-const firestoreEnabled = auditRepository.isFirestoreEnabled();
+const supabaseEnabled = auditRepository.isSupabaseEnabled();
 const configuredServer = process.env.E2E_SERVER_URL || 'http://127.0.0.1:3000';
 let baseUrl = configuredServer;
 let server = null;
+const configuredServerReachable = await canReachServer(configuredServer);
 
-if (await canReachServer(configuredServer)) {
-  if (!firestoreEnabled) {
-    console.log('Running local in-memory E2E mode — not production Firestore.');
+if (configuredServerReachable) {
+  if (!supabaseEnabled) {
+    console.log('Running local in-memory E2E mode - not production Supabase.');
     console.log('A running external server was detected, but in-memory worker state cannot be shared across processes. Starting an in-process API server for this test.');
   } else {
     console.log(`Using running server at ${configuredServer}.`);
   }
 }
 
-if (!firestoreEnabled || !(await canReachServer(configuredServer))) {
-  if (!firestoreEnabled) {
-    console.log('Running local in-memory E2E mode — not production Firestore.');
+if (!supabaseEnabled || !configuredServerReachable) {
+  if (!supabaseEnabled) {
+    console.log('Running local in-memory E2E mode - not production Supabase.');
   }
   const app = express();
   app.use(express.json());

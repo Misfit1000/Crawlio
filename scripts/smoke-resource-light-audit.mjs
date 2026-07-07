@@ -2,8 +2,12 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import express from 'express';
 import { apiRouter } from '../src/api/index.ts';
-import { auditRepository } from '../src/lib/firebase/audit-repository.ts';
+import { auditRepository } from '../src/lib/supabase/audit-repository.ts';
 import { runOneAudit } from '../src/workers/audit-worker.ts';
+
+if (!auditRepository.isSupabaseEnabled()) {
+  console.log('Running local in-memory E2E mode - not production Supabase.');
+}
 
 function listen(server, port = 0) {
   return new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve(server.address())));
