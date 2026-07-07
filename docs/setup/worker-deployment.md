@@ -17,14 +17,13 @@ npm run worker:audit:dev
 ## Required Environment
 
 ```bash
-FIREBASE_PROJECT_ID=
-FIREBASE_CLIENT_EMAIL=
-FIREBASE_PRIVATE_KEY=
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
 AUDIT_WORKER_ID=worker-production-1
 AUDIT_POLL_INTERVAL_MS=4000
 ```
 
-`AUDIT_WORKER_ID` is optional but useful in logs and lock fields.
+`AUDIT_WORKER_ID` is optional but useful in logs and lock fields. The worker must use the Supabase service role key because it claims jobs and writes progress/results.
 
 ## Deployment Targets
 
@@ -46,10 +45,10 @@ Check worker logs for:
 - `SEOIntel audit worker started as ...`
 - claimed queued audits
 - fetch/crawl failures
-- Firebase credential errors
+- Supabase credential or network errors
 - uncaught worker crashes
 
-If the live audit page says `Audit is queued. The audit worker has not picked it up yet`, either the worker is not running, it cannot reach Firestore, or its Firebase Admin credentials are invalid.
+If the live audit page says `Audit is queued. The audit worker has not picked it up yet`, either the worker is not running, it cannot reach Supabase, or its service role environment variable is invalid.
 
 ## Concurrency And Limits
 
@@ -64,8 +63,8 @@ Audit settings are centralized in `src/lib/audit/audit-config.ts`.
 
 ## Cancellation
 
-The cancel API marks an audit as `cancelled` and writes a cancellation event. The worker checks cancellation before pages and major checks, then leaves partial pages/issues/report data in Firestore.
+The cancel API marks an audit as `cancelled` and writes a cancellation event. The worker checks cancellation before pages and major checks, then leaves partial pages/issues/report data in Supabase.
 
 ## Stale Lock Recovery
 
-Workers claim jobs with `lockedBy`, `lockedAt`, and `leaseExpiresAt`. If a worker dies, another worker can reclaim queued work after the configured lock lease/stale recovery window in `src/lib/audit/audit-config.ts`.
+Workers claim jobs with `locked_by`, `locked_at`, and `lease_expires_at`. If a worker dies, another worker can reclaim queued work after the configured lock lease/stale recovery window in `src/lib/audit/audit-config.ts`.

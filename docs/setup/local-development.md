@@ -12,7 +12,7 @@ git remote -v
 git branch --show-current
 git fetch origin
 git pull --ff-only
-git checkout -b feature/resource-light-audit-worker
+git checkout -b feature/supabase-resource-light-audit-worker
 ```
 
 If the repo already exists, check `git status --short` before changing files. Do not overwrite local changes or force reset unless explicitly instructed.
@@ -31,23 +31,19 @@ Do not delete lock files, switch package managers, or commit `node_modules`.
 
 Create `.env.local` from `.env.example` and fill placeholders locally only.
 
-Frontend Firebase values:
+Frontend Supabase values:
 
-- `VITE_FIREBASE_API_KEY`
-- `VITE_FIREBASE_AUTH_DOMAIN`
-- `VITE_FIREBASE_PROJECT_ID`
-- `VITE_FIREBASE_STORAGE_BUCKET`
-- `VITE_FIREBASE_MESSAGING_SENDER_ID`
-- `VITE_FIREBASE_APP_ID`
-- `VITE_FIREBASE_MEASUREMENT_ID`
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
 
-Worker/API Firebase Admin values:
+Worker/API Supabase values:
 
-- `FIREBASE_PROJECT_ID`
-- `FIREBASE_CLIENT_EMAIL`
-- `FIREBASE_PRIVATE_KEY`
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
 
-Never commit secrets. `.env`, `.env.local`, `.env.*.local`, `node_modules`, `dist`, `.vercel`, and `.firebase` are ignored.
+Never commit secrets. `.env`, `.env.local`, `.env.*.local`, `node_modules`, `dist`, `.vercel`, and `.supabase` are ignored.
+
+Local smoke tests can run without Supabase env vars. In that mode they use the in-memory repository fallback and print that they are not production Supabase.
 
 ## Run
 
@@ -92,6 +88,7 @@ npm run smoke:url
 npm run smoke:api-json
 npm run smoke:live-audit
 npm run smoke:resource-light-audit
+npm run smoke:supabase-schema
 npm run e2e:local-audit
 npm run verify:seo
 npm run verify:security

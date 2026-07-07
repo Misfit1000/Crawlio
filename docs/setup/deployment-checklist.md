@@ -9,6 +9,7 @@ npm run smoke:url
 npm run smoke:api-json
 npm run smoke:live-audit
 npm run smoke:resource-light-audit
+npm run smoke:supabase-schema
 npm run e2e:local-audit
 npm run verify:seo
 npm run verify:security
@@ -17,26 +18,26 @@ git diff --check
 
 ## Vercel
 
-- Set `VITE_FIREBASE_*` environment variables.
-- Do not set service account private keys in public `VITE_*` variables.
+- Set `VITE_SUPABASE_URL`.
+- Set `VITE_SUPABASE_ANON_KEY`.
+- Do not set the Supabase service role key in public `VITE_*` variables.
 - Deploy frontend and lightweight API routes only.
 - Do not run audit workers or multi-page crawlers in Vercel serverless functions.
 
 ## Worker
 
-- Set `FIREBASE_PROJECT_ID`.
-- Set `FIREBASE_CLIENT_EMAIL`.
-- Set `FIREBASE_PRIVATE_KEY`.
+- Set `SUPABASE_URL`.
+- Set `SUPABASE_SERVICE_ROLE_KEY`.
 - Run `npm run worker:audit`.
 - Verify worker logs show the worker started and can claim queued audits.
 
-## Firebase
+## Supabase
 
-- Deploy Firestore rules.
-- Deploy Firestore indexes.
-- Confirm Firestore database exists.
-- Confirm production rules are not open.
-- Confirm client reads work for owned audits.
+- Apply `supabase/migrations/001_resource_light_audit.sql`.
+- Confirm Supabase Realtime is enabled for audit tables.
+- Confirm RLS is enabled on audit tables.
+- Confirm anon clients can read audit progress and enqueue audits only.
+- Confirm privileged writes use the service role key only from API/worker environments.
 
 ## Post-Deploy
 
