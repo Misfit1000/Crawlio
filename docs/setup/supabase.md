@@ -49,6 +49,7 @@ It also enables RLS, adds Realtime publication entries, and creates indexes for 
 - The separate Node worker claims queued jobs and writes progress/results using `SUPABASE_SERVICE_ROLE_KEY`.
 - The browser uses `VITE_SUPABASE_ANON_KEY` for auth and Realtime subscriptions.
 - Long crawls never run inside Vercel request handling.
+- After deploying a Vercel preview and the worker, run a Quick Audit with `example.com` to verify queued status, live updates, final report, exports, and cancellation.
 
 ## Local Tests
 

@@ -41,7 +41,7 @@ git diff --check
 
 ## Post-Deploy
 
-1. Start a Quick Audit with `example.com`.
+1. On the Vercel preview deployment, start a Quick Audit with `example.com`.
 2. Confirm queued state appears immediately.
 3. Confirm the worker picks it up.
 4. Confirm current page URL updates.
