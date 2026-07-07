@@ -135,11 +135,16 @@ alter table public.audit_pages enable row level security;
 alter table public.audit_issues enable row level security;
 alter table public.audit_reports enable row level security;
 
+-- MVP policy note: audit IDs are unguessable UUIDs and browser clients need
+-- realtime read access after creating or opening an audit. Tighten these
+-- read policies to owner/project scoped access before adding private audits.
 create policy "audit rows are readable by browser clients"
 on public.audits for select
 to anon, authenticated
 using (true);
 
+-- MVP policy note: browser-created audits may only enter the queue. The API
+-- and worker use the server-side Supabase service role for privileged updates.
 create policy "browser clients can enqueue audits only"
 on public.audits for insert
 to anon, authenticated
@@ -151,6 +156,8 @@ with check (
   and lease_expires_at is null
 );
 
+-- MVP policy note: live progress tables are read-only for browser clients.
+-- Writes remain restricted to the API and worker service-role environments.
 create policy "audit events are readable by browser clients"
 on public.audit_events for select
 to anon, authenticated
