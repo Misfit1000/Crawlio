@@ -15,7 +15,12 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "smoke:live-audit": "tsx scripts/smoke-live-audit.mts",
-    "smoke:api-json": "node scripts/smoke-api-json.mjs"
+    "smoke:api-json": "node scripts/smoke-api-json.mjs",
+    "smoke:resource-light-audit": "tsx scripts/smoke-resource-light-audit.mjs",
+    "smoke:url": "tsx scripts/smoke-url-normalization.mjs",
+    "e2e:local-audit": "node scripts/e2e-local-audit.mjs",
+    "worker:audit": "tsx src/workers/audit-worker.ts",
+    "worker:audit:dev": "tsx watch src/workers/audit-worker.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",
@@ -29,6 +34,7 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "firebase": "^12.9.0",
+    "firebase-admin": "^13.10.0",
     "fuse.js": "^7.4.2",
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.546.0",

@@ -1,5 +1,6 @@
 import http from 'http';
 import assert from 'assert';
+import { execFileSync, spawn } from 'child_process';
 
 function makeRequest(path, method = 'GET', body = null) {
   return new Promise((resolve, reject) => {
@@ -39,8 +40,34 @@ function makeRequest(path, method = 'GET', body = null) {
 async function run() {
   console.log("Starting smoke test for JSON APIs...");
 
-  // Assume server is running on 3000
-  await new Promise(r => setTimeout(r, 1000));
+  let serverProcess = null;
+  const stopServer = () => {
+    if (!serverProcess?.pid) return;
+    if (process.platform === 'win32') {
+      try {
+        execFileSync('taskkill', ['/pid', String(serverProcess.pid), '/T', '/F'], { stdio: 'ignore' });
+      } catch {}
+    } else {
+      serverProcess.kill('SIGTERM');
+    }
+  };
+  try {
+    await makeRequest('/api/invalid-route');
+  } catch {
+    const command = process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : 'npm';
+    const args = process.platform === 'win32' ? ['/d', '/s', '/c', 'npm run dev'] : ['run', 'dev'];
+    serverProcess = spawn(command, args, {
+      stdio: 'ignore',
+    });
+    for (let i = 0; i < 30; i++) {
+      try {
+        await makeRequest('/api/invalid-route');
+        break;
+      } catch {
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+  }
 
   try {
     // 1. Invalid API route under /api returns JSON 404
@@ -75,9 +102,11 @@ async function run() {
     console.log("✓ Audit result returned valid JSON");
 
     console.log("All JSON API smoke tests passed!");
+    stopServer();
     process.exit(0);
   } catch (err) {
     console.error("Smoke test failed:", err);
+    stopServer();
     process.exit(1);
   }
 }
