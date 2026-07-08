@@ -12,6 +12,15 @@ import type {
 } from './resource-types';
 
 type DbRow = Record<string, any>;
+export type LiveAuditTransport = 'websocket' | 'polling';
+export type LiveAuditConnectionStatus = 'connecting' | 'connected' | 'polling' | 'reconnecting' | 'error' | 'closed';
+
+export interface LiveAuditConnectionState {
+  transport: LiveAuditTransport;
+  status: LiveAuditConnectionStatus;
+  message: string;
+  lastUpdateAt?: number;
+}
 
 function toAuditDocument(row: DbRow | null | undefined): ResourceAuditDocument | null {
   if (!row) return null;
@@ -123,16 +132,46 @@ function pollAuditLiveData(
   auditId: string,
   callback: (data: ResourceAuditLiveData) => void,
   onError?: (error: Error) => void,
+  onConnectionChange?: (state: LiveAuditConnectionState) => void,
+  reason = 'Using HTTP polling for live audit updates.',
 ) {
   let cancelled = false;
+  onConnectionChange?.({
+    transport: 'polling',
+    status: 'polling',
+    message: reason,
+  });
+
   const poll = async () => {
     try {
       const response = await safeJsonFetch<any>(API_ROUTES.auditStatus(auditId));
       if (!cancelled && response.success) {
         callback(response.data.data || response.data);
+        onConnectionChange?.({
+          transport: 'polling',
+          status: 'polling',
+          message: reason,
+          lastUpdateAt: Date.now(),
+        });
+      } else if (!cancelled && !response.success) {
+        const message = (response as any).error || 'Audit status polling failed.';
+        onConnectionChange?.({
+          transport: 'polling',
+          status: 'error',
+          message,
+          lastUpdateAt: Date.now(),
+        });
+        onError?.(new Error(message));
       }
     } catch (error: any) {
-      onError?.(error instanceof Error ? error : new Error(String(error)));
+      const nextError = error instanceof Error ? error : new Error(String(error));
+      onConnectionChange?.({
+        transport: 'polling',
+        status: 'error',
+        message: nextError.message,
+        lastUpdateAt: Date.now(),
+      });
+      onError?.(nextError);
     }
   };
   const interval = window.setInterval(poll, AUDIT_LIMITS.livePollIntervalMs);
@@ -148,11 +187,18 @@ export function subscribeToAuditLiveData(
   auditId: string,
   callback: (data: ResourceAuditLiveData) => void,
   onError?: (error: Error) => void,
+  onConnectionChange?: (state: LiveAuditConnectionState) => void,
 ) {
   const client = getSupabaseBrowserClient();
 
   if (!client) {
-    return pollAuditLiveData(auditId, callback, onError);
+    return pollAuditLiveData(
+      auditId,
+      callback,
+      onError,
+      onConnectionChange,
+      'Supabase browser env vars are missing, so live updates are using HTTP polling.',
+    );
   }
 
   let liveData: ResourceAuditLiveData = {
@@ -165,12 +211,42 @@ export function subscribeToAuditLiveData(
 
   const emit = () => callback(liveData);
   let closed = false;
+  let fallbackUnsubscribe: (() => void) | null = null;
+  let websocketConnected = false;
+
+  onConnectionChange?.({
+    transport: 'websocket',
+    status: 'connecting',
+    message: 'Opening Supabase Realtime WebSocket for this audit.',
+  });
+
+  const emitLiveData = () => {
+    emit();
+    const usingFallback = Boolean(fallbackUnsubscribe);
+    onConnectionChange?.({
+      transport: usingFallback ? 'polling' : 'websocket',
+      status: usingFallback ? 'polling' : websocketConnected ? 'connected' : 'connecting',
+      message: usingFallback
+        ? 'Receiving live audit updates by HTTP polling.'
+        : websocketConnected
+          ? 'Receiving live audit updates over WebSocket.'
+          : 'Loaded the audit snapshot. Waiting for the WebSocket subscription.',
+      lastUpdateAt: Date.now(),
+    });
+  };
+
+  const startPollingFallback = (message: string) => {
+    if (closed || fallbackUnsubscribe) return;
+    fallbackUnsubscribe = pollAuditLiveData(auditId, callback, onError, onConnectionChange, message);
+  };
 
   safeJsonFetch<any>(API_ROUTES.auditStatus(auditId))
     .then((response) => {
       if (!closed && response.success) {
         liveData = response.data.data || response.data;
-        emit();
+        emitLiveData();
+      } else if (!closed && !response.success) {
+        onError?.(new Error((response as any).error || 'Failed to load audit status snapshot.'));
       }
     })
     .catch((error: any) => onError?.(error instanceof Error ? error : new Error(String(error))));
@@ -179,14 +255,14 @@ export function subscribeToAuditLiveData(
     .channel(`audit-live:${auditId}`)
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'audits', filter: `id=eq.${auditId}` }, (payload) => {
       liveData = { ...liveData, audit: toAuditDocument(payload.new as DbRow) };
-      emit();
+      emitLiveData();
     })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audit_events', filter: `audit_id=eq.${auditId}` }, (payload) => {
       liveData = {
         ...liveData,
         latestEvents: upsertById(liveData.latestEvents, toAuditEvent(payload.new as DbRow), 50),
       };
-      emit();
+      emitLiveData();
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'audit_pages', filter: `audit_id=eq.${auditId}` }, (payload) => {
       if (payload.eventType === 'DELETE') return;
@@ -194,31 +270,69 @@ export function subscribeToAuditLiveData(
         ...liveData,
         latestPages: upsertById(liveData.latestPages, toAuditPage(payload.new as DbRow), 100),
       };
-      emit();
+      emitLiveData();
     })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audit_issues', filter: `audit_id=eq.${auditId}` }, (payload) => {
       liveData = {
         ...liveData,
         latestIssues: upsertById(liveData.latestIssues, toAuditIssue(payload.new as DbRow), 100),
       };
-      emit();
+      emitLiveData();
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'audit_reports', filter: `audit_id=eq.${auditId}` }, (payload) => {
       if (payload.eventType === 'DELETE') return;
       liveData = { ...liveData, finalReport: toAuditReport(payload.new as DbRow) };
-      emit();
+      emitLiveData();
     })
     .subscribe((status, error) => {
       if (error) {
         onError?.(error);
       }
+      if (status === 'SUBSCRIBED') {
+        websocketConnected = true;
+        onConnectionChange?.({
+          transport: 'websocket',
+          status: 'connected',
+          message: 'Supabase Realtime WebSocket is connected.',
+          lastUpdateAt: Date.now(),
+        });
+      }
       if (status === 'CHANNEL_ERROR') {
+        websocketConnected = false;
         onError?.(new Error('Supabase Realtime channel error'));
+        onConnectionChange?.({
+          transport: 'websocket',
+          status: 'error',
+          message: 'Supabase Realtime channel error. Falling back to HTTP polling.',
+          lastUpdateAt: Date.now(),
+        });
+        startPollingFallback('Supabase Realtime channel failed, so live updates are using HTTP polling.');
+      }
+      if (status === 'TIMED_OUT') {
+        websocketConnected = false;
+        onConnectionChange?.({
+          transport: 'websocket',
+          status: 'reconnecting',
+          message: 'Supabase Realtime timed out. Falling back to HTTP polling while it reconnects.',
+          lastUpdateAt: Date.now(),
+        });
+        startPollingFallback('Supabase Realtime timed out, so live updates are using HTTP polling.');
+      }
+      if (status === 'CLOSED' && !closed) {
+        websocketConnected = false;
+        onConnectionChange?.({
+          transport: 'websocket',
+          status: 'closed',
+          message: 'Supabase Realtime channel closed. Falling back to HTTP polling.',
+          lastUpdateAt: Date.now(),
+        });
+        startPollingFallback('Supabase Realtime closed, so live updates are using HTTP polling.');
       }
     });
 
   return () => {
     closed = true;
+    fallbackUnsubscribe?.();
     client.removeChannel(channel);
   };
 }

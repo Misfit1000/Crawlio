@@ -43,6 +43,7 @@ git diff --check
 
 - Apply `supabase/migrations/001_resource_light_audit.sql`.
 - Confirm Supabase Realtime is enabled for audit tables.
+- Confirm the live audit page shows `WebSocket live` after opening an audit.
 - Confirm RLS is enabled on audit tables.
 - Confirm anon clients can read audit progress and enqueue audits only.
 - Confirm privileged writes use the service role key only from API/worker environments.
@@ -54,7 +55,8 @@ git diff --check
 3. Confirm the worker picks it up.
 4. Confirm current page URL updates.
 5. Confirm current check updates.
-6. Confirm issue feed updates.
-7. Confirm final report appears.
-8. Confirm JSON/pages CSV/issues CSV exports work.
-9. Confirm cancel works for a queued audit.
+6. Confirm the `Working now` panel updates phase, action, and target URL.
+7. Confirm issue feed updates.
+8. Confirm final report appears.
+9. Confirm JSON/pages CSV/issues CSV exports work.
+10. Confirm cancel works for a queued audit.

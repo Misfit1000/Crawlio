@@ -6,7 +6,7 @@ SEOIntel is a lightweight SEO, performance, crawlability, reporting, and passive
 
 - Vercel handles the frontend, dashboard UI, landing page, report pages, and lightweight job APIs.
 - Supabase/Postgres stores audit jobs, live events, crawled page summaries, issues, final reports, and user/project data.
-- Supabase Realtime powers live audit updates in the browser.
+- Supabase Realtime powers live audit updates in the browser over WebSocket.
 - A separate Node audit worker handles crawling, checks, progress writes, and report generation.
 
 Vercel API routes create, read, cancel, and export jobs only. They must not run long multi-page crawls.
@@ -58,9 +58,9 @@ Progress is work-based:
 - security checks: 75-90%
 - scoring/report: 90-100%
 
-The frontend listens to Supabase Realtime updates for the audit row plus latest events, pages, issues, and final report. The live client falls back to lightweight status polling when Supabase browser env vars are absent during local tests.
+The frontend listens to Supabase Realtime WebSocket updates for the audit row plus latest events, pages, issues, and final report. The live client shows the current connection state and falls back to lightweight status polling when Supabase browser env vars are absent or the Realtime channel fails.
 
-The live page shows the submitted input, normalized URL, final URL, hostname, mode, status, current phase, current URL, current check, pages crawled/page limit, issues found, elapsed time, live pages, live issues, timeline, and a Stop Audit button.
+The live page shows the submitted input, normalized URL, final URL, hostname, mode, status, current phase, current URL, current check, pages crawled/page limit, issues found, elapsed time, live pages, live issues, timeline, WebSocket/polling status, the current worker action, and a Stop Audit button.
 
 ## Reports And Exports
 

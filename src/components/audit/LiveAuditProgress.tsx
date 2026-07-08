@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Clock, FileDown, Loader2, ShieldAlert, StopCircle } from 'lucide-react';
+import { Activity, AlertTriangle, CheckCircle2, Clock, FileDown, Loader2, Radio, ShieldAlert, StopCircle, Wifi, WifiOff } from 'lucide-react';
 import type { ResourceAuditLiveData } from '../../lib/audit/resource-types';
+import type { LiveAuditConnectionState } from '../../lib/audit/live-supabase-client';
 import { AUDIT_LIMITS, getAuditModeLabel } from '../../lib/audit/audit-config';
 import { API_ROUTES } from '../../lib/api/routes';
 import { safeJsonFetch } from '../../lib/http/safe-json';
@@ -31,15 +32,35 @@ function severityClass(severity: string) {
   return 'bg-muted text-muted-foreground border-border';
 }
 
+function formatLastUpdate(lastUpdateAt: number | undefined, now: number) {
+  if (!lastUpdateAt) return 'waiting for first update';
+  const seconds = Math.max(0, Math.floor((now - lastUpdateAt) / 1000));
+  if (seconds < 2) return 'updated now';
+  if (seconds < 60) return `updated ${seconds}s ago`;
+  return `updated ${Math.floor(seconds / 60)}m ago`;
+}
+
 export function LiveAuditProgress({ auditId, onComplete }: Props) {
   const [data, setData] = useState<ResourceAuditLiveData>({ audit: null, latestEvents: [], latestPages: [], latestIssues: [] });
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
+  const [connection, setConnection] = useState<LiveAuditConnectionState>({
+    transport: 'websocket',
+    status: 'connecting',
+    message: 'Opening live audit connection.',
+  });
   const [now, setNow] = useState(Date.now());
   const [isCancelling, setIsCancelling] = useState(false);
 
   useEffect(() => {
     let isActive = true;
     let unsubscribe = () => {};
+    setWarning(null);
+    setConnection({
+      transport: 'websocket',
+      status: 'connecting',
+      message: 'Opening live audit connection.',
+    });
 
     import('../../lib/audit/live-supabase-client')
       .then(({ subscribeToAuditLiveData }) => {
@@ -52,7 +73,13 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
               onComplete?.();
             }
           },
-          (err) => setError(err.message),
+          (err) => setWarning(err.message),
+          (nextConnection) => {
+            setConnection(nextConnection);
+            if (nextConnection.status !== 'error') {
+              setWarning(null);
+            }
+          },
         );
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load live audit client'));
@@ -69,6 +96,52 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
   }, []);
 
   const audit = data.audit;
+  const latestEvent = data.latestEvents[data.latestEvents.length - 1];
+  const currentWork = useMemo(() => {
+    if (!audit) {
+      return {
+        phase: 'Connecting',
+        action: 'Loading audit snapshot',
+        target: auditId,
+        message: connection.message,
+      };
+    }
+
+    if (audit.status === 'completed') {
+      return {
+        phase: 'Completed',
+        action: 'Final report is ready',
+        target: audit.finalUrl || audit.normalizedUrl,
+        message: latestEvent?.message || 'Audit completed.',
+      };
+    }
+
+    if (audit.status === 'failed') {
+      return {
+        phase: 'Failed',
+        action: audit.error || 'Audit failed',
+        target: audit.currentUrl || audit.normalizedUrl,
+        message: latestEvent?.message || audit.error || 'The worker stopped before completing this audit.',
+      };
+    }
+
+    if (audit.status === 'cancelled') {
+      return {
+        phase: 'Cancelled',
+        action: 'Audit stopped',
+        target: audit.currentUrl || audit.normalizedUrl,
+        message: latestEvent?.message || 'The audit was cancelled.',
+      };
+    }
+
+    return {
+      phase: audit.currentPhase || latestEvent?.phase || 'Queued',
+      action: audit.currentCheck || latestEvent?.checkTitle || latestEvent?.message || 'Waiting for worker',
+      target: audit.currentUrl || latestEvent?.currentUrl || latestEvent?.affectedUrl || audit.normalizedUrl,
+      message: latestEvent?.message || (audit.status === 'queued' ? 'Queued for the audit worker.' : 'Worker is updating live progress.'),
+    };
+  }, [audit, auditId, connection.message, latestEvent]);
+
   const queuedTooLong = useMemo(() => {
     if (!audit || audit.status !== 'queued') return false;
     return now - new Date(audit.createdAt).getTime() > AUDIT_LIMITS.noWorkerWarningMs;
@@ -96,9 +169,23 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
 
   if (!audit) {
     return (
-      <div className="bg-card border border-border rounded-xl p-6 flex items-center gap-3 text-muted-foreground">
-        <Loader2 className="w-5 h-5 animate-spin text-accent" />
-        Loading audit status...
+      <div className="bg-card border border-border rounded-xl p-6 space-y-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3 text-muted-foreground">
+            <Loader2 className="w-5 h-5 animate-spin text-accent" />
+            <div>
+              <div className="font-medium text-foreground">Connecting to live audit...</div>
+              <div className="text-sm break-all">Audit ID: {auditId}</div>
+            </div>
+          </div>
+          <ConnectionBadge connection={connection} now={now} />
+        </div>
+        <CurrentWorkCard currentWork={currentWork} connection={connection} now={now} />
+        {warning && (
+          <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-700 text-sm">
+            {warning}
+          </div>
+        )}
       </div>
     );
   }
@@ -114,6 +201,7 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
             <p className="text-muted-foreground break-all">{audit.normalizedUrl}</p>
           </div>
           <div className="flex items-center gap-2">
+            <ConnectionBadge connection={connection} now={now} />
             {data.finalReport && (
               <a href={API_ROUTES.auditExport(auditId, 'json')} className="px-3 py-2 rounded-lg border border-border text-sm flex items-center gap-2 hover:bg-muted">
                 <FileDown className="w-4 h-4" /> JSON
@@ -140,6 +228,14 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
           <span>{audit.currentPhase || 'Queued'}</span>
           <span className="font-mono text-foreground">{Math.round(progress)}%</span>
         </div>
+
+        <CurrentWorkCard currentWork={currentWork} connection={connection} now={now} />
+
+        {warning && (
+          <div className="mt-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-700 text-sm">
+            {warning}
+          </div>
+        )}
 
         {queuedTooLong && (
           <div className="mt-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-700 text-sm">
@@ -254,11 +350,73 @@ export function LiveAuditProgress({ auditId, onComplete }: Props) {
   );
 }
 
+function ConnectionBadge({ connection, now }: { connection: LiveAuditConnectionState; now: number }) {
+  const isWebSocket = connection.transport === 'websocket';
+  const isHealthy = connection.status === 'connected' || connection.status === 'polling';
+  const isConnecting = connection.status === 'connecting' || connection.status === 'reconnecting';
+  const Icon = isWebSocket ? Wifi : isHealthy ? Radio : WifiOff;
+  const label = isWebSocket
+    ? connection.status === 'connected'
+      ? 'WebSocket live'
+      : connection.status === 'connecting'
+        ? 'WebSocket connecting'
+        : connection.status === 'reconnecting'
+          ? 'WebSocket reconnecting'
+          : 'WebSocket issue'
+    : 'Polling fallback';
+
+  const colorClass = isHealthy
+    ? 'border-green-500/20 bg-green-500/10 text-green-700'
+    : isConnecting
+      ? 'border-blue-500/20 bg-blue-500/10 text-blue-700'
+      : 'border-yellow-500/20 bg-yellow-500/10 text-yellow-700';
+
+  return (
+    <div className={`rounded-lg border px-3 py-2 text-xs ${colorClass}`} title={connection.message}>
+      <div className="flex items-center gap-2 font-medium whitespace-nowrap">
+        <Icon className="w-4 h-4" />
+        {label}
+      </div>
+      <div className="mt-0.5 text-[11px] opacity-80">{formatLastUpdate(connection.lastUpdateAt, now)}</div>
+    </div>
+  );
+}
+
+function CurrentWorkCard({
+  currentWork,
+  connection,
+  now,
+}: {
+  currentWork: { phase: string; action: string; target: string; message: string };
+  connection: LiveAuditConnectionState;
+  now: number;
+}) {
+  return (
+    <div className="mt-5 rounded-xl border border-border bg-muted/20 p-4">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-2 font-semibold">
+          <Activity className="w-4 h-4 text-accent" />
+          Working now
+        </div>
+        <div className="text-xs text-muted-foreground">{formatLastUpdate(connection.lastUpdateAt, now)}</div>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3 text-sm">
+        <Info label="Phase" value={currentWork.phase} />
+        <Info label="Action" value={currentWork.action} />
+        <Info label="Target" value={currentWork.target || 'Waiting for worker'} />
+      </div>
+      <div className="mt-3 rounded-lg border border-border bg-background/70 p-3 text-sm text-muted-foreground break-all">
+        {currentWork.message}
+      </div>
+    </div>
+  );
+}
+
 function Info({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg border border-border bg-muted/20 p-3 min-w-0">
       <div className="text-muted-foreground">{label}</div>
-      <div className="font-medium break-all capitalize">{value}</div>
+      <div className="font-medium break-all">{value}</div>
     </div>
   );
 }
