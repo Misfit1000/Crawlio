@@ -1,9 +1,10 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { normalizeSupabaseProjectUrl } from './url';
 
 let cachedClient: SupabaseClient | null | undefined;
 
 export function hasSupabaseClientConfig() {
-  return Boolean(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY);
+  return Boolean(normalizeSupabaseProjectUrl(import.meta.env.VITE_SUPABASE_URL) && import.meta.env.VITE_SUPABASE_ANON_KEY);
 }
 
 export function getSupabaseBrowserClient() {
@@ -12,8 +13,9 @@ export function getSupabaseBrowserClient() {
   }
 
   if (cachedClient === undefined) {
+    const supabaseUrl = normalizeSupabaseProjectUrl(import.meta.env.VITE_SUPABASE_URL);
     cachedClient = createClient(
-      import.meta.env.VITE_SUPABASE_URL,
+      supabaseUrl,
       import.meta.env.VITE_SUPABASE_ANON_KEY,
       {
         auth: {

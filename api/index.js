@@ -771,18 +771,34 @@ var init_resource_types = __esm({
   }
 });
 
+// src/lib/supabase/url.ts
+function normalizeSupabaseProjectUrl(value) {
+  const trimmed = value?.trim();
+  if (!trimmed) return "";
+  try {
+    return new URL(trimmed).origin;
+  } catch {
+    return trimmed.replace(/\/+$/, "");
+  }
+}
+var init_url = __esm({
+  "src/lib/supabase/url.ts"() {
+  }
+});
+
 // src/lib/supabase/server.ts
 import { createClient } from "@supabase/supabase-js";
 function hasSupabaseServerConfig() {
-  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+  return Boolean(normalizeSupabaseProjectUrl(process.env.SUPABASE_URL) && process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 function getSupabaseAdminClient() {
   if (!hasSupabaseServerConfig()) {
     return null;
   }
   if (cachedClient === void 0) {
+    const supabaseUrl = normalizeSupabaseProjectUrl(process.env.SUPABASE_URL);
     cachedClient = createClient(
-      process.env.SUPABASE_URL,
+      supabaseUrl,
       process.env.SUPABASE_SERVICE_ROLE_KEY,
       {
         auth: {
@@ -797,6 +813,7 @@ function getSupabaseAdminClient() {
 var cachedClient;
 var init_server = __esm({
   "src/lib/supabase/server.ts"() {
+    init_url();
   }
 });
 
