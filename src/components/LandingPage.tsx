@@ -30,14 +30,14 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
           </div>
           
           <h1 className="text-5xl md:text-7xl font-bold tracking-tight font-display leading-[1.1]">
-            Find SEO, Technical, and Security Issues <br className="hidden md:block"/>
+            SEO, Performance & Security Audits <br className="hidden md:block"/>
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-accent to-blue-500">
-              Before They Cost You Traffic
+              in One Dashboard
             </span>
           </h1>
           
           <p className="text-xl md:text-2xl text-muted-foreground font-light max-w-3xl mx-auto leading-relaxed">
-            Run live website audits, crawl pages, detect technical SEO issues, check security headers, review performance signals, and export actionable reports — all from one dashboard.
+            Run live website audits, crawl pages in a worker, detect technical SEO issues, check passive security signals, review performance basics, and export actionable reports.
           </p>
 
           <form onSubmit={handleSubmit} className="mt-10 max-w-2xl mx-auto relative group">
@@ -49,7 +49,7 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
                   type="text"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
-                  placeholder="https://example.com"
+                  placeholder="example.com"
                   className="w-full bg-transparent border-none outline-none text-xl text-foreground placeholder:text-muted-foreground/50"
                   required
                 />
@@ -59,14 +59,14 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
                 type="submit"
                 className="w-full md:w-auto bg-accent text-accent-foreground hover:bg-accent/90 px-8 py-4 rounded-2xl font-bold transition-colors whitespace-nowrap flex items-center justify-center gap-2"
               >
-                Run Full Website Audit <ArrowRight className="w-5 h-5" />
+                Start Quick Audit <ArrowRight className="w-5 h-5" />
               </button>
             </div>
           </form>
 
           <div className="flex flex-wrap items-center justify-center gap-6 mt-8 text-sm font-medium text-muted-foreground">
             <div className="flex items-center gap-2"><CheckCircle /> No paid API required</div>
-            <div className="flex items-center gap-2"><CheckCircle /> Local active crawling</div>
+            <div className="flex items-center gap-2"><CheckCircle /> Worker-backed crawling</div>
             <div className="flex items-center gap-2"><CheckCircle /> Passive security checks</div>
           </div>
         </div>
@@ -86,19 +86,20 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
           <div className="p-8 grid md:grid-cols-4 gap-6 bg-background/50">
             <div className="col-span-4 flex justify-between items-center mb-4">
                <div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Demo preview</div>
                   <h3 className="text-2xl font-bold">Audit Progress: example.com</h3>
-                  <p className="text-muted-foreground">Scanning pages and analyzing issues...</p>
+                  <p className="text-muted-foreground">Showing sample live progress from a Quick Audit.</p>
                </div>
-               <div className="text-3xl font-mono text-accent font-bold">78%</div>
+               <div className="text-3xl font-mono text-accent font-bold">62%</div>
             </div>
             
             <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
               <p className="text-sm text-muted-foreground mb-1">Overall Health</p>
-              <div className="text-4xl font-bold text-yellow-500">82</div>
+              <div className="text-4xl font-bold text-yellow-500">84</div>
             </div>
             <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
               <p className="text-sm text-muted-foreground mb-1">Pages Crawled</p>
-              <div className="text-4xl font-bold text-accent">145 / 200</div>
+              <div className="text-4xl font-bold text-accent">7 / 10</div>
             </div>
             <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
               <p className="text-sm text-muted-foreground mb-1">Critical Issues</p>

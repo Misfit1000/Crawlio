@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Users, Activity, Settings, Database, ShieldAlert, Loader2, Search, Edit2, Trash2, Plus, X, MoreVertical, Shield, Folder, Key, Globe } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { getAllUsers, updateUserRole, deleteUserDoc, getAllProjects, getAllKeywords, getAllCompetitors, deleteAnyDocument, getPlatformSettings, updatePlatformSettings } from '../services/firestoreService';
+import { getAllUsers, updateUserRole, deleteUserDoc, getAllProjects, getAllKeywords, getAllCompetitors, deleteAnyDocument, getPlatformSettings, updatePlatformSettings } from '../services/supabaseDataService';
 
 type AdminTab = 'overview' | 'users' | 'content' | 'settings';
 
@@ -161,7 +161,7 @@ function AdminOverview() {
  </div>
  <div>
  <p className="text-sm font-bold text-foreground">Database Connection</p>
- <p className="text-xs text-muted-foreground">Firestore is connected and operational</p>
+ <p className="text-xs text-muted-foreground">Supabase is connected and operational</p>
  </div>
  <div className="ml-auto text-xs text-emerald-500 font-bold">Healthy</div>
  </div>
@@ -273,7 +273,7 @@ function AdminUsers() {
  </span>
  </td>
  <td className="px-6 py-4 text-muted-foreground font-bold">
- {u.createdAt ? new Date(u.createdAt.seconds * 1000).toLocaleDateString() : 'Unknown'}
+ {u.createdAt ? new Date(u.createdAt.seconds ? u.createdAt.seconds * 1000 : u.createdAt).toLocaleDateString() : 'Unknown'}
  </td>
  <td className="px-6 py-4 text-right">
  <div className="flex items-center justify-end gap-2">

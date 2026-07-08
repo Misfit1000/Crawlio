@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { runSecurityAudit } from '../audit-runner';
-import { normalizeDomainInput } from '../../seo/url-utils';
+import { normalizeUserUrl } from '../../seo/url-utils';
+import { auditRepository } from '../../supabase/audit-repository';
 
 
 function asyncJsonRoute(handler: any) {
@@ -24,14 +24,32 @@ export const securityRouter = Router();
 
 securityRouter.post('/run', asyncJsonRoute(async (req, res) => {
   try {
-    const { url, options } = req.body;
+    const { url, mode = 'quick' } = req.body;
     if (!url) return res.status(400).json({ success: false, error: 'URL is required' });
-    
-    let targetUrl = normalizeDomainInput(url);
-    
-    
-    const auditResult = await runSecurityAudit(targetUrl, options);
-    res.json({ success: true, data: auditResult });
+
+    const normalized = normalizeUserUrl(String(url));
+    if (!normalized.isValid) {
+      return res.status(400).json({ success: false, error: normalized.error || 'Invalid URL' });
+    }
+
+    const audit = await auditRepository.createAuditJob({
+      submittedInput: String(url).trim(),
+      normalizedUrl: normalized.normalizedUrl,
+      hostname: normalized.hostname,
+      mode,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        auditId: audit.id,
+        status: 'queued',
+        submittedInput: audit.submittedInput,
+        normalizedUrl: audit.normalizedUrl,
+        hostname: audit.hostname,
+        mode: audit.mode,
+      }
+    });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message || 'Internal Server Error' });
   }

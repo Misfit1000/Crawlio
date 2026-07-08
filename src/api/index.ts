@@ -1,13 +1,11 @@
 import { Router } from 'express';
-import { normalizeDomainInput } from '../lib/seo/url-utils';
-import { crawlDomain } from '../lib/seo/crawler';
-import { auditFullCrawl } from '../lib/seo/page-audit';
+import { normalizeDomainInput, normalizeUserUrl } from '../lib/seo/url-utils';
 import { generateKeywords } from '../lib/keywords/generator';
 import { clusterKeywords } from '../lib/keywords/clustering';
 import { buildContentBrief } from '../lib/keywords/content-brief';
-import { analyzeCompetitorGap } from '../lib/keywords/competitor-gap';
 import { auditStore } from '../lib/audit/audit-store';
-import { runAuditJob } from '../lib/audit/audit-runner';
+import { auditRepository } from '../lib/supabase/audit-repository';
+import { getAuditModeConfig, type AuditMode } from '../lib/audit/resource-types';
 
 
 function asyncJsonRoute(handler: any) {
@@ -29,33 +27,35 @@ function asyncJsonRoute(handler: any) {
 export const apiRouter = Router();
 
 
-apiRouter.post('/audit/start', asyncJsonRoute((req, res) => {
+apiRouter.post('/audit/start', asyncJsonRoute(async (req, res) => {
   try {
-    const { url, maxPages, type = 'seo' } = req.body;
-    const targetUrl = normalizeDomainInput(url);
-    if (!url) return res.status(400).json({ success: false, error: 'URL is required' });
-    
-    // We assume auditStore was updated to support createAudit(url, type) or similar, but let's check
-    const auditId = typeof auditStore.createAudit === 'function' 
-      ? auditStore.createAudit({ url: targetUrl, type })
-      : auditStore.createJob(targetUrl); 
-      
-    // Start job asynchronously
-    if (type === 'security') {
-      import('../lib/security/audit-runner').then(m => {
-        m.runSecurityAudit(targetUrl, { auditId }).catch(console.error);
-      });
-    } else {
-      runAuditJob(auditId, maxPages || 25);
+    const { url, mode = 'quick', userId = null, projectId = null } = req.body || {};
+    const normalized = normalizeUserUrl(String(url || ''));
+    if (!normalized.isValid) {
+      return res.status(400).json({ success: false, error: normalized.error || 'Invalid URL' });
     }
-    
-    res.json({ success: true, data: { 
-      auditId: auditId || auditId, 
-      status: "queued",
-      eventsUrl: `/api/tools/audit/events/${auditId}`,
-      statusUrl: `/api/tools/audit/status/${auditId}`,
-      resultUrl: `/api/tools/audit/result/${auditId}` 
-    } });
+
+    const config = getAuditModeConfig(mode);
+    const audit = await auditRepository.createAuditJob({
+      submittedInput: String(url || '').trim(),
+      normalizedUrl: normalized.normalizedUrl,
+      hostname: normalized.hostname,
+      mode: config.mode as AuditMode,
+      userId,
+      projectId,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        auditId: audit.id,
+        status: 'queued',
+        submittedInput: audit.submittedInput,
+        normalizedUrl: audit.normalizedUrl,
+        hostname: audit.hostname,
+        mode: audit.mode,
+      }
+    });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message || 'Internal Server Error' });
   }
@@ -112,50 +112,64 @@ apiRouter.get('/audit/events/:id', asyncJsonRoute((req, res) => {
 }));
 
 
-apiRouter.get('/audit/status/:id', asyncJsonRoute((req, res) => {
+apiRouter.get('/audit/status/:id', asyncJsonRoute(async (req, res) => {
   try {
-    const job = typeof auditStore.getAudit === 'function' ? auditStore.getAudit(req.params.id) : auditStore.getJob(req.params.id);
-    if (!job) return res.status(404).json({ success: false, error: 'Audit not found' });
-    
-    const events = typeof auditStore.getAuditEvents === 'function' ? auditStore.getAuditEvents(req.params.id) : [];
-    
-    res.json({ success: true, data: { 
-      id: job.id || job.jobId, 
-      status: job.status, 
-      progress: job.progress || 0,
-      currentStep: job.currentStep,
-      pagesDiscovered: job.pagesDiscovered,
-      pagesCrawled: job.pagesCrawled,
-      checksTotal: job.checksTotal,
-      checksCompleted: job.checksCompleted,
-      issuesFound: job.issuesFound,
-      latestEvents: events.slice(-10),
-      resultAvailable: job.status === 'completed'
-    } });
+    const liveData = await auditRepository.getLiveData(req.params.id);
+    if (!liveData.audit) return res.status(404).json({ success: false, error: 'Audit not found' });
+    res.json({ success: true, data: liveData });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message || 'Internal Server Error' });
   }
 }));
 
-apiRouter.get('/audit/result/:id', asyncJsonRoute((req, res) => {
+apiRouter.post('/audit/cancel/:id', asyncJsonRoute(async (req, res) => {
+  const audit = await auditRepository.getAudit(req.params.id);
+  if (!audit) return res.status(404).json({ success: false, error: 'Audit not found' });
+  await auditRepository.cancelAudit(req.params.id);
+  res.json({ success: true, data: { auditId: req.params.id, status: 'cancelled' } });
+}));
+
+apiRouter.get('/audit/result/:id', asyncJsonRoute(async (req, res) => {
   try {
-    const job = auditStore.getJob(req.params.id);
-    if (!job) return res.status(404).json({ success: false, error: 'Job not found' });
-    res.json({ success: true, data: job });
+    const liveData = await auditRepository.getLiveData(req.params.id);
+    if (!liveData.audit) return res.status(404).json({ success: false, error: 'Audit not found' });
+    res.json({ success: true, data: liveData });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message || 'Internal Server Error' });
   }
+}));
+
+apiRouter.get('/audit/export/:id/:format', asyncJsonRoute(async (req, res) => {
+  const { id, format } = req.params;
+  const liveData = await auditRepository.getLiveData(id);
+  if (!liveData.audit) return res.status(404).json({ success: false, error: 'Audit not found' });
+
+  if (format === 'json') {
+    return res.json({ success: true, data: liveData.finalReport || liveData });
+  }
+
+  if (format === 'issues.csv') {
+    const header = 'severity,category,title,affectedUrl,evidence,recommendation\n';
+    const rows = liveData.latestIssues.map((issue) => [issue.severity, issue.category, issue.title, issue.affectedUrl, issue.evidence, issue.recommendation]
+      .map((value) => `"${String(value || '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    return res.send(header + rows);
+  }
+
+  if (format === 'pages.csv') {
+    const header = 'statusCode,url,responseTimeMs,pageSizeBytes,title,wordCount,crawlDepth,issueCount\n';
+    const rows = liveData.latestPages.map((page) => [page.statusCode, page.url, page.responseTimeMs, page.pageSizeBytes, page.title, page.wordCount, page.crawlDepth, page.issueCount]
+      .map((value) => `"${String(value || '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    return res.send(header + rows);
+  }
+
+  return res.status(400).json({ success: false, error: 'Unsupported export format' });
 }));
 
 apiRouter.post('/audit/rerun/:id', asyncJsonRoute((req, res) => {
   try {
-    const job = auditStore.getJob(req.params.id);
-    if (!job) return res.status(404).json({ success: false, error: 'Job not found' });
-    
-    auditStore.updateJob(job.jobId, { status: 'pending', pagesCrawled: 0, error: undefined });
-    runAuditJob(job.jobId, 25);
-    
-    res.json({ success: true, data: { success: true } });
+    return res.status(409).json({ success: false, error: 'Rerun is disabled for worker-backed audits. Start a new audit instead.' });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message || 'Internal Server Error' });
   }
@@ -175,57 +189,30 @@ apiRouter.post('/keyword/research', asyncJsonRoute((req, res) => {
 
 apiRouter.post('/website/analyze', asyncJsonRoute(async (req, res) => {
   try {
-    const { url, maxPages } = req.body;
-    const targetUrl = normalizeDomainInput(url);
-    if (!url) return res.status(400).json({ success: false, error: 'URL is required' });
-    
-    // Create an audit job for website analyze
-    const auditId = typeof auditStore.createAudit === 'function' 
-      ? auditStore.createAudit({ url: targetUrl, type: 'seo' }) // acts like SEO
-      : auditStore.createJob(targetUrl);
-      
-    // Run in background
-    setTimeout(async () => {
-      try {
-        const { eventEmitter } = require('../lib/audit/event-emitter');
-        auditStore.updateJob(auditId, { status: 'crawling' });
-        eventEmitter.emitAuditEvent(auditId, { type: 'audit_started', message: 'Starting website analyzer', progress: 5, step: 'Crawling ' + targetUrl });
-        
-        eventEmitter.emitStepStarted(auditId, 'Crawling', 'Crawling website');
-        const crawls = await crawlDomain(targetUrl, { maxPages: maxPages || 25, auditId });
-        eventEmitter.emitStepCompleted(auditId, 'Crawling', 'Crawling complete');
-        
-        eventEmitter.emitStepStarted(auditId, 'Analyzing', 'Analyzing pages');
-        const audit = auditFullCrawl(crawls);
-        eventEmitter.emitStepCompleted(auditId, 'Analyzing', 'Analysis complete');
-        
-        const initialCrawl = crawls.find(c => c.url === targetUrl || c.finalUrl === targetUrl) || crawls[0];
-        
-        auditStore.updateJob(auditId, {
-          status: 'completed',
-          completedAt: new Date().toISOString(),
-          crawledPages: crawls.length as any,
-          data: initialCrawl?.data, 
-          fullAudit: audit,
-          audit: audit.pageResults.find(p => p.url === initialCrawl?.url)?.audit || audit.pageResults[0]?.audit
-        });
-        
-        eventEmitter.emitAuditCompleted(auditId);
-      } catch(e: any) {
-         auditStore.updateJob(auditId, { status: 'failed', error: e.message });
-         const { eventEmitter } = require('../lib/audit/event-emitter');
-         eventEmitter.emitAuditFailed(auditId, e.message);
-      }
-    }, 0);
-    
-    res.json({ 
-      success: true, 
+    const { url, mode = 'standard' } = req.body || {};
+    const normalized = normalizeUserUrl(String(url || ''));
+    if (!normalized.isValid) {
+      return res.status(400).json({ success: false, error: normalized.error || 'Invalid URL' });
+    }
+
+    const config = getAuditModeConfig(mode);
+    const audit = await auditRepository.createAuditJob({
+      submittedInput: String(url || '').trim(),
+      normalizedUrl: normalized.normalizedUrl,
+      hostname: normalized.hostname,
+      mode: config.mode,
+    });
+
+    res.json({
+      success: true,
       data: {
-        auditId: auditId,
-        eventsUrl: `/api/tools/audit/events/${auditId}`,
-        statusUrl: `/api/tools/audit/status/${auditId}`,
-        resultUrl: `/api/tools/audit/result/${auditId}`
-      } 
+        auditId: audit.id,
+        status: 'queued',
+        submittedInput: audit.submittedInput,
+        normalizedUrl: audit.normalizedUrl,
+        hostname: audit.hostname,
+        mode: audit.mode,
+      }
     });
   } catch(e: any) {
     res.status(500).json({ success: false, error: e.message || 'Internal Server Error' });
@@ -257,78 +244,8 @@ apiRouter.post('/content-brief', asyncJsonRoute((req, res) => {
 }));
 
 apiRouter.post('/competitor-gap', asyncJsonRoute(async (req, res) => {
-  try {
-    const { myUrl: rawMyUrl, competitorUrls: rawCompUrls, maxPages } = req.body;
-    const myUrl = normalizeDomainInput(rawMyUrl);
-    const competitorUrls = (rawCompUrls || []).map((u: string) => normalizeDomainInput(u));
-    if (!myUrl) return res.status(400).json({ success: false, error: 'My URL is required' });
-    
-    // Create an audit job for competitor gap
-    const auditId = typeof auditStore.createAudit === 'function' 
-      ? auditStore.createAudit({ url: myUrl, type: 'competitor-gap' })
-      : auditStore.createJob(myUrl);
-      
-    // Run in background
-    setTimeout(async () => {
-      try {
-        const { eventEmitter } = require('../lib/audit/event-emitter');
-        auditStore.updateJob(auditId, { status: 'crawling' });
-        eventEmitter.emitAuditEvent(auditId, { type: 'audit_started', message: 'Starting competitor gap analysis', progress: 5, step: 'Crawling ' + myUrl });
-        
-        const myCrawls = await crawlDomain(myUrl, { maxPages: maxPages || 25, auditId });
-        const myPhrases = new Set<string>();
-        myCrawls.forEach(c => c.data?.topPhrases.forEach(p => myPhrases.add(p)));
-        myCrawls.forEach(c => c.data?.topKeywords.forEach(p => myPhrases.add(p)));
-        const myKeywords = Array.from(myPhrases);
-        
-        const competitorKeywords: Record<string, string[]> = {};
-        const crawledCounts: Record<string, number> = {};
-        crawledCounts[myUrl] = myCrawls.length;
-        
-        for (const url of (competitorUrls || [])) {
-          let domain = url;
-          try { domain = new URL(url).hostname; } catch(e){}
-          
-          eventEmitter.emitStepStarted(auditId, 'Crawling ' + domain, 'Fetching competitor data for ' + domain);
-          const crawls = await crawlDomain(url, { maxPages: maxPages || 25, auditId });
-          const phrases = new Set<string>();
-          crawls.forEach(c => c.data?.topPhrases.forEach(p => phrases.add(p)));
-          crawls.forEach(c => c.data?.topKeywords.forEach(p => phrases.add(p)));
-          competitorKeywords[domain] = Array.from(phrases);
-          crawledCounts[url] = crawls.length;
-          
-          eventEmitter.emitStepCompleted(auditId, 'Crawling ' + domain, 'Crawled ' + domain);
-        }
-        
-        eventEmitter.emitStepStarted(auditId, 'Analyzing', 'Analyzing gap');
-        const gaps = analyzeCompetitorGap(myKeywords, competitorKeywords);
-        eventEmitter.emitStepCompleted(auditId, 'Analyzing', 'Analysis complete');
-        
-        auditStore.updateJob(auditId, {
-          status: 'completed',
-          completedAt: new Date().toISOString(),
-          gaps,
-          crawledCounts
-        });
-        
-        eventEmitter.emitAuditCompleted(auditId);
-      } catch(e: any) {
-         auditStore.updateJob(auditId, { status: 'failed', error: e.message });
-         const { eventEmitter } = require('../lib/audit/event-emitter');
-         eventEmitter.emitAuditFailed(auditId, e.message);
-      }
-    }, 0);
-    
-    res.json({ 
-      success: true, 
-      data: {
-        auditId: auditId,
-        eventsUrl: `/api/tools/audit/events/${auditId}`,
-        statusUrl: `/api/tools/audit/status/${auditId}`,
-        resultUrl: `/api/tools/audit/result/${auditId}`
-      } 
-    });
-  } catch(e: any) {
-    res.status(500).json({ success: false, error: e.message || 'Internal Server Error' });
-  }
+  return res.status(501).json({
+    success: false,
+    error: 'Competitor Gap is temporarily disabled while worker-backed analysis is being enabled.',
+  });
 }));

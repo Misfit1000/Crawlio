@@ -1,8 +1,11 @@
 node_modules/
 build/
 dist/
+.vercel/
+.supabase/
 coverage/
 .DS_Store
 *.log
+auth.db
 .env*
 !.env.example

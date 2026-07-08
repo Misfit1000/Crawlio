@@ -1,6 +1,5 @@
 import { API_ROUTES } from '../lib/api/routes';
 import { safeJsonFetch } from '../lib/http/safe-json';
-import { normalizeDomainInput } from '../lib/seo/url-utils';
 import React, { useState } from 'react';
 import { LiveAuditProgress } from './audit/LiveAuditProgress';
 import { Globe, Loader2, FileText, AlertTriangle, CheckCircle2, Layers } from 'lucide-react';
@@ -9,7 +8,7 @@ import { AuditResult } from '../lib/audit/types';
 
 export default function WebsiteAnalyzer() {
   const [url, setUrl] = useState('');
-  const [maxPages, setMaxPages] = useState(25);
+  const [mode, setMode] = useState<'quick' | 'standard' | 'deep'>('standard');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ 
     data: ParsedPageData, 
@@ -25,8 +24,6 @@ export default function WebsiteAnalyzer() {
     e.preventDefault();
     if (!url.trim()) return;
 
-    let targetUrl = normalizeDomainInput(url);
-
     setLoading(true);
     setError(null);
     setAuditId(null);
@@ -36,12 +33,15 @@ export default function WebsiteAnalyzer() {
       const dataResp = await safeJsonFetch<any>(API_ROUTES.websiteAnalyze, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: targetUrl, maxPages })
+        body: JSON.stringify({ url: url.trim(), mode })
       });
       const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
       if (!data.success) throw new Error(data.error || 'Failed to analyze website');
       
-      setAuditId(data.data.auditId);
+      const nextAuditId = data.data.auditId;
+      setAuditId(nextAuditId);
+      window.history.pushState(null, '', `/audit/live/${nextAuditId}`);
+      window.dispatchEvent(new CustomEvent('navigate-live-audit', { detail: nextAuditId }));
       setLoading(false);
     } catch (err: any) {
       setError(err.message);
@@ -98,16 +98,17 @@ export default function WebsiteAnalyzer() {
               className="w-full bg-muted/50 border border-border rounded-xl py-3 pl-10 pr-4 outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
             />
           </div>
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium whitespace-nowrap">Crawl Limit:</label>
-            <input 
-              type="number" 
-              value={maxPages} 
-              onChange={e => setMaxPages(parseInt(e.target.value))} 
-              className="w-20 bg-muted/50 border border-border rounded-xl py-3 px-3 outline-none focus:border-accent" 
-              min={1} 
-              max={100}
-            />
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium whitespace-nowrap">Audit Mode</label>
+            <select
+              value={mode}
+              onChange={e => setMode(e.target.value as any)}
+              className="bg-muted/50 border border-border rounded-xl py-3 px-3 outline-none focus:border-accent"
+            >
+              <option value="quick">Quick - 10 pages</option>
+              <option value="standard">Standard - 25 pages</option>
+              <option value="deep">Deep - 50 pages</option>
+            </select>
           </div>
           <button
             type="submit"
@@ -118,6 +119,11 @@ export default function WebsiteAnalyzer() {
             Analyze
           </button>
         </form>
+        {mode === 'deep' && (
+          <div className="mt-3 text-sm text-yellow-600 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
+            Deep audits may take longer and use more resources.
+          </div>
+        )}
       </div>
 
       {error && (

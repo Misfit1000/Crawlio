@@ -9,6 +9,8 @@ import CommandPalette from './components/CommandPalette';
 import LandingPage from './components/LandingPage';
 import { useAuth } from './contexts/AuthContext';
 import { useTheme } from './contexts/ThemeContext';
+import { API_ROUTES } from './lib/api/routes';
+import { safeJsonFetch } from './lib/http/safe-json';
 
 // Lazy load heavy components
 const Dashboard = lazy(() => import('./components/Dashboard'));
@@ -26,6 +28,7 @@ const Settings = lazy(() => import('./components/Settings'));
 const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
 const PublicDiscovery = lazy(() => import('./components/PublicDiscovery'));
 const SearchData = lazy(() => import('./components/SearchData'));
+const LiveAuditProgress = lazy(() => import('./components/audit/LiveAuditProgress').then((mod) => ({ default: mod.LiveAuditProgress })));
 
 export type TabType = 'dashboard' | 'keyword-research' | 'website-analyzer' | 'keyword-clusters' | 'competitor-gap' | 'content-briefs' | 'seo-audit' | 'security-audit' | 'rank-tracker' | 'imports' | 'reports' | 'settings' | 'admin-dashboard' | 'public-discovery' | 'search-data';
 
@@ -95,6 +98,11 @@ export default function App() {
   const [isLocating, setIsLocating] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [liveAuditId, setLiveAuditId] = useState<string | null>(() => {
+    const match = window.location.pathname.match(/^\/audit\/live\/([^/]+)/);
+    return match?.[1] || null;
+  });
+  const [startAuditError, setStartAuditError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadRecent = () => {
@@ -110,6 +118,23 @@ export default function App() {
     loadRecent();
     window.addEventListener('recentSearchesUpdated', loadRecent);
     return () => window.removeEventListener('recentSearchesUpdated', loadRecent);
+  }, []);
+
+  useEffect(() => {
+    const syncLiveRoute = () => {
+      const match = window.location.pathname.match(/^\/audit\/live\/([^/]+)/);
+      setLiveAuditId(match?.[1] || null);
+    };
+    const handleNavigate = (event: Event) => {
+      const auditId = (event as CustomEvent<string>).detail;
+      if (auditId) setLiveAuditId(auditId);
+    };
+    window.addEventListener('popstate', syncLiveRoute);
+    window.addEventListener('navigate-live-audit', handleNavigate);
+    return () => {
+      window.removeEventListener('popstate', syncLiveRoute);
+      window.removeEventListener('navigate-live-audit', handleNavigate);
+    };
   }, []);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>(() => {
@@ -257,6 +282,22 @@ export default function App() {
     }
   };
 
+  const startLiveAudit = async (rawUrl: string, mode: 'quick' | 'standard' | 'deep' = 'quick') => {
+    setStartAuditError(null);
+    const response = await safeJsonFetch<any>(API_ROUTES.auditStart, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: rawUrl, mode }),
+    });
+    if (!response.success) {
+      throw new Error((response as any).error || 'Failed to start audit');
+    }
+    const auditId = response.data.data?.auditId || response.data.auditId;
+    window.history.pushState(null, '', `/audit/live/${auditId}`);
+    setLiveAuditId(auditId);
+    setIsSearching(false);
+  };
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -290,6 +331,41 @@ export default function App() {
             Login
           </button>
         </motion.div>
+      </div>
+    );
+  }
+
+  if (liveAuditId) {
+    return (
+      <div className="min-h-screen bg-background text-foreground font-sans transition-colors duration-300">
+        <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border h-16 px-4 md:px-6 flex items-center justify-between">
+          <button
+            type="button"
+            className="flex items-center gap-2 text-foreground font-bold text-lg tracking-tight"
+            onClick={() => {
+              window.history.pushState(null, '', '/');
+              setLiveAuditId(null);
+              setIsSearching(false);
+            }}
+          >
+            <div className="bg-accent text-accent-foreground p-1.5 rounded-lg">
+              <TrendingUp className="w-5 h-5" />
+            </div>
+            <span className="text-xl">SEO<span className="text-accent">Intel</span></span>
+          </button>
+          <button
+            onClick={toggleTheme}
+            className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          >
+            {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          </button>
+        </header>
+        <main className="max-w-7xl mx-auto p-4 md:p-8">
+          <Suspense fallback={<div className="h-64 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-accent" /></div>}>
+            <LiveAuditProgress auditId={liveAuditId} />
+          </Suspense>
+        </main>
       </div>
     );
   }
@@ -442,17 +518,27 @@ export default function App() {
               </div>
 
               <LandingPage 
-                onStartAudit={(url) => {
-                  setKeyword(url);
-                  setSearchedKeyword(url);
-                  setActiveTab('seo-audit');
-                  setIsSearching(true);
+                onStartAudit={async (url) => {
+                  try {
+                    await startLiveAudit(url, 'quick');
+                  } catch (error: any) {
+                    setStartAuditError(error.message || 'Failed to start audit');
+                    setKeyword(url);
+                    setSearchedKeyword(url);
+                    setActiveTab('seo-audit');
+                    setIsSearching(true);
+                  }
                 }}
                 onExploreFeatures={() => {
                   setActiveTab('dashboard');
                   setIsSearching(true);
                 }}
               />
+              {startAuditError && (
+                <div className="mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-sm">
+                  {startAuditError}
+                </div>
+              )}
             </motion.div>
           ) : (
             <motion.div
