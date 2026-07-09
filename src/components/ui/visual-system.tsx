@@ -1,6 +1,8 @@
 import React from 'react';
 import { CheckCircle2, Globe, Monitor, Moon, Search, Smartphone, Sun, TrendingUp } from 'lucide-react';
 
+type VisualIcon = React.ComponentType<{ className?: string }>;
+
 export function SurfaceCard({
   children,
   className = '',
@@ -49,6 +51,204 @@ export function StatusBadge({
     accent: 'border-accent/20 bg-accent/10 text-accent',
   };
   return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${tones[tone]}`}>{children}</span>;
+}
+
+export function FeatureSuiteCard({
+  icon: Icon,
+  eyebrow,
+  title,
+  description,
+  status = 'Available',
+  points = [],
+  cta,
+  muted = false,
+}: {
+  icon: VisualIcon;
+  eyebrow?: string;
+  title: string;
+  description: string;
+  status?: string;
+  points?: string[];
+  cta?: React.ReactNode;
+  muted?: boolean;
+}) {
+  return (
+    <SurfaceCard className={`group flex h-full flex-col p-6 transition-transform duration-300 hover:-translate-y-1 ${muted ? 'opacity-90' : ''}`}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/10 text-accent transition-colors duration-300 group-hover:bg-accent group-hover:text-accent-foreground">
+          <Icon className="h-6 w-6" />
+        </div>
+        <StatusBadge tone={muted ? 'warning' : 'accent'}>{status}</StatusBadge>
+      </div>
+      {eyebrow && <div className="mt-5 text-xs font-bold uppercase tracking-[0.16em] text-accent">{eyebrow}</div>}
+      <h3 className="mt-2 text-xl font-bold tracking-tight">{title}</h3>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+      {points.length > 0 && (
+        <ul className="mt-5 space-y-2">
+          {points.map((point) => (
+            <li key={point} className="flex items-start gap-2 text-sm text-muted-foreground">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+              <span>{point}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {cta && <div className="mt-auto pt-5">{cta}</div>}
+    </SurfaceCard>
+  );
+}
+
+export function ToolCard({
+  icon: Icon,
+  title,
+  description,
+  label = 'Free tool',
+  cta = 'Open tool',
+  href,
+  onClick,
+  disabled = false,
+}: {
+  icon: VisualIcon;
+  title: string;
+  description: string;
+  label?: string;
+  cta?: string;
+  href?: string;
+  onClick?: () => void;
+  disabled?: boolean;
+}) {
+  const body = (
+    <>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-accent/10 text-accent">
+          <Icon className="h-5 w-5" />
+        </div>
+        <span className="rounded-full border border-border bg-muted/50 px-2.5 py-1 text-xs font-semibold text-muted-foreground">{label}</span>
+      </div>
+      <h3 className="mt-5 text-lg font-bold">{title}</h3>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+      <span className="mt-5 inline-flex text-sm font-bold text-accent">{disabled ? 'Coming soon' : cta}</span>
+    </>
+  );
+
+  if (href && !disabled) {
+    return (
+      <a href={href} className="trust-card group flex h-full flex-col p-5 transition-transform duration-300 hover:-translate-y-1 hover:border-accent/30">
+        {body}
+      </a>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      className="trust-card group flex h-full flex-col p-5 text-left transition-transform duration-300 hover:-translate-y-1 hover:border-accent/30 disabled:cursor-not-allowed disabled:opacity-70"
+    >
+      {body}
+    </button>
+  );
+}
+
+export function UseCaseCard({
+  icon: Icon,
+  title,
+  description,
+  outcomes = [],
+}: {
+  icon: VisualIcon;
+  title: string;
+  description: string;
+  outcomes?: string[];
+}) {
+  return (
+    <SurfaceCard className="flex h-full flex-col p-6">
+      <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+        <Icon className="h-6 w-6" />
+      </div>
+      <h3 className="text-xl font-bold">{title}</h3>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+      {outcomes.length > 0 && (
+        <ul className="mt-5 space-y-2">
+          {outcomes.map((outcome) => (
+            <li key={outcome} className="flex items-start gap-2 text-sm text-muted-foreground">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+              <span>{outcome}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </SurfaceCard>
+  );
+}
+
+export function PricingCard({
+  title,
+  price,
+  description,
+  features,
+  featured = false,
+  cta,
+  note,
+}: {
+  title: string;
+  price: string;
+  description: string;
+  features: string[];
+  featured?: boolean;
+  cta?: React.ReactNode;
+  note?: string;
+}) {
+  return (
+    <SurfaceCard className={`flex h-full flex-col p-6 ${featured ? 'border-accent bg-accent/10 shadow-blue-600/10' : ''}`}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-2xl font-bold">{title}</h3>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+        </div>
+        {featured && <StatusBadge tone="accent">Popular</StatusBadge>}
+      </div>
+      <div className="mt-6 text-4xl font-bold tracking-tight">{price}</div>
+      <ul className="mt-6 space-y-3">
+        {features.map((feature) => (
+          <li key={feature} className="flex items-start gap-3 text-sm">
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+            <span>{feature}</span>
+          </li>
+        ))}
+      </ul>
+      {cta && <div className="mt-auto pt-6">{cta}</div>}
+      {note && <p className="mt-4 text-xs leading-5 text-muted-foreground">{note}</p>}
+    </SurfaceCard>
+  );
+}
+
+export function MegaMenuPanel({
+  columns,
+}: {
+  columns: Array<{
+    title: string;
+    links: Array<{ label: string; href: string; description?: string }>;
+  }>;
+}) {
+  return (
+    <div className="grid gap-4 rounded-3xl border border-border bg-card/95 p-5 shadow-2xl shadow-slate-950/10 backdrop-blur-xl md:grid-cols-2 lg:grid-cols-3">
+      {columns.map((column) => (
+        <div key={column.title}>
+          <div className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-accent">{column.title}</div>
+          <div className="space-y-2">
+            {column.links.map((link) => (
+              <a key={`${column.title}-${link.label}-${link.href}`} href={link.href} className="block rounded-2xl border border-transparent p-3 transition-colors hover:border-border hover:bg-muted/50">
+                <div className="font-semibold">{link.label}</div>
+                {link.description && <div className="mt-1 text-xs leading-5 text-muted-foreground">{link.description}</div>}
+              </a>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function ProgressBar({
@@ -185,7 +385,7 @@ export function SitePreviewCard({
       <div className="h-24 bg-gradient-to-br from-accent/20 via-sky-500/10 to-emerald-500/15" />
       <div className="p-5">
         <div className="-mt-11 mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-card shadow-sm">
-          <img src={faviconUrl(host)} alt="" className="h-8 w-8 rounded" />
+          <BrandInitialMark host={host} className="h-8 w-8 rounded" />
         </div>
         <div className="text-xs font-bold uppercase tracking-[0.16em] text-accent">{host || 'Website preview'}</div>
         <h3 className="mt-2 line-clamp-2 text-xl font-bold">{title || 'Site preview updates as pages are scanned'}</h3>
@@ -212,12 +412,16 @@ function previewUrl(url?: string | null, hostname?: string | null) {
   return hostname ? `https://${hostname}` : 'https://example.com';
 }
 
-function faviconUrl(host: string) {
-  return `https://www.google.com/s2/favicons?sz=64&domain_url=${encodeURIComponent(host)}`;
-}
-
 function brandInitial(host: string) {
   return host.replace(/^www\./, '').slice(0, 1).toUpperCase() || 'S';
+}
+
+function BrandInitialMark({ host, className = '' }: { host: string; className?: string }) {
+  return (
+    <div className={`flex items-center justify-center bg-gradient-to-br from-accent/15 via-sky-500/10 to-emerald-500/15 font-bold text-accent ${className}`}>
+      {brandInitial(host)}
+    </div>
+  );
 }
 
 export function DesktopSitePreviewCard({
@@ -252,7 +456,7 @@ export function DesktopSitePreviewCard({
           <div className="border-b border-border bg-card/95 px-5 py-4">
             <div className="flex items-center justify-between gap-4">
               <div className="flex min-w-0 items-center gap-3">
-                <img src={faviconUrl(host)} alt="" className="h-10 w-10 rounded-xl border border-border bg-background p-1" />
+                <BrandInitialMark host={host} className="h-10 w-10 rounded-xl border border-border bg-background" />
                 <div className="min-w-0">
                   <div className="truncate font-bold">{brand}</div>
                   <div className="truncate text-xs text-muted-foreground">Website preview</div>
@@ -283,7 +487,7 @@ export function DesktopSitePreviewCard({
             <div className="rounded-2xl border border-border bg-card p-4">
               <div className="rounded-xl bg-gradient-to-br from-accent/20 via-sky-500/10 to-emerald-500/20 p-5">
                 <div className="mb-10 flex items-center justify-between">
-                  <img src={faviconUrl(host)} alt="" className="h-12 w-12 rounded-2xl border border-white/50 bg-white p-2 shadow-sm" />
+                  <BrandInitialMark host={host} className="h-12 w-12 rounded-2xl border border-white/50 bg-white text-lg shadow-sm" />
                   <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-bold text-slate-700">Live preview</span>
                 </div>
                 <div className="rounded-2xl bg-white/90 p-4 text-slate-900 shadow-sm">
@@ -329,7 +533,7 @@ export function MobileSitePreviewCard({
         <div className="overflow-hidden rounded-[1.35rem] bg-background">
           <div className="relative flex items-center justify-between border-b border-border bg-card px-3 py-3">
             <div className="absolute left-1/2 top-2 h-1.5 w-14 -translate-x-1/2 rounded-full bg-slate-900/80" />
-            <img src={faviconUrl(host)} alt="" className="mt-2 h-8 w-8 rounded-xl border border-border bg-background p-1" />
+            <BrandInitialMark host={host} className="mt-2 h-8 w-8 rounded-xl border border-border bg-background text-sm" />
             <div className="mt-2 truncate text-xs font-bold">{brand}</div>
             <div className="mt-2 h-8 w-8 rounded-xl border border-border bg-muted" />
           </div>
@@ -380,7 +584,7 @@ export function SerpPreviewCard({
       <div className="rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 shadow-sm dark:bg-white">
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100">
-            <img src={faviconUrl(host)} alt="" className="h-5 w-5 rounded" />
+            <BrandInitialMark host={host} className="h-5 w-5 rounded text-xs" />
           </div>
           <div className="min-w-0">
             <div className="text-sm text-slate-900">{host.replace(/^www\./, '')}</div>

@@ -462,6 +462,13 @@ export default function App() {
                   <button type="button" onClick={() => setIsSearching(false)} className="rounded-2xl">
                     <BrandMark />
                   </button>
+                  <nav className="hidden items-center gap-1 text-sm font-semibold text-muted-foreground lg:flex" aria-label="Product navigation">
+                    <a href="#features" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">Features</a>
+                    <a href="#free-tools" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">Free Tools</a>
+                    <a href="#use-cases" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">Use Cases</a>
+                    <a href="#pricing" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">Pricing</a>
+                    <a href="#resources" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">Resources</a>
+                  </nav>
                   <div className="flex items-center gap-3">
                     <ThemeToggle theme={theme} onToggle={toggleTheme} />
                 {authLoading ? (
@@ -486,16 +493,17 @@ export default function App() {
                   <div className="flex items-center gap-2">
                     <button 
                       onClick={() => setAuthMode('login')}
-                          className="rounded-full px-4 py-2 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          className="whitespace-nowrap rounded-full px-3 py-2 text-sm font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:px-4"
                     >
                           Sign In
                     </button>
-                    <button 
-                      onClick={() => setAuthMode('register')}
-                          className="rounded-full bg-accent px-4 py-2 text-sm font-bold text-accent-foreground shadow-sm shadow-accent/20 transition-colors hover:bg-accent/90"
+                    <a
+                      href="#start-audit"
+                          className="whitespace-nowrap rounded-full bg-accent px-3 py-2 text-sm font-bold text-accent-foreground shadow-sm shadow-accent/20 transition-colors hover:bg-accent/90 sm:px-4"
                     >
-                          Get Started
-                    </button>
+                          <span className="hidden sm:inline">Start Free Audit</span>
+                          <span className="sm:hidden">Audit</span>
+                    </a>
                   </div>
                 )}
               </div>
