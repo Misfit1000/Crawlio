@@ -457,15 +457,15 @@ export default function App() {
       <div className="relative z-10 flex flex-col min-h-screen">
         {!isSearching ? (
             <div className="flex min-h-screen flex-1 flex-col">
-              <header className="sticky top-0 z-50 border-b border-border bg-background/85 px-4 py-3 backdrop-blur-xl md:px-8">
-                <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4">
+              <header className="sticky top-0 z-50 border-b border-border bg-background/90 px-4 py-3 shadow-sm shadow-slate-950/5 backdrop-blur-xl md:px-8">
+                <div className="mx-auto flex w-full max-w-[1500px] items-center justify-between gap-4">
                   <button type="button" onClick={() => setIsSearching(false)} className="rounded-2xl">
                     <BrandMark />
                   </button>
                   <nav className="hidden items-center gap-1 text-sm font-semibold text-muted-foreground lg:flex" aria-label="Product navigation">
                     <a href="#features" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">Features</a>
-                    <a href="#free-tools" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">Free Tools</a>
-                    <a href="#use-cases" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">Use Cases</a>
+                    <a href="#free-tools" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">Free tools</a>
+                    <a href="#use-cases" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">Use cases</a>
                     <a href="#pricing" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">Pricing</a>
                     <a href="#reports" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">Reports</a>
                     <a href="#faq" className="rounded-full px-3 py-2 transition-colors hover:bg-muted hover:text-foreground">FAQ</a>
@@ -537,12 +537,13 @@ export default function App() {
           ) : (
             <div className="flex-1 flex flex-col">
               {/* Header */}
-              <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border h-16 px-4 md:px-6 flex items-center justify-between transition-colors duration-300">
+              <header className="sticky top-0 z-50 flex h-[4.5rem] items-center justify-between border-b border-border bg-background/90 px-4 shadow-sm shadow-slate-950/5 backdrop-blur-xl transition-colors duration-300 md:px-6">
                 <div className="flex items-center gap-4 flex-1">
                   <div className="flex items-center gap-2">
                     <button 
                       onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                      className="p-2 -ml-2 rounded-xl hover:bg-muted text-muted-foreground transition-colors"
+                      className="-ml-2 rounded-2xl p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      aria-label="Toggle navigation"
                     >
                       <Menu className="w-5 h-5" />
                     </button>
@@ -555,26 +556,26 @@ export default function App() {
                     </button>
                   </div>
                   
-                  <form onSubmit={(e) => handleSearch(e, undefined, false)} className="flex-1 max-w-2xl relative group hidden md:flex items-center ml-4 bg-muted/30 hover:bg-muted/60 focus-within:bg-muted/60 border border-border rounded-xl transition-all shadow-sm">
+                  <form onSubmit={(e) => handleSearch(e, undefined, false)} className="group relative ml-4 hidden max-w-3xl flex-1 items-center rounded-2xl border border-border bg-card/80 shadow-sm transition-all hover:bg-card focus-within:border-accent focus-within:bg-card focus-within:ring-2 focus-within:ring-accent/15 md:flex">
                     <Search className="w-4 h-4 text-muted-foreground ml-3 flex-shrink-0" />
                     <input
                       type="text"
                       value={keyword}
                       onChange={(e) => setKeyword(e.target.value)}
                       placeholder="Search audits, reports, pages..."
-                      className="flex-1 bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground px-3 py-2 text-sm font-medium min-w-0"
+                      className="min-w-0 flex-1 border-none bg-transparent px-3 py-2.5 text-sm font-medium text-foreground outline-none placeholder:text-muted-foreground"
                     />
                     <div className="flex items-center gap-1 pr-2 flex-shrink-0">
                       <button
                         type="submit"
-                        className="px-3 py-1.5 text-xs font-medium bg-background border border-border text-foreground rounded-lg hover:bg-muted transition-colors"
+                        className="rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-bold text-foreground transition-colors hover:bg-muted"
                       >
                         Basic
                       </button>
                       <button
                         type="button"
                         onClick={(e) => handleSearch(e, undefined, true)}
-                        className="px-3 py-1.5 text-xs font-bold bg-accent text-accent-foreground rounded-lg hover:bg-accent/90 transition-colors flex items-center gap-1 shadow-sm shadow-accent/20"
+                        className="flex items-center gap-1 rounded-xl bg-accent px-3 py-1.5 text-xs font-bold text-accent-foreground shadow-sm shadow-accent/20 transition-colors hover:bg-accent/90"
                       >
                         <TrendingUp className="w-3 h-3" />
                         In-Depth
@@ -585,19 +586,19 @@ export default function App() {
                 
                 <div className="flex items-center gap-3 ml-4">
                   <ThemeToggle theme={theme} onToggle={toggleTheme} />
-                  <div className="h-5 w-px bg-border hidden md:block mx-1"></div>
+                  <div className="mx-1 hidden h-5 w-px bg-border md:block"></div>
                   {authLoading ? (
                     <div className="h-9 w-28 rounded-xl bg-muted/30 border border-border animate-pulse" />
                   ) : user ? (
                     <>
                       <button 
                         onClick={() => setActiveTab('settings')}
-                        className="hidden md:flex items-center gap-2 text-foreground bg-muted/30 border border-border px-3 py-1.5 rounded-xl hover:bg-muted/60 transition-colors"
+                        className="hidden items-center gap-2 rounded-2xl border border-border bg-card/80 px-3 py-2 text-foreground shadow-sm transition-colors hover:bg-muted md:flex"
                       >
                         <User className="w-4 h-4 text-muted-foreground" />
                         <span className="text-sm font-medium truncate max-w-[120px]">{user.username || 'User'}</span>
                       </button>
-                      <button onClick={handleLogout} className="text-muted-foreground hover:text-red-500 transition-colors p-2 rounded-xl hover:bg-red-500/10" title="Sign out">
+                      <button onClick={handleLogout} className="rounded-2xl p-2 text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-500" title="Sign out">
                         <LogOut className="w-5 h-5" />
                       </button>
                     </>
@@ -629,13 +630,15 @@ export default function App() {
                     setActiveTab={setActiveTab}
                   />
                 </Suspense>
-                <main className="flex-1 w-full p-4 md:p-6 xl:p-8">
+                <main className="w-full flex-1">
                   <Suspense fallback={
-                    <div className="mx-auto w-full max-w-6xl py-8">
+                    <div className="suite-page">
                       <LoadingSkeleton rows={5} />
                     </div>
                   }>
-                    {renderContent()}
+                    <div className="suite-page">
+                      {renderContent()}
+                    </div>
                   </Suspense>
                 </main>
               </div>

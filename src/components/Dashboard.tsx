@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { API_ROUTES } from '../lib/api/routes';
 import { getAuthHeaders } from '../lib/api/auth-headers';
 import { safeJsonFetch } from '../lib/http/safe-json';
-import { CategoryScoreBar, MetricCard, ProgressBar, RadialScoreGauge, SectionHeader, SeverityDistribution, SitePreviewSection, StatusBadge, SurfaceCard } from './ui/visual-system';
+import { CategoryScoreBar, MetricCard, ProgressBar, RadialScoreGauge, SeverityDistribution, SitePreviewSection, StatusBadge, SurfaceCard } from './ui/visual-system';
 
 export default function Dashboard(props: any) {
   const { user } = useAuth();
@@ -53,21 +53,32 @@ export default function Dashboard(props: any) {
 
   return (
     <div className="w-full space-y-8 animate-rise">
-      <SectionHeader
-        eyebrow="Dashboard"
-        title="Website health dashboard"
-        description="Run live audits, understand site health at a glance, and move from scan results to prioritized fixes without paid APIs."
-        action={
-          <div className="flex flex-wrap gap-2">
-            <button className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 font-semibold transition-colors hover:bg-muted">
-              <Upload className="h-4 w-4" /> Import Data
-            </button>
-            <button onClick={() => props.onOpenSeoAudit?.()} className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2 font-semibold text-accent-foreground shadow-sm shadow-accent/20 transition-colors hover:bg-accent/90">
-              <Rocket className="h-4 w-4" /> Start audit
-            </button>
+      <SurfaceCard className="overflow-hidden p-0">
+        <div className="grid gap-0 lg:grid-cols-[1.05fr_0.95fr]">
+          <div className="p-6 md:p-8">
+            <div className="suite-chip mb-4 text-accent">Website command center</div>
+            <h1 className="text-3xl font-black tracking-tight md:text-5xl">Know what to fix first, then prove it with real audit data.</h1>
+            <p className="mt-4 max-w-3xl text-base leading-7 text-muted-foreground">
+              Run live audits, understand site health at a glance, import real search data, and move from scan results to prioritized fixes without paid APIs.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <button className="quiet-button">
+                <Upload className="h-4 w-4" /> Import Data
+              </button>
+              <button onClick={() => props.onOpenSeoAudit?.()} className="trust-button">
+                <Rocket className="h-4 w-4" /> Start audit
+              </button>
+            </div>
           </div>
-        }
-      />
+          <div className="border-t border-border bg-gradient-to-br from-accent/10 via-card to-emerald-500/10 p-6 md:p-8 lg:border-l lg:border-t-0">
+            <div className="grid gap-3">
+              {categoryScores.slice(0, 4).map((item) => (
+                <CategoryScoreBar key={item.label} label={item.label} value={item.value} tone={item.tone} />
+              ))}
+            </div>
+          </div>
+        </div>
+      </SurfaceCard>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Overall health" value="84" detail="Demo benchmark from latest audit" icon={<Gauge className="h-6 w-6" />} tone="green" />

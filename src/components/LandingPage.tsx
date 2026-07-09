@@ -19,20 +19,20 @@ import {
   Store,
   Upload,
   Users,
-  Wrench,
   Zap,
 } from 'lucide-react';
 import { createAuditSubmitGuard } from '../lib/api/audit-submit-guard';
 import {
+  CategoryScoreBar,
   FeatureProofCard,
   FeatureSuiteCard,
   MegaMenuPanel,
-  MetricCard,
   PricingCard,
   ProductMockupPanel,
+  RadialScoreGauge,
   SectionHeader,
+  SeverityBadge,
   SeverityDistribution,
-  SitePreviewSection,
   StatusBadge,
   SurfaceCard,
   ToolCard,
@@ -609,37 +609,18 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
         </div>
       </section>
 
-      <section id="reports" className="section-shell py-16 md:py-20">
-        <div className="grid gap-8 lg:grid-cols-[0.82fr_1.18fr]">
-          <div className="space-y-5">
-            <StatusBadge tone="success">Visual report workflow</StatusBadge>
-            <h2 className="text-3xl font-bold md:text-4xl">Start with the answer, then show the evidence.</h2>
-            <p className="text-muted-foreground">
-              Reports lead with an executive summary, top fixes, and visual page context. Technical details stay available for developers without overwhelming business users.
-            </p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <MetricCard label="Overall health" value="84" detail="Sample score display" icon={<Gauge className="h-6 w-6" />} tone="green" />
-              <MetricCard label="Top fixes" value="12" detail="Sorted by fix priority" icon={<Wrench className="h-6 w-6" />} tone="yellow" />
+      <section id="reports" className="border-y border-border bg-muted/30 py-16 md:py-20">
+        <div className="mx-auto w-full max-w-[1600px] px-4 sm:px-6 lg:px-10">
+          <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr] lg:items-end">
+            <div>
+              <StatusBadge tone="success">Visual report workflow</StatusBadge>
+              <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-5xl">Reports should feel like decisions, not dense technical logs.</h2>
             </div>
-            <SeverityDistribution critical={3} high={6} medium={12} low={8} />
-            <SurfaceCard className="p-5">
-              <h3 className="text-lg font-bold">Plain-English report sections</h3>
-              <div className="mt-4 grid gap-3">
-                {['What happened', 'Why it matters', 'How to fix it', 'Technical detail if needed'].map((item) => (
-                  <div key={item} className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                    <span>{item}</span>
-                  </div>
-                ))}
-              </div>
-            </SurfaceCard>
+            <p className="max-w-3xl text-base leading-7 text-muted-foreground md:text-lg">
+              SEOIntel now leads with score context, top fixes, page previews, and clear ranking-data status. Technical detail is still available, but the first view is built for fast decisions on desktop and mobile.
+            </p>
           </div>
-          <SitePreviewSection
-            url="https://example.com"
-            hostname="example.com"
-            title="Example Brand - Services, Pricing, and Local Trust"
-            description="A clear preview helps users understand what was checked before they read technical details."
-          />
+          <ReportShowcase />
         </div>
       </section>
 
@@ -796,6 +777,229 @@ function ToolGroup({ title, tools }: { title: string; tools: typeof freeTools })
         ))}
       </div>
     </SurfaceCard>
+  );
+}
+
+function ReportShowcase() {
+  const issueRows = [
+    { title: 'Missing or weak page title', detail: 'The page title is short or unclear for search snippets.', severity: 'high' as const },
+    { title: 'Meta description needs a rewrite', detail: 'The Google-style preview may not explain the page clearly.', severity: 'medium' as const },
+    { title: 'Browser protection headers incomplete', detail: 'Passive checks found missing browser-safety protections.', severity: 'medium' as const },
+  ];
+
+  return (
+    <div className="mt-10 w-full min-w-0 overflow-hidden rounded-[2rem] border border-border bg-card shadow-2xl shadow-slate-950/10 dark:shadow-black/40">
+      <div className="border-b border-border bg-background/80 px-4 py-3 sm:px-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="h-3 w-3 rounded-full bg-red-400" />
+            <span className="h-3 w-3 rounded-full bg-amber-400" />
+            <span className="h-3 w-3 rounded-full bg-emerald-400" />
+            <span className="truncate rounded-full border border-border bg-muted/50 px-4 py-2 text-sm text-muted-foreground">Report dashboard - example.com</span>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs font-bold">
+            <StatusBadge tone="success">Realtime audit</StatusBadge>
+            <StatusBadge tone="accent">Visual report</StatusBadge>
+            <StatusBadge tone="warning">Ranking import ready</StatusBadge>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid min-w-0 gap-0 xl:grid-cols-[minmax(340px,0.92fr)_minmax(640px,1.28fr)]">
+        <div className="min-w-0 border-b border-border p-4 sm:p-6 xl:border-b-0 xl:border-r">
+          <div className="grid min-w-0 gap-5 lg:grid-cols-[210px_1fr] xl:grid-cols-1 2xl:grid-cols-[220px_1fr]">
+            <div className="min-w-0 rounded-[1.5rem] border border-border bg-background/70 p-5">
+              <RadialScoreGauge value={84} label="Website health" detail="Example score display from audit signals" size="lg" />
+            </div>
+            <div className="grid min-w-0 content-start gap-3">
+              <CategoryScoreBar label="SEO audit" value={86} detail="Titles, descriptions, headings, links" />
+              <CategoryScoreBar label="Technical SEO" value={78} detail="Status codes, redirects, sitemap access" tone="accent" />
+              <CategoryScoreBar label="Passive security" value={88} detail="HTTPS and browser protections" />
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h3 className="font-bold">Top fixes first</h3>
+              <span className="text-xs font-semibold text-muted-foreground">Sorted by fix priority</span>
+            </div>
+            <SeverityDistribution critical={3} high={6} medium={12} low={8} />
+          </div>
+
+          <div className="mt-6 grid gap-3">
+            {issueRows.map((issue) => (
+              <div key={issue.title} className="rounded-2xl border border-border bg-background/70 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h4 className="font-bold">{issue.title}</h4>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">{issue.detail}</p>
+                  </div>
+                  <SeverityBadge severity={issue.severity} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid min-w-0 gap-5 bg-muted/20 p-4 sm:p-6">
+          <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
+            <HomepageDesktopPreview />
+            <HomepageMobilePreview />
+          </div>
+          <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]">
+            <HomepageSerpPreview />
+            <SerpRankingDataPanel />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HomepageDesktopPreview() {
+  return (
+    <div className="w-full min-w-0 overflow-hidden rounded-[1.5rem] border border-border bg-background shadow-xl shadow-slate-950/5">
+      <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-4 py-3">
+        <Monitor className="h-4 w-4 text-accent" />
+        <span className="text-sm font-bold">Desktop page preview</span>
+      </div>
+      <div className="bg-gradient-to-br from-slate-50 via-white to-blue-50 p-3 text-slate-950 sm:p-5 dark:from-slate-900 dark:via-slate-950 dark:to-blue-950 dark:text-white">
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-lg shadow-slate-900/10 dark:border-slate-700 dark:bg-slate-900">
+          <div className="flex items-center justify-between border-b border-slate-200 px-3 py-3 sm:px-5 sm:py-4 dark:border-slate-700">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-sm font-black text-white">E</div>
+              <div>
+                <div className="font-black">Example Brand</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">Local service website</div>
+              </div>
+            </div>
+            <div className="hidden gap-5 text-sm font-semibold text-slate-600 dark:text-slate-300 sm:flex">
+              <span>Services</span>
+              <span>Pricing</span>
+              <span>Reviews</span>
+            </div>
+          </div>
+          <div className="grid gap-4 p-3 sm:gap-5 sm:p-5 md:grid-cols-[1.15fr_0.85fr]">
+            <div className="min-w-0">
+              <div className="mb-3 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200">Metadata preview</div>
+              <h3 className="text-2xl font-black leading-tight sm:text-3xl">Clear service page headline with trust proof</h3>
+              <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">This visual preview gives report readers page context before they review SEO and safety fixes.</p>
+              <div className="mt-5 flex flex-wrap gap-2">
+                {['Primary CTA visible', 'Heading found', 'Internal links'].map((item) => (
+                  <span key={item} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">{item}</span>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-2xl bg-blue-950 p-4 text-white">
+              <div className="rounded-xl bg-white/10 p-4">
+                <div className="h-28 rounded-xl bg-gradient-to-br from-blue-400 to-emerald-300" />
+                <div className="mt-4 h-3 w-4/5 rounded-full bg-white/70" />
+                <div className="mt-2 h-3 w-2/3 rounded-full bg-white/40" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HomepageMobilePreview() {
+  return (
+    <div className="w-full min-w-0 rounded-[1.5rem] border border-border bg-background p-4 shadow-xl shadow-slate-950/5">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Globe className="h-4 w-4 text-accent" />
+          <span className="text-sm font-bold">Mobile preview</span>
+        </div>
+        <StatusBadge tone="success">Responsive</StatusBadge>
+      </div>
+      <div className="mx-auto max-w-[260px] rounded-[2rem] border-8 border-slate-950 bg-slate-950 p-2 shadow-2xl">
+        <div className="overflow-hidden rounded-[1.4rem] bg-white text-slate-950">
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-lg bg-blue-600 text-center text-sm font-black leading-8 text-white">E</div>
+              <span className="text-sm font-black">Example</span>
+            </div>
+            <div className="grid gap-1">
+              <span className="h-0.5 w-5 rounded bg-slate-600" />
+              <span className="h-0.5 w-5 rounded bg-slate-600" />
+              <span className="h-0.5 w-5 rounded bg-slate-600" />
+            </div>
+          </div>
+          <div className="p-4">
+            <div className="h-28 rounded-2xl bg-gradient-to-br from-blue-100 to-emerald-100" />
+            <h3 className="mt-4 text-xl font-black leading-tight">Example Brand Services</h3>
+            <p className="mt-2 text-xs leading-5 text-slate-600">Tap targets, visible CTA, and readable mobile copy are checked from public signals.</p>
+            <button type="button" className="mt-4 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-black text-white">View report</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HomepageSerpPreview() {
+  return (
+    <div className="w-full min-w-0 rounded-[1.5rem] border border-border bg-background p-4 shadow-xl shadow-slate-950/5 sm:p-5">
+      <div className="mb-4 flex items-center gap-2">
+        <Search className="h-5 w-5 text-accent" />
+        <h3 className="text-lg font-bold">Google-style preview</h3>
+      </div>
+      <div className="min-w-0 rounded-2xl border border-border bg-white p-4 text-slate-950 sm:p-5">
+        <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-sm font-black text-blue-700">E</div>
+          <div className="min-w-0">
+            <div className="truncate text-sm text-slate-800">Example Brand</div>
+            <div className="truncate text-xs text-slate-500">https://example.com/services</div>
+          </div>
+        </div>
+        <div className="mt-3 text-lg leading-6 text-[#1a0dab] sm:text-xl">Example Brand - Services, Pricing, and Local Trust</div>
+        <p className="mt-2 text-sm leading-6 text-[#4d5156]">
+          A clear preview helps users understand what was checked before reading technical details and fix guidance.
+        </p>
+        <div className="mt-4 grid gap-2 text-xs sm:grid-cols-3">
+          {['Title length checked', 'Description checked', 'URL clarity checked'].map((item) => (
+            <span key={item} className="rounded-full bg-slate-100 px-3 py-2 font-bold text-slate-600">{item}</span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SerpRankingDataPanel() {
+  return (
+    <div className="w-full min-w-0 rounded-[1.5rem] border border-border bg-background p-4 shadow-xl shadow-slate-950/5 sm:p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-lg font-bold">Actual SERP ranking data</h3>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            Real keyword positions require Google Search Console, CSV, or provider imports. SEOIntel will not invent ranking rows when no source is connected.
+          </p>
+        </div>
+        <StatusBadge tone="warning">Import required</StatusBadge>
+      </div>
+      <div className="mt-5 max-w-full overflow-x-auto rounded-2xl border border-border">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-muted/60 text-xs uppercase tracking-[0.12em] text-muted-foreground">
+            <tr>
+              <th className="px-3 py-3 sm:px-4">Keyword</th>
+              <th className="px-3 py-3 sm:px-4">URL</th>
+              <th className="px-3 py-3 sm:px-4">Position</th>
+              <th className="px-3 py-3 sm:px-4">Clicks</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td colSpan={4} className="px-3 py-6 text-center text-muted-foreground sm:px-4">
+                No ranking source connected yet. Import real data to populate this table.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 

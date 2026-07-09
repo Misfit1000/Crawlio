@@ -22,7 +22,7 @@ export function SurfaceCard({
   children: React.ReactNode;
   className?: string;
 }) {
-  return <section className={`trust-card ${className}`}>{children}</section>;
+  return <section className={`trust-card relative overflow-hidden ${className}`}>{children}</section>;
 }
 
 export function SectionHeader({
@@ -37,11 +37,11 @@ export function SectionHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+    <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
       <div>
-        {eyebrow && <div className="text-xs font-bold uppercase tracking-[0.18em] text-accent">{eyebrow}</div>}
-        <h2 className="mt-1 text-2xl font-bold tracking-tight md:text-3xl">{title}</h2>
-        {description && <p className="mt-2 max-w-3xl text-sm text-muted-foreground md:text-base">{description}</p>}
+        {eyebrow && <div className="suite-chip mb-3 w-fit text-accent">{eyebrow}</div>}
+        <h2 className="text-2xl font-bold tracking-tight md:text-4xl">{title}</h2>
+        {description && <p className="mt-3 max-w-3xl text-sm leading-7 text-muted-foreground md:text-base">{description}</p>}
       </div>
       {action}
     </div>
@@ -62,7 +62,7 @@ export function StatusBadge({
     danger: 'border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-300',
     accent: 'border-accent/20 bg-accent/10 text-accent',
   };
-  return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${tones[tone]}`}>{children}</span>;
+  return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-bold shadow-sm ${tones[tone]}`}>{children}</span>;
 }
 
 export function FeatureSuiteCard({
@@ -287,8 +287,8 @@ export function ProgressBar({
           <span className="text-foreground">{Math.round(safeValue)}%</span>
         </div>
       )}
-      <div className="h-2.5 overflow-hidden rounded-full bg-muted">
-        <div className={`h-full rounded-full ${colors[tone]} transition-all duration-700 ease-out`} style={{ width: `${safeValue}%` }} />
+      <div className="h-2.5 overflow-hidden rounded-full bg-muted shadow-inner">
+        <div className={`h-full rounded-full ${colors[tone]} shadow-sm transition-all duration-700 ease-out`} style={{ width: `${safeValue}%` }} />
       </div>
     </div>
   );
@@ -391,7 +391,7 @@ export function CategoryScoreBar({
   const safeValue = safeScore(value);
   const resolvedTone = tone || scoreTone(safeValue);
   return (
-    <div className="space-y-2 rounded-2xl border border-border bg-background/70 p-3">
+    <div className="space-y-2 rounded-2xl border border-border bg-background/70 p-3 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-sm font-bold">{label}</div>
@@ -426,13 +426,14 @@ export function MetricCard({
   };
   return (
     <SurfaceCard className="group p-5">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-accent via-emerald-400 to-sky-400 opacity-70" />
       <div className="flex items-center justify-between gap-4">
         <div>
           <div className="text-sm font-medium text-muted-foreground">{label}</div>
-          <div className="mt-1 text-3xl font-bold">{value}</div>
+          <div className="mt-1 text-3xl font-black tracking-tight">{value}</div>
           {detail && <div className="mt-1 text-xs text-muted-foreground">{detail}</div>}
         </div>
-        {icon && <div className={`rounded-2xl p-3 ${tones[tone]} transition-transform duration-300 group-hover:scale-105`}>{icon}</div>}
+        {icon && <div className={`rounded-2xl p-3 ${tones[tone]} shadow-sm transition-transform duration-300 group-hover:scale-105`}>{icon}</div>}
       </div>
     </SurfaceCard>
   );
@@ -1070,11 +1071,11 @@ export function ThemeToggle({
     <button
       type="button"
       onClick={onToggle}
-      className="group inline-flex h-10 items-center gap-2 rounded-full border border-border bg-card/90 px-2 text-sm font-semibold shadow-sm transition-all duration-300 hover:bg-muted focus:outline-none focus:ring-2 focus:ring-accent/40"
+      className="group inline-flex h-10 w-[4.5rem] items-center rounded-full border border-border bg-card/90 px-1.5 text-sm font-semibold shadow-sm transition-all duration-300 hover:bg-muted focus:outline-none focus:ring-2 focus:ring-accent/40"
       aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
       title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
     >
-      <span className={`flex h-7 w-7 items-center justify-center rounded-full transition-all duration-300 ${theme === 'dark' ? 'translate-x-7 bg-accent text-accent-foreground' : 'translate-x-0 bg-amber-400 text-slate-950'}`}>
+      <span className={`flex h-7 w-7 items-center justify-center rounded-full shadow-sm transition-all duration-300 ${theme === 'dark' ? 'translate-x-8 bg-accent text-accent-foreground' : 'translate-x-0 bg-amber-400 text-slate-950'}`}>
         {theme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
       </span>
       <span className="sr-only">{theme === 'dark' ? 'Dark mode' : 'Light mode'}</span>
@@ -1094,8 +1095,8 @@ export function LoadingSkeleton({ rows = 3 }: { rows?: number }) {
 
 export function BrandMark() {
   return (
-    <div className="flex items-center gap-2 font-bold tracking-tight text-foreground">
-      <div className="rounded-xl bg-accent p-2 text-accent-foreground shadow-sm shadow-accent/20">
+    <div className="flex items-center gap-2.5 font-bold tracking-tight text-foreground">
+      <div className="rounded-2xl bg-gradient-to-br from-accent to-emerald-500 p-2 text-accent-foreground shadow-lg shadow-accent/20">
         <TrendingUp className="h-5 w-5" />
       </div>
       <span className="text-xl">SEO<span className="text-accent">Intel</span></span>

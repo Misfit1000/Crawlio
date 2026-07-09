@@ -1,30 +1,30 @@
-import React, { useState } from "react"; 
+import React, { useState } from "react";
 import { PieChart, Download, Loader2, FileJson, FileSpreadsheet, Printer, ShieldCheck, AlertTriangle, Search, Lock } from "lucide-react";
-import { BarList, CategoryScoreBar, MetricCard, RadialScoreGauge, SectionHeader, SeverityDistribution, SitePreviewSection, StatusBadge } from './ui/visual-system';
+import { BarList, CategoryScoreBar, MetricCard, RadialScoreGauge, SectionHeader, SeverityDistribution, SitePreviewSection, StatusBadge, SurfaceCard } from './ui/visual-system';
 
-export default function Reports() {   
-  const [loading, setLoading] = useState<string | null>(null);  
+export default function Reports() {
+  const [loading, setLoading] = useState<string | null>(null);
 
-  const handleExportJson = () => {    
-    setLoading('json');    
-    setTimeout(() => {      
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({         
-        report: "SEOIntel Full Audit Export",        
-        date: new Date().toISOString()      
-      }, null, 2));      
-      const a = document.createElement('a');      
-      a.href = dataStr;      
-      a.download = "seo-audit-full.json";      
-      document.body.appendChild(a);      
-      a.click();      
-      a.remove();      
-      setLoading(null);    
-    }, 800);  
-  };  
+  const handleExportJson = () => {
+    setLoading('json');
+    setTimeout(() => {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({
+        report: "SEOIntel Full Audit Export",
+        date: new Date().toISOString()
+      }, null, 2));
+      const a = document.createElement('a');
+      a.href = dataStr;
+      a.download = "seo-audit-full.json";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setLoading(null);
+    }, 800);
+  };
 
   const handleExportCsv = (type: string) => {
-    setLoading(`csv-${type}`);    
-    setTimeout(() => {      
+    setLoading(`csv-${type}`);
+    setTimeout(() => {
       let csvContent = "No data available";
             if (type === 'search') {
                 const gsc = localStorage.getItem('seo_gsc_data');
@@ -45,14 +45,14 @@ export default function Reports() {
             } else {
                 csvContent = "URL,Title,Fix,Priority\nhttps://example.com,Home,Missing main heading,High\n"; // Placeholder for other audits
             }
-            const csvStr = "data:text/csv;charset=utf-8," + encodeURIComponent(csvContent);      
-      const a = document.createElement('a');      
-      a.href = csvStr;      
-      a.download = `seointel-${type}-export.csv`;      
-      document.body.appendChild(a);      
-      a.click();      
-      a.remove();      
-      setLoading(null);    
+            const csvStr = "data:text/csv;charset=utf-8," + encodeURIComponent(csvContent);
+      const a = document.createElement('a');
+      a.href = csvStr;
+      a.download = `seointel-${type}-export.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setLoading(null);
     }, 800);
   }
 
@@ -60,7 +60,7 @@ export default function Reports() {
     window.print();
   }
 
-  return (    
+  return (
     <div className="w-full space-y-8 animate-rise">
       <SectionHeader
         eyebrow="Reports"
@@ -76,7 +76,7 @@ export default function Reports() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+        <SurfaceCard className="p-6">
           <h2 className="text-xl font-bold">Executive summary</h2>
           <p className="mb-5 text-sm text-muted-foreground">A quick score breakdown before the detailed fix list.</p>
           <div className="grid gap-5 lg:grid-cols-[0.42fr_0.58fr]">
@@ -95,12 +95,12 @@ export default function Reports() {
               ))}
             </div>
           </div>
-        </div>
-        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+        </SurfaceCard>
+        <SurfaceCard className="p-6">
           <h2 className="text-xl font-bold">Fix priority</h2>
           <p className="mb-5 text-sm text-muted-foreground">A compact view of what should be handled first.</p>
           <SeverityDistribution critical={3} high={6} medium={12} low={8} />
-        </div>
+        </SurfaceCard>
       </div>
 
       <SitePreviewSection
@@ -111,7 +111,7 @@ export default function Reports() {
       />
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg">
+        <SurfaceCard className="p-6">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="rounded-2xl bg-accent/10 p-3 text-accent"><Search className="h-6 w-6" /></div>
@@ -129,8 +129,8 @@ export default function Reports() {
             { label: 'Images / alt text', value: 66, tone: 'yellow' },
             { label: 'Structured data / social previews', value: 61, tone: 'yellow' },
           ]} />
-        </div>
-        <div className="rounded-2xl border border-border bg-card p-6 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg">
+        </SurfaceCard>
+        <SurfaceCard className="p-6">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="rounded-2xl bg-green-500/10 p-3 text-green-600"><Lock className="h-6 w-6" /></div>
@@ -148,59 +148,59 @@ export default function Reports() {
             { label: 'Mixed content signals', value: 88, tone: 'green' },
             { label: 'Public file signals', value: 82, tone: 'green' },
           ]} />
-        </div>
+        </SurfaceCard>
       </div>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">        
-        
-        <div className="bg-card border border-border p-6 rounded-2xl flex flex-col items-start space-y-4 shadow-sm hover:shadow-md transition-shadow">        
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
+
+        <SurfaceCard className="flex flex-col items-start space-y-4 p-6">
           <div className="p-3 bg-accent/10 rounded-xl">
              <FileJson className="w-6 h-6 text-accent" />
           </div>
           <h2 className="text-xl font-bold font-display">Full audit data</h2>
           <p className="text-sm text-muted-foreground">Export the complete report data with fixes, pages scanned, and site summary fields.</p>
-          <button onClick={handleExportJson} disabled={!!loading} className="mt-auto px-4 py-2 bg-muted hover:bg-muted/80 font-semibold rounded-lg inline-flex items-center gap-2 transition-colors">          
-            {loading === 'json' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}          
-            Export JSON        
-          </button>      
-        </div>
+          <button onClick={handleExportJson} disabled={!!loading} className="mt-auto px-4 py-2 bg-muted hover:bg-muted/80 font-semibold rounded-lg inline-flex items-center gap-2 transition-colors">
+            {loading === 'json' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            Export JSON
+          </button>
+        </SurfaceCard>
 
-        <div className="bg-card border border-border p-6 rounded-2xl flex flex-col items-start space-y-4 shadow-sm hover:shadow-md transition-shadow">        
+        <SurfaceCard className="flex flex-col items-start space-y-4 p-6">
           <div className="p-3 bg-green-500/10 rounded-xl">
              <FileSpreadsheet className="w-6 h-6 text-green-500" />
           </div>
-          <h2 className="text-xl font-bold font-display">CSV Exports</h2>        
+          <h2 className="text-xl font-bold font-display">CSV Exports</h2>
           <p className="text-sm text-muted-foreground">Download spreadsheet-friendly files for fixes, scanned pages, search data, and keywords.</p>
-          
+
           <div className="flex flex-wrap gap-2 mt-auto">
-            <button onClick={() => handleExportCsv('issues')} disabled={!!loading} className="px-3 py-1.5 bg-muted hover:bg-muted/80 text-sm font-medium rounded-lg inline-flex items-center gap-2 transition-colors">          
+            <button onClick={() => handleExportCsv('issues')} disabled={!!loading} className="px-3 py-1.5 bg-muted hover:bg-muted/80 text-sm font-medium rounded-lg inline-flex items-center gap-2 transition-colors">
               {loading === 'csv-issues' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Fixes CSV
-            </button>      
-            <button onClick={() => handleExportCsv('pages')} disabled={!!loading} className="px-3 py-1.5 bg-muted hover:bg-muted/80 text-sm font-medium rounded-lg inline-flex items-center gap-2 transition-colors">          
+            </button>
+            <button onClick={() => handleExportCsv('pages')} disabled={!!loading} className="px-3 py-1.5 bg-muted hover:bg-muted/80 text-sm font-medium rounded-lg inline-flex items-center gap-2 transition-colors">
               {loading === 'csv-pages' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Scanned Pages CSV
             </button>
-            <button onClick={() => handleExportCsv('search')} disabled={!!loading} className="px-3 py-1.5 bg-muted hover:bg-muted/80 text-sm font-medium rounded-lg inline-flex items-center gap-2 transition-colors">          
-              {loading === 'csv-search' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Search Data CSV        
+            <button onClick={() => handleExportCsv('search')} disabled={!!loading} className="px-3 py-1.5 bg-muted hover:bg-muted/80 text-sm font-medium rounded-lg inline-flex items-center gap-2 transition-colors">
+              {loading === 'csv-search' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Search Data CSV
             </button>
-            <button onClick={() => handleExportCsv('keywords')} disabled={!!loading} className="px-3 py-1.5 bg-muted hover:bg-muted/80 text-sm font-medium rounded-lg inline-flex items-center gap-2 transition-colors">          
-              {loading === 'csv-keywords' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Keywords CSV        
+            <button onClick={() => handleExportCsv('keywords')} disabled={!!loading} className="px-3 py-1.5 bg-muted hover:bg-muted/80 text-sm font-medium rounded-lg inline-flex items-center gap-2 transition-colors">
+              {loading === 'csv-keywords' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Keywords CSV
             </button>
           </div>
-        </div>
+        </SurfaceCard>
 
-        <div className="bg-card border border-border p-6 rounded-2xl flex flex-col items-start space-y-4 shadow-sm hover:shadow-md transition-shadow">        
+        <SurfaceCard className="flex flex-col items-start space-y-4 p-6">
           <div className="p-3 bg-purple-500/10 rounded-xl">
              <Printer className="w-6 h-6 text-purple-500" />
           </div>
           <h2 className="text-xl font-bold font-display">Printable client report</h2>
           <p className="text-sm text-muted-foreground">Create a clean print-ready report with summary scores, top fixes, and next steps.</p>
-          <button onClick={handlePrint} className="mt-auto px-4 py-2 bg-muted hover:bg-muted/80 font-semibold rounded-lg inline-flex items-center gap-2 transition-colors">          
-            <Printer className="w-4 h-4" />          
-            Print / Save as PDF        
-          </button>      
-        </div>
+          <button onClick={handlePrint} className="mt-auto px-4 py-2 bg-muted hover:bg-muted/80 font-semibold rounded-lg inline-flex items-center gap-2 transition-colors">
+            <Printer className="w-4 h-4" />
+            Print / Save as PDF
+          </button>
+        </SurfaceCard>
 
-      </div>    
-    </div>  
-  ); 
+      </div>
+    </div>
+  );
 }
