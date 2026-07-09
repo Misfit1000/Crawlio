@@ -612,68 +612,147 @@ export function ProductMockupPanel({
   title?: string;
   description?: string;
 }) {
+  const host = previewHost(url);
+  const brand = host.replace(/^www\./, '');
+  const pageTitle = title || `${brand} homepage`;
+  const desc = description || 'Metadata-based visual preview generated from public page details. No raw HTML is stored.';
   return (
-    <SurfaceCard className="overflow-hidden">
-      <div className="border-b border-border bg-muted/40 px-4 py-3">
+    <SurfaceCard className="overflow-hidden border-accent/20 shadow-2xl shadow-blue-950/10">
+      <div className="border-b border-border bg-card/95 px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="h-3 w-3 rounded-full bg-red-400" />
             <span className="h-3 w-3 rounded-full bg-amber-400" />
             <span className="h-3 w-3 rounded-full bg-emerald-400" />
           </div>
-          <span className="rounded-full bg-background px-3 py-1 text-xs font-semibold text-muted-foreground">{label}</span>
+          <span className="rounded-full border border-border bg-background px-3 py-1 text-xs font-semibold text-muted-foreground">{label}</span>
         </div>
       </div>
-      <div className="grid gap-5 p-5">
-        <div className="grid gap-5 xl:grid-cols-[0.65fr_1fr]">
-          <div className="rounded-3xl border border-border bg-background/80 p-5">
-            <RadialScoreGauge value={overallScore} label="SEOIntel score" detail="Deterministic audit scoring" size="lg" />
-            <div className="mt-5 grid gap-3">
-              <CategoryScoreBar label="SEO" value={seoScore} detail="Metadata, headings, links" />
-              <CategoryScoreBar label="Technical SEO" value={technicalScore} detail="Status, redirects, access" />
-              <CategoryScoreBar label="Passive safety" value={securityScore} detail="HTTPS and browser protections" />
+      <div className="bg-gradient-to-br from-background via-muted/40 to-accent/10 p-4">
+        <div className="grid overflow-hidden rounded-[1.75rem] border border-border bg-card shadow-xl lg:grid-cols-[72px_1fr]">
+          <aside className="hidden border-r border-border bg-slate-950 p-3 text-white lg:block">
+            <div className="mb-6 flex h-10 w-10 items-center justify-center rounded-2xl bg-accent font-bold">SI</div>
+            <div className="space-y-3">
+              {['Audit', 'Pages', 'Fixes', 'Report'].map((item, index) => (
+                <div key={item} className={`h-10 rounded-2xl ${index === 0 ? 'bg-white/16' : 'bg-white/7'}`} title={item} />
+              ))}
             </div>
-          </div>
+          </aside>
 
-          <div className="grid gap-4">
-            <div className="rounded-3xl border border-border bg-background/80 p-5">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-lg font-bold">Top fixes first</h3>
-                  <p className="text-sm text-muted-foreground">Example data for the marketing preview only.</p>
-                </div>
-                <AlertTriangle className="h-5 w-5 text-amber-500" />
+          <div className="min-w-0">
+            <div className="flex flex-col gap-3 border-b border-border bg-background/80 px-4 py-4 md:flex-row md:items-center md:justify-between">
+              <div className="min-w-0">
+                <div className="text-xs font-bold uppercase tracking-[0.16em] text-accent">Live audit report</div>
+                <div className="truncate text-lg font-bold">{brand}</div>
               </div>
-              <div className="space-y-3">
-                {issues.slice(0, 3).map((issue) => (
-                  <div key={issue.title} className="rounded-2xl border border-border bg-card p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="font-semibold">{issue.title}</div>
-                      <SeverityBadge severity={issue.severity} />
+              <div className="flex flex-wrap gap-2">
+                <StatusBadge tone="success">Realtime</StatusBadge>
+                <StatusBadge tone="accent">No raw HTML</StatusBadge>
+              </div>
+            </div>
+
+            <div className="grid gap-4 p-4 xl:grid-cols-[0.8fr_1fr]">
+              <div className="grid gap-4">
+                <div className="rounded-3xl border border-border bg-background p-5">
+                  <RadialScoreGauge value={overallScore} label="SEOIntel score" detail="Deterministic audit scoring" size="lg" />
+                </div>
+                <div className="grid gap-3">
+                  <CategoryScoreBar label="SEO" value={seoScore} detail="Metadata, headings, links" />
+                  <CategoryScoreBar label="Technical SEO" value={technicalScore} detail="Status, redirects, access" />
+                  <CategoryScoreBar label="Passive safety" value={securityScore} detail="HTTPS and browser protections" />
+                </div>
+              </div>
+
+              <div className="grid gap-4">
+                <div className="rounded-3xl border border-border bg-background p-5">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-bold">Top fixes first</h3>
+                      <p className="text-sm text-muted-foreground">Example data for the product preview only.</p>
                     </div>
-                    {issue.detail && <p className="mt-2 text-sm text-muted-foreground">{issue.detail}</p>}
+                    <AlertTriangle className="h-5 w-5 text-amber-500" />
                   </div>
-                ))}
-              </div>
-            </div>
-            <div className="rounded-3xl border border-border bg-background/80 p-5">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-lg font-bold">Severity distribution</h3>
-                  <p className="text-sm text-muted-foreground">Fix priority stays visible throughout the report.</p>
+                  <div className="space-y-3">
+                    {issues.slice(0, 3).map((issue) => (
+                      <div key={issue.title} className="rounded-2xl border border-border bg-card p-3 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="font-semibold">{issue.title}</div>
+                          <SeverityBadge severity={issue.severity} />
+                        </div>
+                        {issue.detail && <p className="mt-2 text-sm text-muted-foreground">{issue.detail}</p>}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <ShieldCheck className="h-5 w-5 text-emerald-600" />
-              </div>
-              <SeverityDistribution {...severity} />
-            </div>
-          </div>
-        </div>
 
-        <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-          <RealisticDesktopPreviewCard url={url} title={title} description={description} />
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
-            <RealisticMobilePreviewCard url={url} title={title} description={description} />
-            <RealisticSerpPreviewCard url={url} title={title} description={description} />
+                <div className="rounded-3xl border border-border bg-background p-5">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-bold">Severity distribution</h3>
+                      <p className="text-sm text-muted-foreground">Fix priority stays visible throughout the report.</p>
+                    </div>
+                    <ShieldCheck className="h-5 w-5 text-emerald-600" />
+                  </div>
+                  <SeverityDistribution {...severity} />
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-4 border-t border-border bg-muted/25 p-4 xl:grid-cols-[1.1fr_0.9fr]">
+              <div className="overflow-hidden rounded-3xl border border-border bg-background shadow-sm">
+                <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-3">
+                  <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+                  <div className="ml-2 min-w-0 flex-1 truncate rounded-lg bg-muted px-3 py-1 text-xs text-muted-foreground">{url}</div>
+                </div>
+                <div className="p-5">
+                  <div className="mb-8 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <BrandInitialMark host={host} className="h-10 w-10 rounded-2xl text-lg" />
+                      <div>
+                        <div className="font-bold">{brand}</div>
+                        <div className="text-xs text-muted-foreground">Homepage preview</div>
+                      </div>
+                    </div>
+                    <span className="rounded-full bg-accent px-3 py-1 text-xs font-bold text-accent-foreground">CTA</span>
+                  </div>
+                  <h3 className="line-clamp-2 text-2xl font-bold">{pageTitle}</h3>
+                  <p className="mt-3 line-clamp-3 text-sm leading-6 text-muted-foreground">{desc}</p>
+                  <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                    {['Service page', 'Trust signals', 'Mobile ready'].map((item) => (
+                      <div key={item} className="rounded-2xl border border-border bg-card p-3 text-xs font-semibold text-muted-foreground">{item}</div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
+                <div className="rounded-3xl border border-border bg-background p-4 shadow-sm">
+                  <div className="mx-auto w-32 rounded-[1.7rem] border-4 border-slate-950 bg-slate-950 p-1">
+                    <div className="overflow-hidden rounded-[1.25rem] bg-card p-3">
+                      <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-muted-foreground/40" />
+                      <BrandInitialMark host={host} className="mb-3 h-8 w-8 rounded-xl text-sm" />
+                      <div className="line-clamp-3 text-sm font-bold">{pageTitle}</div>
+                      <div className="mt-2 line-clamp-3 text-[11px] leading-4 text-muted-foreground">{desc}</div>
+                      <div className="mt-3 h-7 rounded-xl bg-accent" />
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-3xl border border-border bg-white p-4 text-slate-900 shadow-sm">
+                  <div className="mb-3 text-sm font-bold text-blue-600">Google</div>
+                  <div className="flex items-center gap-2 text-xs text-slate-600">
+                    <BrandInitialMark host={host} className="h-7 w-7 rounded-full text-xs" />
+                    <div className="min-w-0">
+                      <div className="text-slate-900">{brand}</div>
+                      <div className="truncate">{url.replace(/^https?:\/\//, '')}</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 line-clamp-2 text-lg text-blue-700">{pageTitle}</div>
+                  <p className="mt-1 line-clamp-3 text-sm leading-5 text-slate-600">{desc}</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

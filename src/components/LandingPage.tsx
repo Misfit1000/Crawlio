@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import {
   Activity,
+  AlertTriangle,
   ArrowRight,
   BarChart3,
   Briefcase,
@@ -54,11 +55,16 @@ const trustBullets = [
 
 const credibilityBadges: Array<{ icon: IconType; title: string; description: string }> = [
   { icon: Activity, title: 'Worker-backed audits', description: 'The Render audit engine handles crawling and checks outside Vercel request paths.' },
-  { icon: Zap, title: 'Supabase realtime progress', description: 'Live audit events keep users informed while the audit engine works.' },
-  { icon: CheckCircle2, title: 'Deterministic checks', description: 'Findings come from explainable website signals, not black-box AI guesses.' },
-  { icon: ShieldCheck, title: 'Passive safety review', description: 'Browser-safety checks stay non-invasive and public-signal based.' },
-  { icon: Upload, title: 'Import-ready SEO data', description: 'Ranking and backlink areas stay labeled as imported/provider-ready data.' },
+  { icon: Zap, title: 'Realtime progress', description: 'Supabase realtime events show what the audit engine is checking now.' },
+  { icon: CheckCircle2, title: 'No raw HTML storage', description: 'SEOIntel stores audit results, page summaries, events, and issues, not full raw HTML.' },
   { icon: BarChart3, title: 'No fake ranking data', description: 'No fake traffic, CPC, backlink, domain authority, or SERP-position claims.' },
+  { icon: ShieldCheck, title: 'Passive security only', description: 'Browser-safety checks stay non-invasive and public-signal based.' },
+];
+
+const platformStats = [
+  { label: 'Audits run', value: '1,284', note: 'Demo platform counter', icon: Activity },
+  { label: 'Pages checked', value: '9,760', note: 'Demo platform counter', icon: Globe },
+  { label: 'Issue types detected', value: '40+', note: 'Deterministic check coverage', icon: AlertTriangle },
 ];
 
 const featureHighlights = [
@@ -205,42 +211,63 @@ const freeTools: Array<{
   description: string;
   href: string;
   label?: string;
+  group: 'On-page SEO' | 'Technical SEO' | 'Passive Security' | 'Import-ready data';
 }> = [
   {
     icon: Zap,
     title: 'Quick SEO Checker',
     description: 'Start a resource-light website scan and get a live fix list.',
     href: '#start-audit',
+    label: 'Live',
+    group: 'On-page SEO',
   },
   {
     icon: Search,
     title: 'Title and Description Checker',
     description: 'Review page titles, meta descriptions, and search preview length.',
     href: '#features',
+    label: 'Live',
+    group: 'On-page SEO',
   },
   {
     icon: Monitor,
     title: 'Google Preview Tool',
     description: 'Preview how a page title, URL, and description can look in search.',
     href: '#reports',
+    label: 'Live',
+    group: 'On-page SEO',
+  },
+  {
+    icon: Gauge,
+    title: 'Technical SEO Checker',
+    description: 'Review status codes, redirects, access rules, response timing, and page-size signals.',
+    href: '#audit-checks',
+    label: 'Live',
+    group: 'Technical SEO',
   },
   {
     icon: Activity,
     title: 'Redirect and URL Health Checker',
     description: 'Check status codes, redirects, and normalized URLs in plain language.',
-    href: '#features',
-  },
-  {
-    icon: ShieldCheck,
-    title: 'Browser Safety Checker',
-    description: 'Review HTTPS and public browser protection settings safely.',
-    href: '#features',
+    href: '#audit-checks',
+    label: 'Live',
+    group: 'Technical SEO',
   },
   {
     icon: Globe,
     title: 'Sitemap and Search Access Checker',
     description: 'Look for sitemap signals and search engine access rules.',
-    href: '#features',
+    href: '#audit-checks',
+    label: 'Live',
+    group: 'Technical SEO',
+  },
+  {
+    icon: ShieldCheck,
+    title: 'Passive Security Checker',
+    description: 'Review HTTPS and public browser protection settings safely.',
+    href: '#audit-checks',
+    label: 'Live',
+    group: 'Passive Security',
   },
   {
     icon: FileText,
@@ -248,6 +275,7 @@ const freeTools: Array<{
     description: 'Bring your own keyword data. SEOIntel does not invent search volume or CPC.',
     href: '#resources',
     label: 'Import-ready',
+    group: 'Import-ready data',
   },
   {
     icon: BarChart3,
@@ -255,6 +283,7 @@ const freeTools: Array<{
     description: 'Provider export required. No fake Google ranking positions are shown.',
     href: '#resources',
     label: 'Provider required',
+    group: 'Import-ready data',
   },
   {
     icon: Link2,
@@ -262,6 +291,7 @@ const freeTools: Array<{
     description: 'Import backlink exports later instead of pretending to own a backlink database.',
     href: '#resources',
     label: 'Provider required',
+    group: 'Import-ready data',
   },
 ];
 
@@ -494,9 +524,17 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
       </section>
 
       <section className="section-shell pb-10">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           {credibilityBadges.map((badge) => (
             <CredibilityBadge key={badge.title} {...badge} />
+          ))}
+        </div>
+      </section>
+
+      <section className="section-shell pb-16">
+        <div className="grid gap-4 rounded-[2rem] border border-border bg-card/80 p-4 shadow-2xl shadow-slate-950/5 md:grid-cols-3">
+          {platformStats.map((stat) => (
+            <StatBlock key={stat.label} {...stat} />
           ))}
         </div>
       </section>
@@ -550,9 +588,9 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
             title="Useful single-purpose checks for people who are not ready for a full workflow."
             description="These tools route visitors toward current SEOIntel capabilities instead of promising unsupported ranking, traffic, or backlink data."
           />
-          <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {freeTools.map((tool) => (
-              <ToolCard key={tool.title} {...tool} />
+          <div className="mt-10 grid gap-6 xl:grid-cols-2">
+            {(['On-page SEO', 'Technical SEO', 'Passive Security', 'Import-ready data'] as const).map((group) => (
+              <ToolGroup key={group} title={group} tools={freeTools.filter((tool) => tool.group === group)} />
             ))}
           </div>
         </div>
@@ -560,9 +598,9 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
 
       <section id="use-cases" className="section-shell py-16 md:py-20">
         <SectionHeader
-          eyebrow="Use cases"
-          title="Built for people who need answers, not another technical maze."
-          description="Different users can enter through the same quick audit and read the results at the level they need."
+          eyebrow="Example workflows"
+          title="Use-case cards without fake customer claims."
+          description="These are practical ways different teams can use SEOIntel, not invented testimonials or logos."
         />
         <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-5">
           {useCases.map((useCase) => (
@@ -638,6 +676,7 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
               />
             ))}
           </div>
+          <PricingComparisonTable />
         </div>
       </section>
 
@@ -724,6 +763,81 @@ function CredibilityBadge({ icon: Icon, title, description }: { icon: IconType; 
       </div>
       <h3 className="text-sm font-bold">{title}</h3>
       <p className="mt-2 text-xs leading-5 text-muted-foreground">{description}</p>
+    </SurfaceCard>
+  );
+}
+
+function StatBlock({ icon: Icon, label, value, note }: { icon: IconType; label: string; value: string; note: string }) {
+  return (
+    <div className="group rounded-[1.5rem] border border-border bg-background/80 p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/10 text-accent transition-colors group-hover:bg-accent group-hover:text-accent-foreground">
+          <Icon className="h-6 w-6" />
+        </div>
+        <StatusBadge tone="accent">Preview</StatusBadge>
+      </div>
+      <div className="text-4xl font-bold tracking-tight">{value}</div>
+      <div className="mt-1 font-semibold">{label}</div>
+      <p className="mt-2 text-xs leading-5 text-muted-foreground">{note}</p>
+    </div>
+  );
+}
+
+function ToolGroup({ title, tools }: { title: string; tools: typeof freeTools }) {
+  return (
+    <SurfaceCard className="p-5">
+      <div className="mb-5 flex items-center justify-between gap-3">
+        <h3 className="text-xl font-bold">{title}</h3>
+        <StatusBadge tone={title === 'Import-ready data' ? 'warning' : 'success'}>{title === 'Import-ready data' ? 'Provider/export required' : 'Real checks'}</StatusBadge>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        {tools.map((tool) => (
+          <ToolCard key={tool.title} {...tool} />
+        ))}
+      </div>
+    </SurfaceCard>
+  );
+}
+
+function PricingComparisonTable() {
+  const rows = [
+    ['Audit type', 'Quick audit', 'Full standard audit', 'Deep-ready workflow'],
+    ['Page limit', '5 pages', '25 pages', '75 agency / 100 admin when worker supports deep audit'],
+    ['Daily audits', '3', '25', '100 agency / 1000 admin'],
+    ['Monthly audits', '30', '500', '3000 agency / 100000 admin'],
+    ['Live progress', 'Yes', 'Yes', 'Yes'],
+    ['Passive security', 'Included', 'Included', 'Included'],
+    ['Ranking/backlink data', 'Import-ready only', 'Import-ready only', 'Provider/export required'],
+  ];
+
+  return (
+    <SurfaceCard className="mt-8 overflow-hidden">
+      <div className="border-b border-border bg-card px-5 py-4">
+        <h3 className="text-xl font-bold">Plan comparison</h3>
+        <p className="mt-1 text-sm text-muted-foreground">Uses the current SEOIntel limits. No inflated crawl limits or fake data claims.</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] text-sm">
+          <thead className="bg-muted/50 text-left">
+            <tr>
+              <th className="p-4 font-bold">Capability</th>
+              <th className="p-4 font-bold">Free Quick Audit</th>
+              <th className="p-4 font-bold">Paid Full Audit</th>
+              <th className="p-4 font-bold">Agency/Admin Deep-ready</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {rows.map(([capability, free, paid, agency]) => (
+              <tr key={capability} className="bg-card/60">
+                <td className="p-4 font-semibold">{capability}</td>
+                <td className="p-4 text-muted-foreground">{free}</td>
+                <td className="p-4 text-muted-foreground">{paid}</td>
+                <td className="p-4 text-muted-foreground">{agency}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </SurfaceCard>
   );
 }
