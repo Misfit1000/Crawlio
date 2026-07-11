@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Activity, AlertTriangle, Database, Loader2, RefreshCw, Search, Settings, ShieldAlert, SlidersHorizontal, Users, Wifi } from 'lucide-react';
+import { Activity, AlertTriangle, BookOpen, Database, Loader2, RefreshCw, Search, Settings, ShieldAlert, SlidersHorizontal, Users, Wifi } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import {
   getAdminActions,
@@ -15,7 +15,9 @@ import {
 } from '../services/supabaseDataService';
 import { Notice, PageHeader, Panel as UiPanel } from './ui/page-system';
 
-type AdminTab = 'overview' | 'users' | 'audits' | 'queue' | 'workers' | 'settings' | 'plans';
+const BlogAdmin = React.lazy(() => import('./blog/BlogAdmin'));
+
+type AdminTab = 'overview' | 'users' | 'audits' | 'queue' | 'workers' | 'settings' | 'plans' | 'blog';
 
 const tabs: Array<{ id: AdminTab; label: string; icon: any; path: string }> = [
   { id: 'overview', label: 'Overview', icon: Activity, path: '/admin' },
@@ -25,6 +27,7 @@ const tabs: Array<{ id: AdminTab; label: string; icon: any; path: string }> = [
   { id: 'workers', label: 'Audit Engine', icon: Wifi, path: '/admin/workers' },
   { id: 'settings', label: 'Settings', icon: Settings, path: '/admin/settings' },
   { id: 'plans', label: 'Plans', icon: ShieldAlert, path: '/admin/plans' },
+  { id: 'blog', label: 'Blog', icon: BookOpen, path: '/admin/blog' },
 ];
 
 const DUPLICATE_AUDIT_WARNING_MS = 10 * 60 * 1000;
@@ -76,7 +79,7 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-8 animate-rise">
-      <PageHeader eyebrow="Operations" icon={Activity} title="Admin operations" description="Manage users, plans, audit queue, audit engine health, and safe platform settings from measured platform data." />
+      <PageHeader eyebrow="Operations" icon={Activity} title="Admin operations" description="Manage users, plans, audits, publishing, audit engine health, and safe platform settings from measured platform data." />
 
       <UiPanel className="flex max-w-full flex-wrap gap-2 p-2" as="nav">
         {tabs.map((tab) => {
@@ -103,6 +106,11 @@ export default function AdminDashboard() {
       {activeTab === 'workers' && <AdminWorkers />}
       {activeTab === 'settings' && <AdminSettings />}
       {activeTab === 'plans' && <AdminPlans adminUserId={user.id} />}
+      {activeTab === 'blog' && (
+        <React.Suspense fallback={<div className="flex min-h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-accent" /></div>}>
+          <BlogAdmin />
+        </React.Suspense>
+      )}
     </div>
   );
 }

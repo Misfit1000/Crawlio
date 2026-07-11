@@ -166,6 +166,73 @@
   .interactive-panel {
     @apply transition-[border-color,box-shadow,transform] hover:-translate-y-0.5 hover:border-accent/25 hover:shadow-[0_18px_42px_-30px_rgba(47,107,255,0.45)];
   }
+
+  .blog-prose,
+  .rich-editor .tiptap {
+    @apply text-[1rem] leading-8 text-foreground;
+  }
+
+  .blog-prose > * + *,
+  .rich-editor .tiptap > * + * {
+    @apply mt-5;
+  }
+
+  .blog-prose h2,
+  .rich-editor .tiptap h2 {
+    @apply mt-10 text-2xl font-semibold leading-tight sm:text-3xl;
+  }
+
+  .blog-prose h3,
+  .rich-editor .tiptap h3 {
+    @apply mt-8 text-xl font-semibold leading-snug sm:text-2xl;
+  }
+
+  .blog-prose h4,
+  .rich-editor .tiptap h4 {
+    @apply mt-7 text-lg font-semibold;
+  }
+
+  .blog-prose p,
+  .blog-prose li,
+  .rich-editor .tiptap p,
+  .rich-editor .tiptap li {
+    @apply text-muted-foreground;
+  }
+
+  .blog-prose ul,
+  .rich-editor .tiptap ul {
+    @apply list-disc space-y-2 pl-6;
+  }
+
+  .blog-prose ol,
+  .rich-editor .tiptap ol {
+    @apply list-decimal space-y-2 pl-6;
+  }
+
+  .blog-prose a,
+  .rich-editor .tiptap a {
+    @apply font-semibold text-accent underline decoration-accent/35 underline-offset-4 hover:decoration-accent;
+  }
+
+  .blog-prose blockquote,
+  .rich-editor .tiptap blockquote {
+    @apply border-l-4 border-accent bg-muted/55 px-5 py-4 text-foreground;
+  }
+
+  .blog-prose pre,
+  .rich-editor .tiptap pre {
+    @apply max-w-full overflow-x-auto rounded-xl bg-[#0b1b46] p-5 text-sm leading-6 text-slate-100;
+  }
+
+  .blog-prose code:not(pre code),
+  .rich-editor .tiptap code:not(pre code) {
+    @apply rounded bg-muted px-1.5 py-0.5 text-sm text-foreground;
+  }
+
+  .rich-editor .tiptap p.is-editor-empty:first-child::before {
+    @apply pointer-events-none float-left h-0 text-muted-foreground;
+    content: 'Write the practical article guidance here...';
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

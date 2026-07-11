@@ -14,6 +14,7 @@ export function MarketingShell({
   onLogin,
   onSettings,
   onLogout,
+  navigationBase = '',
 }: {
   children: ReactNode;
   theme: Theme;
@@ -24,15 +25,17 @@ export function MarketingShell({
   onLogin: () => void;
   onSettings: () => void;
   onLogout: () => void;
+  navigationBase?: string;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const links = [
-    ['Features', '#features'],
-    ['Free Tools', '#free-tools'],
-    ['Pricing', '#pricing'],
-    ['Reports', '#reports'],
-    ['Resources', '#resources'],
+    ['Features', `${navigationBase}#features`],
+    ['Free Tools', `${navigationBase}#free-tools`],
+    ['Pricing', `${navigationBase}#pricing`],
+    ['Reports', `${navigationBase}#reports`],
+    ['Blog', '/blog'],
   ];
+  const auditHref = `${navigationBase}#start-audit`;
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-50 border-b border-border bg-card/94 shadow-[0_8px_30px_-26px_rgba(11,27,70,0.4)] backdrop-blur-xl">
@@ -49,7 +52,7 @@ export function MarketingShell({
                 <button type="button" onClick={onLogout} className="rounded-lg p-2.5 text-muted-foreground hover:bg-red-500/10 hover:text-red-600" aria-label="Sign out"><LogOut className="h-5 w-5" /></button>
               </>
             ) : <button type="button" onClick={onLogin} className="hidden min-h-10 rounded-lg px-3 text-sm font-semibold text-foreground hover:bg-muted sm:block">Sign in</button>}
-            <a href="#start-audit" className="trust-button min-h-10 px-3 py-2 text-sm"><span className="hidden sm:inline">Start free audit</span><span className="sm:hidden">Audit</span></a>
+            <a href={auditHref} className="trust-button min-h-10 px-3 py-2 text-sm"><span className="hidden sm:inline">Start free audit</span><span className="sm:hidden">Audit</span></a>
             <button type="button" onClick={() => setMenuOpen((open) => !open)} className="rounded-lg p-2.5 text-muted-foreground hover:bg-muted lg:hidden" aria-expanded={menuOpen} aria-controls="public-mobile-nav" aria-label="Toggle navigation">{menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}</button>
           </div>
         </div>

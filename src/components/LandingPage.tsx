@@ -787,7 +787,7 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
           </div>
           <FooterLinks title="Product" links={[['Features', '#features'], ['Reports', '#reports'], ['Pricing', '#pricing']]} />
           <FooterLinks title="Free tools" links={[['Quick SEO Checker', '#start-audit'], ['Google Preview Tool', '#free-tools'], ['Passive Security Review', '#free-tools']]} />
-          <FooterLinks title="Resources" links={[['Use cases', '#use-cases'], ['Guides', '#resources'], ['FAQ', '#faq'], ['Audit safety', '#audit-checks']]} />
+          <FooterLinks title="Resources" links={[['SEOIntel blog', '/blog'], ['Use cases', '#use-cases'], ['FAQ', '#faq'], ['Audit safety', '#audit-checks']]} />
         </div>
       </footer>
     </main>

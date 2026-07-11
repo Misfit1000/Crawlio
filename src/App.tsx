@@ -31,6 +31,8 @@ const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
 const PublicDiscovery = lazy(() => import('./components/PublicDiscovery'));
 const SearchData = lazy(() => import('./components/SearchData'));
 const LiveAuditProgress = lazy(() => import('./components/audit/LiveAuditProgress').then((mod) => ({ default: mod.LiveAuditProgress })));
+const BlogIndex = lazy(() => import('./components/blog/BlogIndex'));
+const BlogPostPage = lazy(() => import('./components/blog/BlogPostPage'));
 
 export type TabType = 'dashboard' | 'keyword-research' | 'website-analyzer' | 'keyword-clusters' | 'competitor-gap' | 'content-briefs' | 'seo-audit' | 'seo-findings' | 'technical-seo' | 'crawlability' | 'performance' | 'pages' | 'audit-history' | 'security-audit' | 'rank-tracker' | 'imports' | 'reports' | 'settings' | 'admin-dashboard' | 'public-discovery' | 'search-data';
 
@@ -84,13 +86,14 @@ const LOCATIONS = [
 export default function App() {
   const { user, loading: authLoading, logout, unverifiedEmail, setUnverifiedEmail } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const [pathname, setPathname] = useState(() => window.location.pathname);
   const [authMode, setAuthMode] = useState<'login' | 'register' | null>(() => {
     if (window.location.pathname === '/admin/login') {
       return 'login';
     }
     return null;
   });
-  const [isSearching, setIsSearching] = useState(false);
+  const [isSearching, setIsSearching] = useState(() => window.location.pathname.startsWith('/admin'));
   const [keyword, setKeyword] = useState('');
   const [searchedKeyword, setSearchedKeyword] = useState('');
   const [location, setLocation] = useState('US');
@@ -125,6 +128,7 @@ export default function App() {
 
   useEffect(() => {
     const syncLiveRoute = () => {
+      setPathname(window.location.pathname);
       const match = window.location.pathname.match(/^\/audit\/live\/([^/]+)/);
       setLiveAuditId(match?.[1] || null);
     };
@@ -149,6 +153,7 @@ export default function App() {
   const [inDepthAnalysis, setInDepthAnalysis] = useState(false);
 
   useEffect(() => {
+    if (pathname.startsWith('/blog')) return;
     if (activeTab === 'admin-dashboard') {
       if (authMode === 'login') {
         window.history.replaceState(null, '', '/admin/login');
@@ -158,7 +163,7 @@ export default function App() {
     } else {
       window.history.replaceState(null, '', '/');
     }
-  }, [activeTab, authMode]);
+  }, [activeTab, authMode, pathname]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -299,6 +304,7 @@ export default function App() {
       }
       const auditId = response.data.data?.auditId || response.data.auditId;
       window.history.pushState(null, '', `/audit/live/${auditId}`);
+      setPathname(`/audit/live/${auditId}`);
       setLiveAuditId(auditId);
       setIsSearching(false);
     } catch (error) {
@@ -312,6 +318,7 @@ export default function App() {
     setLiveAuditId(null);
     setIsSearching(false);
     window.history.pushState(null, '', '/');
+    setPathname('/');
     window.setTimeout(() => {
       document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 80);
@@ -321,6 +328,7 @@ export default function App() {
     setActiveTab(tab);
     setIsSearching(true);
     window.history.pushState(null, '', '/');
+    setPathname('/');
   };
 
   const handleLandingNavigate = (destination: LandingDestination) => {
@@ -330,6 +338,17 @@ export default function App() {
     }
     openAppTab(destination);
   };
+
+  const blogMatch = pathname.match(/^\/blog(?:\/([^/]+))?\/?$/);
+  const isBlogRoute = Boolean(blogMatch);
+  let blogSlug = '';
+  if (blogMatch?.[1]) {
+    try {
+      blogSlug = decodeURIComponent(blogMatch[1]);
+    } catch {
+      blogSlug = blogMatch[1];
+    }
+  }
 
   if (unverifiedEmail) {
     return (
@@ -365,6 +384,7 @@ export default function App() {
             className="rounded-2xl"
             onClick={() => {
               window.history.pushState(null, '', '/');
+              setPathname('/');
               setLiveAuditId(null);
               setIsSearching(false);
             }}
@@ -487,13 +507,37 @@ export default function App() {
       )}
 
       <div className="relative z-10 flex flex-col min-h-screen">
-        {!isSearching ? (
+        {isBlogRoute ? (
+          <MarketingShell
+            theme={theme}
+            onToggleTheme={toggleTheme}
+            userLabel={user?.username || (user ? 'Account' : null)}
+            authLoading={authLoading}
+            navigationBase="/"
+            onHome={() => {
+              window.history.pushState(null, '', '/');
+              setPathname('/');
+              setIsSearching(false);
+            }}
+            onLogin={() => setAuthMode('login')}
+            onSettings={() => openAppTab('settings')}
+            onLogout={handleLogout}
+          >
+            <Suspense fallback={<LoadingSkeleton rows={5} />}>
+              {blogSlug ? <BlogPostPage slug={blogSlug} /> : <BlogIndex />}
+            </Suspense>
+          </MarketingShell>
+        ) : !isSearching ? (
             <MarketingShell
               theme={theme}
               onToggleTheme={toggleTheme}
               userLabel={user?.username || (user ? 'Account' : null)}
               authLoading={authLoading}
-              onHome={() => setIsSearching(false)}
+              onHome={() => {
+                window.history.pushState(null, '', '/');
+                setPathname('/');
+                setIsSearching(false);
+              }}
               onLogin={() => setAuthMode('login')}
               onSettings={() => openAppTab('settings')}
               onLogout={handleLogout}
@@ -527,7 +571,11 @@ export default function App() {
               onToggleTheme={toggleTheme}
               sidebarOpen={isSidebarOpen}
               onToggleSidebar={() => setIsSidebarOpen((open) => !open)}
-              onHome={() => setIsSearching(false)}
+              onHome={() => {
+                window.history.pushState(null, '', '/');
+                setPathname('/');
+                setIsSearching(false);
+              }}
               query={keyword}
               onQueryChange={setKeyword}
               onSearch={(event) => handleSearch(event, undefined, false)}
