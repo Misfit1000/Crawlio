@@ -24,6 +24,7 @@
     "smoke:duplicate-audits": "tsx scripts/smoke-duplicate-audit-prevention.mts",
     "smoke:audit-duration": "tsx scripts/smoke-audit-duration.mts",
     "smoke:audit-pdf": "tsx scripts/smoke-audit-pdf.mts",
+    "smoke:report-insights": "tsx scripts/smoke-report-insights.mts",
     "smoke:supabase-schema": "node scripts/smoke-supabase-schema.mjs",
     "smoke:url": "tsx scripts/smoke-url-normalization.mjs",
     "e2e:local-audit": "node scripts/e2e-local-audit.mjs",

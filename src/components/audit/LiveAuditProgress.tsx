@@ -5,6 +5,7 @@ import type { LiveAuditConnectionState } from '../../lib/audit/live-supabase-cli
 import { getAuditModeLabel } from '../../lib/audit/audit-config';
 import { isAuditQueuedTooLong } from '../../lib/audit/queued-worker-warning';
 import { API_ROUTES } from '../../lib/api/routes';
+import { getAuditAccessHeaders } from '../../lib/api/auth-headers';
 import { safeJsonFetch } from '../../lib/http/safe-json';
 import { formatAuditElapsed, isTerminalAuditStatus } from '../../lib/audit/audit-time';
 import { downloadAuditExport } from '../../lib/http/download';
@@ -114,6 +115,7 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
   const [checklist, setChecklist] = useState<Record<string, ChecklistStatus>>({});
   const [shareMessage, setShareMessage] = useState<string | null>(null);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [isDownloadingJson, setIsDownloadingJson] = useState(false);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const audit = data.audit;
   const shouldRunClock = !audit || !isTerminalAuditStatus(audit.status);
@@ -225,8 +227,22 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
   const cancelAudit = async () => {
     setIsCancelling(true);
     try {
-      const response = await safeJsonFetch(API_ROUTES.auditCancel(auditId), { method: 'POST' });
-      if (!response.success) throw new Error((response as any).error || 'Failed to cancel audit');
+      const response = await safeJsonFetch(API_ROUTES.auditCancel(auditId), { method: 'POST', headers: await getAuditAccessHeaders() });
+      if ('error' in response) throw new Error(response.error || 'Failed to cancel audit');
+      const payload = response.data as { success?: boolean; error?: string };
+      if (payload.success === false) throw new Error(payload.error || 'Failed to cancel audit');
+      const cancelledAt = new Date().toISOString();
+      setData((current) => current.audit ? {
+        ...current,
+        audit: {
+          ...current.audit,
+          status: 'cancelled',
+          currentPhase: 'Cancelled',
+          currentCheck: 'Audit stopped',
+          cancelledAt,
+          updatedAt: cancelledAt,
+        },
+      } : current);
     } catch (err: any) {
       setError(err.message || 'Failed to cancel audit');
     } finally {
@@ -271,6 +287,20 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
     }
   };
 
+  const downloadJson = async () => {
+    setIsDownloadingJson(true);
+    setExportMessage(null);
+    try {
+      await downloadAuditExport(auditId, 'json');
+      setExportMessage('JSON report downloaded.');
+    } catch (downloadError) {
+      setExportMessage(downloadError instanceof Error ? downloadError.message : 'JSON download failed.');
+    } finally {
+      setIsDownloadingJson(false);
+      window.setTimeout(() => setExportMessage(null), 4000);
+    }
+  };
+
   if (error) {
     return (
       <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-500 rounded-xl flex items-center gap-2">
@@ -306,18 +336,25 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
   const firstPage = data.latestPages.find((page) => page.title || page.metaDescription) || data.latestPages[0];
   const estimatedScore = Math.max(0, Math.min(100, 100 - audit.criticalCount * 12 - audit.highCount * 7 - audit.mediumCount * 3 - audit.lowCount));
   const reportScores = (data.finalReport?.scores || {}) as Record<string, unknown>;
-  const scoreValue = (key: string, fallback: number) => {
-    const value = Number(reportScores[key]);
-    return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : fallback;
+  const scoreValue = (key: string) => {
+    const rawValue = reportScores[key];
+    if (rawValue == null || rawValue === '') return null;
+    const value = Number(rawValue);
+    return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : null;
   };
-  const overallScore = scoreValue('overall', estimatedScore);
-  const categoryScores = [
-    { label: 'SEO', value: scoreValue('seo', Math.max(35, estimatedScore - audit.mediumCount)), tone: overallScore > 70 ? 'green' as const : 'yellow' as const },
-    { label: 'Technical SEO', value: scoreValue('technical', Math.max(25, 92 - audit.highCount * 8)), tone: 'accent' as const },
-    { label: 'Speed signals', value: scoreValue('performance', Math.max(20, 88 - data.latestPages.length * 2)), tone: 'yellow' as const },
-    { label: 'Browser safety', value: scoreValue('security', Math.max(20, 96 - audit.criticalCount * 15 - audit.highCount * 5)), tone: audit.criticalCount ? 'red' as const : 'green' as const },
-    { label: 'Google access', value: scoreValue('crawlability', Math.min(100, Math.round((audit.pagesCrawled / Math.max(1, audit.pageLimit)) * 100))), tone: 'accent' as const },
+  const finalOverallScore = scoreValue('overall');
+  const overallScore = finalOverallScore ?? estimatedScore;
+  const hasScoreEvidence = Boolean(data.finalReport) || audit.pagesCrawled > 0 || audit.issuesFound > 0;
+  const categoryScoreCandidates: Array<{ label: string; value: number | null; tone: 'accent' | 'green' | 'yellow' | 'red' }> = [
+    { label: 'On-page SEO', value: scoreValue('seo'), tone: 'green' },
+    { label: 'Technical SEO', value: scoreValue('technical'), tone: 'accent' },
+    { label: 'Performance observations', value: scoreValue('performance'), tone: 'yellow' },
+    { label: 'Passive Security Review', value: scoreValue('security'), tone: 'green' },
+    { label: 'Crawlability', value: scoreValue('crawlability'), tone: 'accent' },
   ];
+  const categoryScores = data.finalReport
+    ? categoryScoreCandidates.filter((item): item is typeof item & { value: number } => item.value != null)
+    : [];
   const progressSeries = [
     0,
     ...data.latestEvents
@@ -335,7 +372,7 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
   const historyEntry = buildHistoryEntry(data);
   const history = readAuditHistory();
   const previousAudit = findPreviousAudit(historyEntry, history);
-  const comparison = compareAuditIssues(data.latestIssues, previousAudit);
+  const comparison = compareAuditIssues(data.latestIssues, previousAudit, data.finalReport ? historyEntry?.score : null);
   const checklistSummary = checklistCompletion(data.latestIssues, checklist);
   const scoreTrend = scoreTrendForUrl(audit.normalizedUrl, history);
   const crawlDepth = crawlDepthDistribution(data.latestPages);
@@ -360,7 +397,14 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
                   <p className="mt-2 max-w-3xl break-all text-muted-foreground">{audit.normalizedUrl}</p>
                 </div>
                 <div className="flex justify-start md:justify-end">
-                  <RadialScoreGauge value={overallScore} label={data.finalReport ? 'Site health' : 'Estimated health'} detail={data.finalReport ? 'Final report score' : 'Updates from live findings'} size="sm" />
+                  {hasScoreEvidence ? (
+                    <RadialScoreGauge value={overallScore} label={data.finalReport ? 'Site health' : 'Estimated health'} detail={data.finalReport ? 'Final report score' : 'Updates from measured findings'} size="sm" />
+                  ) : (
+                    <div className="flex h-28 w-28 flex-col items-center justify-center rounded-full border border-dashed border-border bg-card text-center">
+                      <div className="text-xl font-bold">--</div>
+                      <div className="mt-1 px-3 text-xs leading-4 text-muted-foreground">Score pending</div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -420,13 +464,19 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
         <SurfaceCard className="p-5 md:p-6">
           <div className="mb-5">
             <h3 className="text-xl font-bold">Health categories</h3>
-            <p className="text-sm text-muted-foreground">A quick breakdown while the audit engine checks your site.</p>
+            <p className="text-sm text-muted-foreground">Final section scores are shown only after the audit engine calculates them.</p>
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            {categoryScores.map((item) => (
-              <CategoryScoreBar key={item.label} label={item.label} value={item.value} tone={item.tone} />
-            ))}
-          </div>
+          {categoryScores.length ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              {categoryScores.map((item) => (
+                <CategoryScoreBar key={item.label} label={item.label} value={item.value} tone={item.tone} />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-border bg-muted/25 p-5 text-sm leading-6 text-muted-foreground">
+              Section grades are not estimated while the audit is running. Live progress, pages checked, and measured findings remain available above.
+            </div>
+          )}
         </SurfaceCard>
         <SurfaceCard className="p-5 md:p-6">
           <div className="mb-5">
@@ -443,12 +493,12 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
             <h2 className="text-2xl font-bold tracking-tight">Site being checked</h2>
             <p className="text-muted-foreground break-all">{audit.normalizedUrl}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <ConnectionBadge connection={connection} now={now} />
             {data.finalReport && (
-              <a href={API_ROUTES.auditExport(auditId, 'json')} className="px-3 py-2 rounded-lg border border-border text-sm flex items-center gap-2 hover:bg-muted">
-                <FileDown className="w-4 h-4" /> JSON
-              </a>
+              <button type="button" onClick={downloadJson} disabled={isDownloadingJson} className="quiet-button px-3 py-2 text-sm">
+                {isDownloadingJson ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} JSON
+              </button>
             )}
             {audit.status === 'completed' && audit.processingTier !== 'free' && (
               <button type="button" onClick={downloadPdf} disabled={isDownloadingPdf} className="trust-button px-3 py-2 text-sm">
@@ -534,14 +584,14 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
           <Info label="Pages" value={`${audit.pagesCrawled} / ${audit.pageLimit}`} />
           <Info label="Fixes found" value={String(audit.issuesFound)} />
           <Info label="Elapsed" value={elapsedTime} />
-          <Info label="Browser safety" value="Non-invasive checks only" />
+          <Info label="Passive Security Review" value="Non-invasive checks only" />
         </div>
       </div>
 
       {audit.status === 'completed' && audit.processingTier === 'free' && (
         <div className="bg-accent/10 border border-accent/20 rounded-xl p-4 text-sm">
           <div className="font-semibold text-foreground">Unlock a full 25-page audit, deeper checks, faster starts, and PDF reports.</div>
-          <div className="text-muted-foreground mt-1">Free reports show quick SEO and passive browser safety results. Paid reports unlock the full audit categories.</div>
+          <div className="text-muted-foreground mt-1">Free reports show quick SEO and passive security observations. Paid reports unlock the full audit categories.</div>
         </div>
       )}
 
@@ -878,7 +928,7 @@ function AuditWorkflowPanel({
 function PlainEnglishBlock({ title, text }: { title: string; text: string }) {
   return (
     <div className="rounded-2xl border border-border bg-card/70 p-3">
-      <div className="text-xs font-black uppercase tracking-[0.12em] text-muted-foreground">{title}</div>
+      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">{title}</div>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">{text || 'No detail available yet.'}</p>
     </div>
   );
@@ -907,7 +957,7 @@ function InsightChart({
             <div className="h-2.5 overflow-hidden rounded-full bg-muted">
               <div className="h-full rounded-full bg-gradient-to-r from-accent to-emerald-500" style={{ width: `${Math.max(4, Math.min(100, (item.value / Math.max(1, maxValue)) * 100))}%` }} />
             </div>
-            <div className="text-right text-xs font-black">{item.value}</div>
+            <div className="text-right text-xs font-semibold">{item.value}</div>
           </div>
         ))}
       </div>

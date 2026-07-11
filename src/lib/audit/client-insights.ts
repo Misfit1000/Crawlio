@@ -1,4 +1,5 @@
 import type { ResourceAuditDocument, ResourceAuditIssue, ResourceAuditLiveData, ResourceAuditPage } from './resource-types';
+import { extractReportScores, type ReportScoreSnapshot } from './report-insights';
 
 export type ChecklistStatus = 'not_started' | 'in_progress' | 'fixed' | 'ignored';
 export type IssueBucket = 'all' | 'seo' | 'technical' | 'security';
@@ -10,16 +11,34 @@ export interface AuditHistoryEntry {
   hostname: string;
   status: string;
   score: number;
+  scoreSource?: 'final_report' | 'issue_weight';
+  scores?: ReportScoreSnapshot;
   issuesFound: number;
   criticalCount: number;
   highCount: number;
   mediumCount: number;
   lowCount: number;
   pagesCrawled: number;
+  pageLimit?: number;
   completedAt: string | null;
+  createdAt?: string;
+  startedAt?: string | null;
+  durationSeconds?: number | null;
+  mode?: ResourceAuditDocument['mode'];
+  processingTier?: ResourceAuditDocument['processingTier'];
   updatedAt: string;
   issueSignatures: string[];
-  pageSummaries: Array<{ url: string; statusCode: number; crawlDepth: number; issueCount: number }>;
+  topIssues?: ResourceAuditIssue[];
+  pageSummaries: Array<{
+    url: string;
+    statusCode: number;
+    crawlDepth: number;
+    issueCount: number;
+    responseTimeMs?: number;
+    pageSizeBytes?: number;
+    title?: string;
+    metaDescription?: string;
+  }>;
 }
 
 export interface IssueInsight {
@@ -89,27 +108,47 @@ function writeAuditHistory(entries: AuditHistoryEntry[]) {
 export function buildHistoryEntry(data: ResourceAuditLiveData): AuditHistoryEntry | null {
   const audit = data.audit;
   if (!audit) return null;
+  const scores = extractReportScores(data.finalReport?.scores);
+  const score = scores.overall ?? scoreFromAudit(audit);
+  const startedAt = audit.startedAt || audit.createdAt;
+  const endedAt = audit.completedAt || audit.cancelledAt || (audit.status === 'failed' ? audit.updatedAt : null);
+  const durationSeconds = endedAt
+    ? Math.max(0, Math.round((new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 1000))
+    : null;
   return {
     auditId: audit.id,
     projectId: audit.projectId,
     normalizedUrl: audit.normalizedUrl,
     hostname: audit.hostname,
     status: audit.status,
-    score: scoreFromAudit(audit),
+    score,
+    scoreSource: scores.overall == null ? 'issue_weight' : 'final_report',
+    scores,
     issuesFound: audit.issuesFound,
     criticalCount: audit.criticalCount,
     highCount: audit.highCount,
     mediumCount: audit.mediumCount,
     lowCount: audit.lowCount,
     pagesCrawled: audit.pagesCrawled,
+    pageLimit: audit.pageLimit,
     completedAt: audit.completedAt,
+    createdAt: audit.createdAt,
+    startedAt: audit.startedAt,
+    durationSeconds,
+    mode: audit.effectiveMode || audit.mode,
+    processingTier: audit.processingTier,
     updatedAt: audit.updatedAt,
     issueSignatures: data.latestIssues.map(issueSignature),
+    topIssues: data.latestIssues.slice(0, 12),
     pageSummaries: data.latestPages.map((page) => ({
       url: page.url,
       statusCode: page.statusCode,
       crawlDepth: page.crawlDepth,
       issueCount: page.issueCount,
+      responseTimeMs: page.responseTimeMs,
+      pageSizeBytes: page.pageSizeBytes,
+      title: page.title,
+      metaDescription: page.metaDescription,
     })),
   };
 }
@@ -128,7 +167,7 @@ export function findPreviousAudit(current: AuditHistoryEntry | null, history = r
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0] || null;
 }
 
-export function compareAuditIssues(currentIssues: ResourceAuditIssue[], previous: AuditHistoryEntry | null) {
+export function compareAuditIssues(currentIssues: ResourceAuditIssue[], previous: AuditHistoryEntry | null, currentScore?: number | null) {
   const current = new Set(currentIssues.map(issueSignature));
   const previousSet = new Set(previous?.issueSignatures || []);
   const newIssues = currentIssues.filter((issue) => !previousSet.has(issueSignature(issue)));
@@ -138,7 +177,7 @@ export function compareAuditIssues(currentIssues: ResourceAuditIssue[], previous
     newIssues,
     unchangedIssues,
     fixedCount,
-    scoreDelta: previous ? scoreFromIssues(currentIssues) - previous.score : null,
+    scoreDelta: previous && currentScore != null ? currentScore - previous.score : null,
   };
 }
 
@@ -158,7 +197,7 @@ export function scoreFromIssues(issues: Array<Pick<ResourceAuditIssue, 'severity
 
 export function scoreTrendForUrl(normalizedUrl: string, history = readAuditHistory()) {
   return history
-    .filter((entry) => entry.normalizedUrl === normalizedUrl)
+    .filter((entry) => entry.normalizedUrl === normalizedUrl && entry.status === 'completed')
     .sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime())
     .slice(-6);
 }

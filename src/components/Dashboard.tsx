@@ -1,15 +1,71 @@
-import React, { useEffect, useState } from 'react';
-import { Activity, AlertTriangle, ArrowRight, FileText, Gauge, Layers, Lock, Rocket, Search, ShieldCheck, Upload } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  AlertTriangle,
+  ArrowRight,
+  BarChart3,
+  FileText,
+  Gauge,
+  History,
+  Layers,
+  Lock,
+  Rocket,
+  Search,
+  ShieldCheck,
+  Upload,
+} from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { API_ROUTES } from '../lib/api/routes';
 import { getAuthHeaders } from '../lib/api/auth-headers';
+import { API_ROUTES } from '../lib/api/routes';
+import { readAuditHistory, scoreTrendForUrl, type AuditHistoryEntry } from '../lib/audit/client-insights';
+import { groupRecommendations, scoreToGrade } from '../lib/audit/report-insights';
 import { safeJsonFetch } from '../lib/http/safe-json';
-import { CategoryScoreBar, MetricCard, ProgressBar, RadialScoreGauge, SeverityDistribution, SitePreviewSection, StatusBadge, SurfaceCard } from './ui/visual-system';
+import {
+  AuditGrade,
+  CategoryGradeCard,
+  EmptyState,
+  MetricCard,
+  ProgressBar,
+  SeverityDistribution,
+  SitePreviewSection,
+  SparklineChart,
+  StatusBadge,
+  SurfaceCard,
+} from './ui/visual-system';
 
-export default function Dashboard(props: any) {
+interface DashboardProps {
+  keyword?: string;
+  onOpenSeoAudit?: () => void;
+  onOpenSecurityAudit?: () => void;
+  onOpenReports?: () => void;
+  onOpenImports?: () => void;
+  [key: string]: unknown;
+}
+
+function selectReport(entry: AuditHistoryEntry, onOpenReports?: () => void) {
+  window.localStorage.setItem('seointel_selected_report_id', entry.auditId);
+  onOpenReports?.();
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return 'Not available';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Not available' : date.toLocaleString();
+}
+
+export default function Dashboard(props: DashboardProps) {
   const { user } = useAuth();
   const [planData, setPlanData] = useState<any | null>(null);
+  const [history, setHistory] = useState<AuditHistoryEntry[]>([]);
+  const [importState, setImportState] = useState({ search: false, rankings: false });
   const upgradeUrl = import.meta.env.VITE_UPGRADE_URL;
+
+  useEffect(() => {
+    setHistory(readAuditHistory());
+    setImportState({
+      search: Boolean(window.localStorage.getItem('seo_gsc_data')),
+      rankings: Boolean(window.localStorage.getItem('seo_keyword_data')),
+    });
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -39,70 +95,86 @@ export default function Dashboard(props: any) {
   const monthlyUsed = Number(profile?.auditQuotaUsedMonthly ?? 0);
   const dailyRemaining = Math.max(0, dailyLimit - dailyUsed);
   const monthlyRemaining = Math.max(0, monthlyLimit - monthlyUsed);
-  const searchedUrl = String(props.keyword || '').trim();
-
-  const categoryScores = [
-    { label: 'SEO', value: 84, tone: 'green' as const },
-    { label: 'Website health', value: 76, tone: 'accent' as const },
-    { label: 'Speed signals', value: 68, tone: 'yellow' as const },
-    { label: 'Browser safety', value: 88, tone: 'green' as const },
-    { label: 'Google access', value: 79, tone: 'accent' as const },
-    { label: 'Mobile experience', value: 72, tone: 'accent' as const },
-    { label: 'Social previews', value: 61, tone: 'yellow' as const },
-  ];
+  const latest = history[0] || null;
+  const latestScore = latest?.status === 'completed' ? latest.score : null;
+  const latestGrade = scoreToGrade(latestScore);
+  const latestPreview = latest?.pageSummaries.find((page) => page.title || page.metaDescription) || latest?.pageSummaries[0];
+  const recommendations = useMemo(() => groupRecommendations(latest?.topIssues || []).slice(0, 4), [latest]);
+  const trend = useMemo(() => latest ? scoreTrendForUrl(latest.normalizedUrl, history) : [], [history, latest]);
+  const latestScores = latest?.scores;
 
   return (
     <div className="w-full space-y-8 animate-rise">
-      <SurfaceCard className="overflow-hidden p-0">
-        <div className="grid gap-0 lg:grid-cols-[1.05fr_0.95fr]">
+      <SurfaceCard className="p-0">
+        <div className="grid lg:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
           <div className="p-6 md:p-8">
-            <div className="suite-chip mb-4 text-accent">Website command center</div>
-            <h1 className="text-3xl font-black tracking-tight md:text-5xl">Know what to fix first, then prove it with real audit data.</h1>
-            <p className="mt-4 max-w-3xl text-base leading-7 text-muted-foreground">
-              Run live audits, understand site health at a glance, import real search data, and move from scan results to prioritized fixes without paid APIs.
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge tone={plan === 'free' ? 'warning' : 'success'}>{plan} plan</StatusBadge>
+              <StatusBadge tone="accent">{plan === 'free' ? 'Quick audits' : 'Full audits'}</StatusBadge>
+            </div>
+            <h1 className="mt-5 max-w-3xl text-3xl font-bold leading-tight md:text-4xl">Your website audit workspace</h1>
+            <p className="mt-3 max-w-3xl text-base leading-7 text-muted-foreground">
+              Run a live website scan, review the highest-priority fixes, and return to measured results without mixing in unsupported ranking or backlink data.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
-              <button className="quiet-button">
-                <Upload className="h-4 w-4" /> Import Data
+              <button type="button" onClick={props.onOpenSeoAudit} className="trust-button">
+                <Rocket className="h-4 w-4" /> Start website audit
               </button>
-              <button onClick={() => props.onOpenSeoAudit?.()} className="trust-button">
-                <Rocket className="h-4 w-4" /> Start audit
+              <button type="button" onClick={props.onOpenImports} className="quiet-button">
+                <Upload className="h-4 w-4" /> Import search data
               </button>
             </div>
           </div>
-          <div className="border-t border-border bg-gradient-to-br from-accent/10 via-card to-emerald-500/10 p-6 md:p-8 lg:border-l lg:border-t-0">
-            <div className="grid gap-3">
-              {categoryScores.slice(0, 4).map((item) => (
-                <CategoryScoreBar key={item.label} label={item.label} value={item.value} tone={item.tone} />
-              ))}
-            </div>
+          <div className="border-t border-border bg-muted/30 p-6 md:p-8 lg:border-l lg:border-t-0">
+            {latest ? (
+              <div className="space-y-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-muted-foreground">Latest audit</div>
+                    <div className="mt-1 truncate font-semibold">{latest.hostname || latest.normalizedUrl}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{formatDate(latest.updatedAt)}</div>
+                  </div>
+                  <StatusBadge tone={latest.status === 'completed' ? 'success' : latest.status === 'failed' ? 'danger' : 'warning'}>{latest.status}</StatusBadge>
+                </div>
+                <AuditGrade
+                  score={latestScore}
+                  detail={latest.status !== 'completed' ? `No final score: audit ${latest.status}` : latest.scoreSource === 'final_report' ? 'Final audit engine score' : 'Estimated from stored issue counts'}
+                />
+                <button type="button" onClick={() => selectReport(latest, props.onOpenReports)} className="quiet-button w-full">
+                  Open full report <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <EmptyState
+                icon={Gauge}
+                title="No audit results yet"
+                description="Run a website audit to populate this workspace with measured scores, findings, and page evidence."
+                action={<button type="button" onClick={props.onOpenSeoAudit} className="trust-button">Start first audit</button>}
+              />
+            )}
           </div>
         </div>
       </SurfaceCard>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Overall health" value="84" detail="Demo benchmark from latest audit" icon={<Gauge className="h-6 w-6" />} tone="green" />
-        <MetricCard label="Pages scanned" value="7 / 25" detail="Full audit sample" icon={<Layers className="h-6 w-6" />} tone="accent" />
-        <MetricCard label="Open fixes" value="29" detail="3 urgent, 6 high priority" icon={<AlertTriangle className="h-6 w-6" />} tone="yellow" />
-        <MetricCard label="Browser safety" value="A-" detail="Non-invasive checks" icon={<ShieldCheck className="h-6 w-6" />} tone="green" />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          label="Latest grade"
+          value={latestGrade || '--'}
+          detail={latestScore != null ? `${Math.round(latestScore)}/100 ${latest?.scoreSource === 'final_report' ? 'final score' : 'stored estimate'}` : latest ? `Latest audit ${latest.status}` : 'No audit completed'}
+          icon={<Gauge className="h-5 w-5" />}
+          tone={latest && latest.score >= 80 ? 'green' : latest ? 'yellow' : 'accent'}
+        />
+        <MetricCard label="Pages checked" value={latest?.pagesCrawled ?? '--'} detail={latest?.pageLimit ? `Audit limit: ${latest.pageLimit}` : latest ? 'Stored page summaries' : 'No page data stored'} icon={<Layers className="h-5 w-5" />} />
+        <MetricCard label="Open fixes" value={latest?.issuesFound ?? '--'} detail={latest ? `${latest.criticalCount} fix now, ${latest.highCount} high priority` : 'No findings stored'} icon={<AlertTriangle className="h-5 w-5" />} tone={latest?.criticalCount ? 'red' : latest ? 'yellow' : 'accent'} />
+        <MetricCard label="Saved audits" value={history.length || '--'} detail={history.length ? `${new Set(history.map((entry) => entry.normalizedUrl)).size} audited site(s)` : 'History is stored in this browser'} icon={<History className="h-5 w-5" />} />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.4fr_0.9fr]">
-        <SurfaceCard className="p-6">
-          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
+        <SurfaceCard className="p-5 md:p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <StatusBadge tone={plan === 'free' ? 'warning' : 'success'}>{plan.toUpperCase()} PLAN</StatusBadge>
-                <StatusBadge tone="accent">{plan === 'free' ? 'Quick audit enabled' : 'Full audit enabled'}</StatusBadge>
-              </div>
-              <h3 className="mt-4 text-2xl font-bold">
-                {plan === 'free' ? 'Free quick audit is active' : 'Full audit workspace is active'}
-              </h3>
-              <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-                {plan === 'free'
-                  ? 'Free users get one active quick audit, 5 scanned pages, passive browser safety checks, and exportable JSON/CSV data.'
-                  : 'Paid, agency, and admin users get larger scans, faster starts, more pages, and richer report exports.'}
-              </p>
+              <h2 className="text-xl font-semibold">Plan usage</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Actual audit usage and limits from your current plan.</p>
             </div>
             {plan === 'free' && (
               <a
@@ -110,105 +182,160 @@ export default function Dashboard(props: any) {
                 onClick={(event) => {
                   if (!upgradeUrl) {
                     event.preventDefault();
-                    alert('Paid plans are coming soon. Contact admin to upgrade.');
+                    window.alert('Paid plans are not connected yet. Contact the administrator to change your plan.');
                   }
                 }}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 py-2 font-semibold transition-colors hover:bg-muted"
+                className="quiet-button"
               >
-                <Lock className="h-4 w-4" /> Upgrade
+                <Lock className="h-4 w-4" /> Plan options
               </a>
             )}
           </div>
-
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
-            <ProgressBar label={`Daily audits used: ${dailyUsed}/${dailyLimit}`} value={(dailyUsed / Math.max(1, dailyLimit)) * 100} tone="accent" />
-            <ProgressBar label={`Monthly audits used: ${monthlyUsed}/${monthlyLimit}`} value={(monthlyUsed / Math.max(1, monthlyLimit)) * 100} tone="green" />
+          <div className="mt-6 grid gap-5 md:grid-cols-2">
+            <ProgressBar label={`Daily audits: ${dailyUsed}/${dailyLimit}`} value={(dailyUsed / Math.max(1, dailyLimit)) * 100} tone="accent" />
+            <ProgressBar label={`Monthly audits: ${monthlyUsed}/${monthlyLimit}`} value={(monthlyUsed / Math.max(1, monthlyLimit)) * 100} tone="green" />
           </div>
-          <div className="mt-4 grid gap-3 text-sm md:grid-cols-2">
-            <div className="rounded-xl border border-border bg-muted/30 p-4">
-              <div className="text-muted-foreground">Remaining today</div>
-              <div className="text-2xl font-bold">{dailyRemaining}</div>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-border bg-muted/25 p-4">
+              <div className="text-sm text-muted-foreground">Remaining today</div>
+              <div className="mt-1 text-2xl font-bold tabular-nums">{dailyRemaining}</div>
             </div>
-            <div className="rounded-xl border border-border bg-muted/30 p-4">
-              <div className="text-muted-foreground">Remaining this month</div>
-              <div className="text-2xl font-bold">{monthlyRemaining}</div>
-            </div>
-          </div>
-        </SurfaceCard>
-
-        <SurfaceCard className="p-6">
-          <h3 className="text-xl font-bold">Fast actions</h3>
-          <p className="mt-1 text-sm text-muted-foreground">Start the right check without sorting through settings.</p>
-          <div className="mt-5 grid gap-3">
-            <button onClick={() => props.onOpenSeoAudit?.()} className="flex items-center justify-between rounded-2xl border border-border bg-background p-4 text-left transition-all hover:-translate-y-0.5 hover:bg-muted active:scale-[0.99]">
-              <span><span className="block font-bold">Check SEO visibility</span><span className="text-sm text-muted-foreground">Titles, descriptions, Google access, links, and search previews.</span></span>
-              <Search className="h-5 w-5 text-accent" />
-            </button>
-            <button onClick={() => props.onOpenSecurityAudit?.()} className="flex items-center justify-between rounded-2xl border border-border bg-background p-4 text-left transition-all hover:-translate-y-0.5 hover:bg-muted active:scale-[0.99]">
-              <span><span className="block font-bold">Check browser safety</span><span className="text-sm text-muted-foreground">HTTPS and public browser protection settings.</span></span>
-              <ShieldCheck className="h-5 w-5 text-green-600" />
-            </button>
-          </div>
-        </SurfaceCard>
-      </div>
-
-      <SitePreviewSection
-        url={searchedUrl || 'https://example.com'}
-        hostname={searchedUrl || 'example.com'}
-        title={searchedUrl ? `Ready to audit ${searchedUrl}` : 'Example homepage audit preview'}
-        description="Desktop, mobile, and Google-style previews make reports easier to understand before users read the details."
-      />
-
-      <div className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
-        <SurfaceCard className="p-6">
-          <div className="mb-5 flex items-center justify-between gap-4">
-            <div>
-              <h3 className="text-xl font-bold">Health summary</h3>
-              <p className="text-sm text-muted-foreground">Readable bars explain what needs attention first.</p>
-            </div>
-            <Activity className="h-5 w-5 text-accent" />
-          </div>
-          <div className="grid gap-5 lg:grid-cols-[0.42fr_0.58fr]">
-            <div className="flex items-center justify-center rounded-3xl border border-border bg-background/70 p-5">
-              <RadialScoreGauge value={84} label="Latest health score" detail="Sample latest-audit dashboard view" />
-            </div>
-            <div className="grid gap-3">
-              {categoryScores.slice(0, 5).map((item) => (
-                <CategoryScoreBar key={item.label} label={item.label} value={item.value} tone={item.tone} />
-              ))}
+            <div className="rounded-xl border border-border bg-muted/25 p-4">
+              <div className="text-sm text-muted-foreground">Remaining this month</div>
+              <div className="mt-1 text-2xl font-bold tabular-nums">{monthlyRemaining}</div>
             </div>
           </div>
         </SurfaceCard>
 
-        <SurfaceCard className="p-6">
-          <div className="mb-5">
-            <h3 className="text-xl font-bold">Fix priority</h3>
-            <p className="text-sm text-muted-foreground">Urgent and high-priority items stay visible.</p>
+        <SurfaceCard className="p-5 md:p-6">
+          <h2 className="text-xl font-semibold">Quick actions</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Each action opens a working product area.</p>
+          <div className="mt-5 grid gap-2">
+            {[
+              { label: 'Run website audit', detail: 'SEO, technical, crawl, and page checks', icon: Search, action: props.onOpenSeoAudit },
+              { label: 'Passive Security Review', detail: 'HTTPS and browser protection observations', icon: ShieldCheck, action: props.onOpenSecurityAudit },
+              { label: 'Import real data', detail: 'Search and ranking data from your files', icon: Upload, action: props.onOpenImports },
+              { label: 'Open reports', detail: 'History, evidence, and exports', icon: FileText, action: props.onOpenReports },
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <button key={item.label} type="button" onClick={item.action} className="flex items-center gap-3 rounded-lg px-3 py-3 text-left hover:bg-muted">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent"><Icon className="h-5 w-5" /></span>
+                  <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{item.label}</span><span className="block truncate text-xs text-muted-foreground">{item.detail}</span></span>
+                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                </button>
+              );
+            })}
           </div>
-          <SeverityDistribution critical={3} high={6} medium={12} low={8} />
-          <button onClick={() => props.onOpenSeoAudit?.()} className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 font-semibold text-accent-foreground transition-colors hover:bg-accent/90">
-            Open live audit <ArrowRight className="h-4 w-4" />
-          </button>
         </SurfaceCard>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        {[
-          { title: 'Live SEO audit', text: 'See scan progress, pages checked, fixes found, and export-ready reports.', icon: Search },
-          { title: 'Browser safety checks', text: 'Review HTTPS, browser protection settings, cookies, and exposed file signals.', icon: ShieldCheck },
-          { title: 'Reports and briefs', text: 'Turn scan findings into client-ready exports and next actions.', icon: FileText },
-        ].map((item) => {
-          const Icon = item.icon;
-          return (
-            <SurfaceCard key={item.title} className="p-6">
-              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/10 text-accent">
-                <Icon className="h-6 w-6" />
-              </div>
-              <h3 className="text-lg font-bold">{item.title}</h3>
-              <p className="mt-2 text-sm text-muted-foreground">{item.text}</p>
+      {latest?.status === 'completed' && (
+        <section className="space-y-5" aria-labelledby="latest-health-title">
+          <div>
+            <h2 id="latest-health-title" className="text-2xl font-semibold">Latest audit health</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Final section grades appear only when the audit engine supplied them.</p>
+          </div>
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
+            <SurfaceCard className="p-5 md:p-6">
+              {latest.scoreSource === 'final_report' && latestScores ? (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <CategoryGradeCard label="On-page SEO" score={latestScores.seo} description="Content and metadata findings." icon={<Search className="h-4 w-4" />} />
+                  <CategoryGradeCard label="Technical SEO" score={latestScores.technical} description="Technical delivery findings." icon={<Gauge className="h-4 w-4" />} />
+                  <CategoryGradeCard label="Crawlability" score={latestScores.crawlability} description="Search engine access signals." icon={<Layers className="h-4 w-4" />} />
+                  <CategoryGradeCard label="Performance" score={latestScores.performance} description="Observed response and size signals." icon={<BarChart3 className="h-4 w-4" />} />
+                  <CategoryGradeCard label="Passive Security Review" score={latestScores.security} description="Non-invasive browser protection checks." icon={<ShieldCheck className="h-4 w-4" />} />
+                  <CategoryGradeCard label="Mobile usability" score={null} description="Not scored by the current audit engine." icon={<Layers className="h-4 w-4" />} />
+                </div>
+              ) : (
+                <EmptyState icon={BarChart3} title="Section grades are not stored" description="Open or rerun a completed audit to save final worker-provided category scores. No category values are estimated here." />
+              )}
             </SurfaceCard>
-          );
-        })}
+            <SurfaceCard className="p-5 md:p-6">
+              <h3 className="text-lg font-semibold">Fix priority</h3>
+              <p className="mb-5 mt-1 text-sm text-muted-foreground">Measured issue counts from the latest audit.</p>
+              <SeverityDistribution critical={latest.criticalCount} high={latest.highCount} medium={latest.mediumCount} low={latest.lowCount} />
+            </SurfaceCard>
+          </div>
+        </section>
+      )}
+
+      {latestPreview && latest && (
+        <SitePreviewSection
+          url={latestPreview.url || latest.normalizedUrl}
+          hostname={latest.hostname}
+          title={latestPreview.title || `${latest.hostname} audit preview`}
+          description={latestPreview.metaDescription || 'No meta description was stored for this scanned page.'}
+          canonicalUrl={latest.normalizedUrl}
+          livePreview
+        />
+      )}
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
+        <SurfaceCard className="p-0">
+          <div className="flex items-center justify-between gap-4 border-b border-border p-5 md:p-6">
+            <div>
+              <h2 className="text-xl font-semibold">Recent audits</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Reports saved in this browser from real audit runs.</p>
+            </div>
+            <button type="button" onClick={props.onOpenReports} className="quiet-button">All reports</button>
+          </div>
+          {history.length ? (
+            <div className="overflow-x-auto">
+              <table className="suite-table min-w-[760px]">
+                <thead><tr><th>Website</th><th>Grade</th><th>Pages</th><th>Fixes</th><th>Status</th><th>Updated</th><th>Action</th></tr></thead>
+                <tbody>
+                  {history.slice(0, 8).map((entry) => (
+                    <tr key={entry.auditId}>
+                      <td className="max-w-[280px] truncate font-semibold">{entry.normalizedUrl}</td>
+                      <td className="font-semibold tabular-nums">{entry.status === 'completed' ? <>{scoreToGrade(entry.score) || '--'} <span className="text-xs text-muted-foreground">{Math.round(entry.score)}</span></> : '--'}</td>
+                      <td className="tabular-nums">{entry.pagesCrawled}</td>
+                      <td className="tabular-nums">{entry.issuesFound}</td>
+                      <td><StatusBadge tone={entry.status === 'completed' ? 'success' : entry.status === 'failed' ? 'danger' : 'warning'}>{entry.status}</StatusBadge></td>
+                      <td className="text-muted-foreground">{new Date(entry.updatedAt).toLocaleDateString()}</td>
+                      <td><button type="button" onClick={() => selectReport(entry, props.onOpenReports)} className="text-sm font-semibold text-accent hover:underline">View report</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="p-5 md:p-6"><EmptyState icon={History} title="Audit history is empty" description="Completed and in-progress audits will appear here after you start a website audit." /></div>
+          )}
+        </SurfaceCard>
+
+        <div className="space-y-6">
+          <SurfaceCard className="p-5 md:p-6">
+            <h2 className="text-xl font-semibold">Top fixes</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Highest-priority grouped findings from the latest stored audit.</p>
+            {recommendations.length ? (
+              <ol className="mt-5 divide-y divide-border">
+                {recommendations.map((item, index) => (
+                  <li key={item.id} className="flex gap-3 py-3 first:pt-0 last:pb-0">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-bold tabular-nums">{index + 1}</span>
+                    <div className="min-w-0"><div className="text-sm font-semibold">{item.title}</div><div className="mt-1 text-xs text-muted-foreground">{item.affectedCount || 'Site-wide'} affected page{item.affectedCount === 1 ? '' : 's'} | {item.severity}</div></div>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <div className="mt-5 text-sm leading-6 text-muted-foreground">No detailed findings are stored in browser history. Open the full report to load current evidence.</div>
+            )}
+          </SurfaceCard>
+
+          <SurfaceCard className="p-5 md:p-6">
+            <h2 className="text-xl font-semibold">Imported data</h2>
+            <p className="mt-1 text-sm text-muted-foreground">SEOIntel never substitutes demo rankings or traffic for missing provider data.</p>
+            <div className="mt-5 space-y-3">
+              <div className="flex items-center justify-between gap-3"><span className="text-sm font-semibold">Search performance</span><StatusBadge tone={importState.search ? 'success' : 'warning'}>{importState.search ? 'Imported' : 'Import data'}</StatusBadge></div>
+              <div className="flex items-center justify-between gap-3"><span className="text-sm font-semibold">Keyword positions</span><StatusBadge tone={importState.rankings ? 'success' : 'warning'}>{importState.rankings ? 'Imported' : 'Provider required'}</StatusBadge></div>
+              <button type="button" onClick={props.onOpenImports} className="quiet-button mt-2 w-full"><Upload className="h-4 w-4" /> Manage imports</button>
+            </div>
+          </SurfaceCard>
+
+          {trend.length > 1 && (
+            <SparklineChart values={trend.map((entry) => entry.score)} label="Score trend" valueLabel={`${Math.round(trend[trend.length - 1].score)}/100`} />
+          )}
+        </div>
       </div>
     </div>
   );

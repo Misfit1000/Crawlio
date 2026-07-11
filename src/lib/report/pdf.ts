@@ -1,5 +1,6 @@
 import PDFDocument from 'pdfkit';
 import type { ResourceAuditIssue, ResourceAuditLiveData, ResourceAuditPage } from '../audit/resource-types';
+import { groupRecommendations, scoreToGrade } from '../audit/report-insights';
 
 const COLORS = {
   ink: '#10243a',
@@ -13,9 +14,10 @@ const COLORS = {
   red: '#dc2626',
 };
 
-function numberScore(value: unknown, fallback: number) {
+function optionalScore(value: unknown) {
+  if (value == null || value === '') return null;
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : fallback;
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : null;
 }
 
 function estimatedScore(data: ResourceAuditLiveData) {
@@ -50,7 +52,7 @@ export async function renderAuditPdf(data: ResourceAuditLiveData): Promise<Buffe
       info: {
         Title: `SEOIntel audit report - ${audit.hostname}`,
         Author: 'SEOIntel',
-        Subject: 'SEO, website health, and passive browser safety audit',
+        Subject: 'SEO, website health, and Passive Security Review',
       },
     });
     const chunks: Buffer[] = [];
@@ -84,13 +86,15 @@ export async function renderAuditPdf(data: ResourceAuditLiveData): Promise<Buffe
       doc.moveDown(0.7);
     };
 
-    const drawScoreBar = (label: string, value: number, color: string) => {
+    const drawScoreBar = (label: string, value: number | null, color: string) => {
       ensureSpace(28);
       const y = doc.y;
       doc.fillColor(COLORS.ink).font('Helvetica-Bold').fontSize(9).text(label, margin, y, { width: 126, lineBreak: false });
       doc.fillColor(COLORS.panel).roundedRect(margin + 132, y + 1, contentWidth - 166, 10, 5).fill();
-      doc.fillColor(color).roundedRect(margin + 132, y + 1, Math.max(2, (contentWidth - 166) * (value / 100)), 10, 5).fill();
-      doc.fillColor(COLORS.ink).font('Helvetica-Bold').fontSize(9).text(String(Math.round(value)), doc.page.width - margin - 28, y, { width: 28, align: 'right', lineBreak: false });
+      if (value != null) {
+        doc.fillColor(color).roundedRect(margin + 132, y + 1, Math.max(2, (contentWidth - 166) * (value / 100)), 10, 5).fill();
+      }
+      doc.fillColor(value == null ? COLORS.muted : COLORS.ink).font(value == null ? 'Helvetica' : 'Helvetica-Bold').fontSize(value == null ? 7 : 9).text(value == null ? 'N/M' : String(Math.round(value)), doc.page.width - margin - 30, y, { width: 30, align: 'right', lineBreak: false });
       doc.y = y + 24;
     };
 
@@ -176,22 +180,24 @@ export async function renderAuditPdf(data: ResourceAuditLiveData): Promise<Buffe
     doc.moveDown(1);
 
     const scores = (data.finalReport?.scores || {}) as Record<string, unknown>;
-    const overall = numberScore(scores.overall, estimatedScore(data));
+    const finalOverall = optionalScore(scores.overall);
+    const overall = finalOverall ?? estimatedScore(data);
+    const overallGrade = scoreToGrade(overall) || 'N/M';
     const metricGap = 10;
     const metricWidth = (contentWidth - metricGap * 3) / 4;
     const metricY = doc.y;
-    drawMetric(margin, metricY, metricWidth, 'Site health', String(Math.round(overall)), overall >= 80 ? COLORS.green : overall >= 60 ? COLORS.blue : COLORS.amber);
+    drawMetric(margin, metricY, metricWidth, finalOverall == null ? 'Estimated grade' : 'Overall grade', `${overallGrade}  ${Math.round(overall)}`, overall >= 80 ? COLORS.green : overall >= 60 ? COLORS.blue : COLORS.amber);
     drawMetric(margin + (metricWidth + metricGap), metricY, metricWidth, 'Pages checked', String(audit.pagesCrawled), COLORS.blue);
     drawMetric(margin + (metricWidth + metricGap) * 2, metricY, metricWidth, 'Open fixes', String(audit.issuesFound), COLORS.amber);
     drawMetric(margin + (metricWidth + metricGap) * 3, metricY, metricWidth, 'Fix now', String(audit.criticalCount), audit.criticalCount ? COLORS.red : COLORS.green);
     doc.y = metricY + 76;
 
-    sectionTitle('Executive summary', data.finalReport?.summary || `SEOIntel checked ${audit.pagesCrawled} page(s) and found ${audit.issuesFound} issue(s).`);
-    drawScoreBar('SEO', numberScore(scores.seo, overall), COLORS.blue);
-    drawScoreBar('Technical SEO', numberScore(scores.technical, overall), COLORS.blue);
-    drawScoreBar('Performance signals', numberScore(scores.performance, overall), COLORS.amber);
-    drawScoreBar('Google access', numberScore(scores.crawlability, overall), COLORS.green);
-    drawScoreBar('Browser safety', numberScore(scores.security, overall), COLORS.green);
+    sectionTitle('Executive summary', `${data.finalReport?.summary || `SEOIntel checked ${audit.pagesCrawled} page(s) and found ${audit.issuesFound} issue(s).`} Grade ranges: A 90-100, B 80-89, C 70-79, D 60-69, E 50-59, F below 50. N/M means not measured.`);
+    drawScoreBar('On-page SEO', optionalScore(scores.seo), COLORS.blue);
+    drawScoreBar('Technical SEO', optionalScore(scores.technical), COLORS.blue);
+    drawScoreBar('Performance', optionalScore(scores.performance), COLORS.amber);
+    drawScoreBar('Crawlability', optionalScore(scores.crawlability), COLORS.green);
+    drawScoreBar('Passive security', optionalScore(scores.security), COLORS.green);
 
     sectionTitle('Fix priority', 'Use this distribution to decide what to handle first.');
     const severities = [
@@ -211,11 +217,26 @@ export async function renderAuditPdf(data: ResourceAuditLiveData): Promise<Buffe
       doc.y = y + 20;
     });
 
-    sectionTitle('Top fixes', 'Each item includes a client-ready checklist box, evidence, and the recommended next action.');
-    data.latestIssues.slice(0, 50).forEach(drawIssue);
-    if (data.latestIssues.length > 50) {
+    sectionTitle('Prioritized recommendations', 'Repeated findings are grouped by issue type and ordered by priority and affected-page count.');
+    const groupedIssues = groupRecommendations(data.latestIssues);
+    groupedIssues.slice(0, 30).forEach((group, index) => {
+      const representative = data.latestIssues.find((issue) => issue.title === group.title && issue.category === group.category);
+      const groupedIssue: ResourceAuditIssue = {
+        id: representative?.id || group.id,
+        severity: group.severity,
+        category: group.category,
+        title: group.affectedCount > 1 ? `${group.title} (${group.affectedCount} pages)` : group.title,
+        description: group.description,
+        affectedUrl: group.affectedUrls.slice(0, 3).join(', ') || 'Site-wide',
+        evidence: group.evidence.slice(0, 3).join(' | '),
+        recommendation: group.recommendation,
+        detectedAt: representative?.detectedAt || audit.updatedAt,
+      };
+      drawIssue(groupedIssue, index);
+    });
+    if (groupedIssues.length > 30) {
       ensureSpace(28);
-      doc.fillColor(COLORS.muted).font('Helvetica-Oblique').fontSize(8).text(`${data.latestIssues.length - 50} additional findings are available in the JSON and CSV exports.`, margin, doc.y, { width: contentWidth });
+      doc.fillColor(COLORS.muted).font('Helvetica-Oblique').fontSize(8).text(`${groupedIssues.length - 30} additional recommendation groups are available in the JSON and CSV exports.`, margin, doc.y, { width: contentWidth });
       doc.moveDown(1);
     }
 
@@ -231,13 +252,27 @@ export async function renderAuditPdf(data: ResourceAuditLiveData): Promise<Buffe
 
     const firstPage = data.latestPages.find((page) => page.title || page.metaDescription) || data.latestPages[0];
     sectionTitle('Search and page preview', 'A safe metadata-based preview is included because live external pages cannot be embedded inside a PDF.');
-    ensureSpace(128);
+    const fullPreviewUrl = firstPage?.url || audit.finalUrl || audit.normalizedUrl;
+    const previewUrl = fullPreviewUrl.length > 108 ? `${fullPreviewUrl.slice(0, 105)}...` : fullPreviewUrl;
+    const previewTitle = firstPage?.title || `${audit.hostname} audit result`;
+    const previewDescription = firstPage?.metaDescription || 'No meta description was available for the preview.';
+    doc.font('Helvetica').fontSize(8);
+    const previewUrlHeight = Math.min(24, doc.heightOfString(previewUrl, { width: contentWidth - 28, lineGap: 1 }));
+    doc.font('Helvetica-Bold').fontSize(14);
+    const previewTitleHeight = Math.min(36, doc.heightOfString(previewTitle, { width: contentWidth - 28, lineGap: 1 }));
+    doc.font('Helvetica').fontSize(8.5);
+    const previewDescriptionHeight = Math.min(30, doc.heightOfString(previewDescription, { width: contentWidth - 28, lineGap: 1 }));
+    const previewHeight = 14 + previewUrlHeight + 7 + previewTitleHeight + 8 + previewDescriptionHeight + 14;
+    ensureSpace(previewHeight + 16);
     const previewY = doc.y;
-    doc.roundedRect(margin, previewY, contentWidth, 116, 8).fillAndStroke('#ffffff', COLORS.line);
-    doc.fillColor(COLORS.muted).font('Helvetica').fontSize(8).text(firstPage?.url || audit.finalUrl || audit.normalizedUrl, margin + 14, previewY + 14, { width: contentWidth - 28 });
-    doc.fillColor(COLORS.blue).font('Helvetica-Bold').fontSize(14).text(firstPage?.title || `${audit.hostname} audit result`, margin + 14, previewY + 38, { width: contentWidth - 28, height: 36, ellipsis: true });
-    doc.fillColor(COLORS.muted).font('Helvetica').fontSize(8.5).text(firstPage?.metaDescription || 'No meta description was available for the preview.', margin + 14, previewY + 76, { width: contentWidth - 28, height: 28, ellipsis: true });
-    doc.y = previewY + 130;
+    doc.roundedRect(margin, previewY, contentWidth, previewHeight, 8).fillAndStroke('#ffffff', COLORS.line);
+    const previewUrlY = previewY + 14;
+    doc.fillColor(COLORS.muted).font('Helvetica').fontSize(8).text(previewUrl, margin + 14, previewUrlY, { width: contentWidth - 28, height: previewUrlHeight, ellipsis: true });
+    const previewTitleY = previewUrlY + previewUrlHeight + 7;
+    doc.fillColor(COLORS.blue).font('Helvetica-Bold').fontSize(14).text(previewTitle, margin + 14, previewTitleY, { width: contentWidth - 28, height: previewTitleHeight, ellipsis: true });
+    const previewDescriptionY = previewTitleY + previewTitleHeight + 8;
+    doc.fillColor(COLORS.muted).font('Helvetica').fontSize(8.5).text(previewDescription, margin + 14, previewDescriptionY, { width: contentWidth - 28, height: previewDescriptionHeight, ellipsis: true });
+    doc.y = previewY + previewHeight + 14;
 
     sectionTitle('Audit activity', 'Recent audit events show how the report was produced.');
     data.latestEvents.slice(-20).forEach((event) => {
