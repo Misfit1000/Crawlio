@@ -24,6 +24,7 @@ async function getApp() {
 
   const { apiRouter } = await import('./index');
   const app = express();
+  const parseJsonBody = jsonBodyParser();
 
   app.set('trust proxy', 1);
   app.use((req, _res, next) => {
@@ -32,7 +33,12 @@ async function getApp() {
   });
   app.use(apiSecurityHeaders);
   app.use(createRateLimiter({ namespace: 'vercel-api', windowMs: 60_000, maxRequests: 300 }));
-  app.use(jsonBodyParser());
+  app.use((req, res, next) => {
+    // Vercel may provide a parsed body before Express sees the request. Parsing
+    // the already-consumed stream again throws "stream is not readable".
+    if (req.body !== undefined) return next();
+    return parseJsonBody(req, res, next);
+  });
   app.use(jsonParseErrorHandler);
   app.use('/api/tools/audit/start', createRateLimiter({ namespace: 'audit-start', windowMs: 60_000, maxRequests: 20 }));
   app.use('/tools/audit/start', createRateLimiter({ namespace: 'audit-start-direct', windowMs: 60_000, maxRequests: 20 }));

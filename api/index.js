@@ -59973,6 +59973,7 @@ async function getApp() {
   if (cachedApp) return cachedApp;
   const { apiRouter: apiRouter2 } = await Promise.resolve().then(() => (init_index(), index_exports));
   const app = (0, import_express3.default)();
+  const parseJsonBody = jsonBodyParser();
   app.set("trust proxy", 1);
   app.use((req, _res, next) => {
     rewriteVercelPath(req);
@@ -59980,7 +59981,10 @@ async function getApp() {
   });
   app.use(apiSecurityHeaders);
   app.use(createRateLimiter({ namespace: "vercel-api", windowMs: 6e4, maxRequests: 300 }));
-  app.use(jsonBodyParser());
+  app.use((req, res, next) => {
+    if (req.body !== void 0) return next();
+    return parseJsonBody(req, res, next);
+  });
   app.use(jsonParseErrorHandler);
   app.use("/api/tools/audit/start", createRateLimiter({ namespace: "audit-start", windowMs: 6e4, maxRequests: 20 }));
   app.use("/tools/audit/start", createRateLimiter({ namespace: "audit-start-direct", windowMs: 6e4, maxRequests: 20 }));
