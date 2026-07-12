@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Activity, AlertTriangle, CheckCircle2, Clock, Clipboard, FileDown, Filter, Loader2, RefreshCw, Radio, Share2, ShieldAlert, StopCircle, Wifi, WifiOff } from 'lucide-react';
+import { Activity, AlertTriangle, BarChart3, CheckCircle2, Clock, Clipboard, FileDown, Filter, Loader2, RefreshCw, Radio, Share2, ShieldAlert, StopCircle, Wifi, WifiOff } from 'lucide-react';
 import type { ResourceAuditLiveData } from '../../lib/audit/resource-types';
 import type { LiveAuditConnectionState } from '../../lib/audit/live-supabase-client';
 import { getAuditModeLabel } from '../../lib/audit/audit-config';
@@ -35,6 +35,7 @@ interface Props {
   auditId: string;
   onComplete?: () => void;
   onRerun?: (url: string) => void | Promise<void>;
+  onOpenWorkspace?: () => void;
 }
 
 function formatBytes(bytes: number) {
@@ -102,7 +103,7 @@ function formatLastUpdate(lastUpdateAt: number | undefined, now: number) {
   return `updated ${Math.floor(seconds / 60)}m ago`;
 }
 
-export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
+export function LiveAuditProgress({ auditId, onComplete, onRerun, onOpenWorkspace }: Props) {
   const [data, setData] = useState<ResourceAuditLiveData>({ audit: null, latestEvents: [], latestPages: [], latestIssues: [] });
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
@@ -488,6 +489,11 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun }: Props) {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <ConnectionBadge connection={connection} now={now} />
+            {audit.status === 'completed' && onOpenWorkspace && (
+              <button type="button" onClick={onOpenWorkspace} className="trust-button px-3 py-2 text-sm">
+                <BarChart3 className="h-4 w-4" /> Open report workspace
+              </button>
+            )}
             {data.finalReport && (
               <button type="button" onClick={downloadJson} disabled={isDownloadingJson} className="quiet-button px-3 py-2 text-sm">
                 {isDownloadingJson ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} JSON

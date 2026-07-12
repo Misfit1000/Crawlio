@@ -24,6 +24,10 @@ import {
 } from '../lib/audit/resource-types';
 import { AUDIT_LIMITS } from '../lib/audit/audit-config';
 import type { AuditIssue } from '../lib/audit/types';
+import { PublicFetchError, safePublicFetch, type SafePublicFetchOptions } from '../lib/security/safe-public-fetch';
+import { calculateTransparentAuditScore, toReportScoreRecord } from '../lib/audit/audit-scoring';
+import { AuditWriteBatch } from './audit-write-batch';
+import { HostRequestScheduler } from './host-request-scheduler';
 
 type QueueItem = { url: string; depth: number; discoveredFrom?: string };
 const NO_QUEUED_LOG_INTERVAL_MS = 30_000;
@@ -113,37 +117,32 @@ function buildSecurityIssues(page: FetchedPage): Omit<ResourceAuditIssue, 'id' |
   return issues;
 }
 
+function workerFetchOptions(timeoutMs: number): SafePublicFetchOptions {
+  const allowPrivateForTesting = process.env.SEOINTEL_ALLOW_PRIVATE_TEST_TARGETS === 'true';
+  return {
+    timeoutMs,
+    dnsTimeoutMs: 3_000,
+    maxRedirects: 5,
+    maxBytes: Number(process.env.AUDIT_MAX_HTML_BYTES || 2_000_000),
+    allowedContentTypes: ['text/html', 'application/xhtml+xml'],
+    allowPrivateForTesting,
+    allowNonStandardPortsForTesting: allowPrivateForTesting,
+  };
+}
+
 async function fetchHtmlPage(url: string, timeoutMs: number): Promise<FetchedPage> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  const startedAt = Date.now();
-  try {
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'SEOIntelBot/1.0 (+https://seointel.local)' },
-      redirect: 'follow',
-      signal: controller.signal,
-    });
-    const responseTimeMs = Date.now() - startedAt;
-    const headers: Record<string, string> = {};
-    response.headers.forEach((value, key) => {
-      headers[key.toLowerCase()] = value;
-    });
-    const contentType = headers['content-type'] || '';
-    const html = contentType.includes('text/html') ? await response.text() : '';
-    return {
-      url,
-      finalUrl: response.url,
-      statusCode: response.status,
-      responseTimeMs,
-      pageSizeBytes: Buffer.byteLength(html, 'utf8'),
-      headers,
-      contentType,
-      html,
-      parsed: html ? parseHtml(html, response.url) : null,
-    };
-  } finally {
-    clearTimeout(timeout);
-  }
+  const response = await safePublicFetch(url, workerFetchOptions(timeoutMs));
+  return {
+    url,
+    finalUrl: response.finalUrl,
+    statusCode: response.status,
+    responseTimeMs: response.durationMs,
+    pageSizeBytes: response.bodyBytes,
+    headers: response.headers,
+    contentType: response.contentType,
+    html: response.body,
+    parsed: response.body ? parseHtml(response.body, response.finalUrl) : null,
+  };
 }
 
 async function ensureNotCancelled(auditId: string) {
@@ -153,40 +152,56 @@ async function ensureNotCancelled(auditId: string) {
   }
 }
 
-async function writeProgress(auditId: string, patch: Partial<ResourceAuditDocument>, event?: { type: string; message: string; data?: unknown }) {
-  await auditRepository.updateAudit(auditId, patch);
-  if (event) {
-    await auditRepository.appendEvent(auditId, {
-      type: event.type,
-      message: event.message,
-      phase: patch.currentPhase,
-      currentUrl: patch.currentUrl,
-      checkTitle: patch.currentCheck || undefined,
-      progress: patch.progress,
-      data: event.data,
-    });
-  }
+function normalizeCrawlUrl(input: string, base?: string) {
+  const normalized = normalizeUrl(input, base);
+  if (!normalized) return null;
+  const url = new URL(stripTrackingParams(normalized));
+  url.hash = '';
+  return url.toString();
 }
 
-async function addIssue(auditId: string, issue: Omit<ResourceAuditIssue, 'id' | 'detectedAt'>) {
-  await auditRepository.appendIssue(auditId, issue);
-}
-
-async function processAudit(audit: ResourceAuditDocument) {
+async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteBatch) {
   const config = getAuditProfileForDocument(audit);
-  const queue: QueueItem[] = [{ url: audit.normalizedUrl, depth: 0 }];
+  const startUrl = normalizeCrawlUrl(audit.normalizedUrl) || audit.normalizedUrl;
+  const queue: QueueItem[] = [{ url: startUrl, depth: 0 }];
+  const scheduled = new Set<string>([startUrl]);
   const visited = new Set<string>();
   const pages: ResourceAuditPage[] = [];
   const workerStart = nowIso();
+  const requestScheduler = new HostRequestScheduler(Math.min(2, config.concurrency), 150);
+  const auditDeadline = Date.now() + Math.min(10 * 60_000, Math.max(45_000, config.pageLimit * config.timeoutMs));
+  let durationLimitReached = false;
+  const writeProgress = (
+    patch: Partial<ResourceAuditDocument>,
+    event?: Parameters<AuditWriteBatch['writeProgress']>[1],
+    options?: Parameters<AuditWriteBatch['writeProgress']>[2],
+  ) => writer.writeProgress(patch, event, options);
+  const addIssue = (issue: Omit<ResourceAuditIssue, 'id' | 'detectedAt'>) => writer.addIssue(issue);
 
-  await writeProgress(audit.id, {
+  async function enqueuePage(url: string, depth: number, discoveredFrom: string) {
+    const cleanUrl = normalizeCrawlUrl(url, discoveredFrom);
+    if (!cleanUrl || scheduled.size >= config.pageLimit || scheduled.has(cleanUrl)) return false;
+    if (!isSameDomain(cleanUrl, audit.normalizedUrl)) return false;
+    scheduled.add(cleanUrl);
+    queue.push({ url: cleanUrl, depth, discoveredFrom });
+    await writer.addEvent({
+      type: 'page_discovered',
+      message: `Discovered ${cleanUrl}`,
+      affectedUrl: cleanUrl,
+      progress: 18,
+      data: { discoveredFrom, crawlDepth: depth },
+    });
+    return true;
+  }
+
+  await writeProgress({
     status: 'running',
     progress: 5,
     currentPhase: 'Validating URL',
     currentUrl: audit.normalizedUrl,
     currentCheck: 'URL normalization',
-  }, { type: 'audit_started', message: 'Audit worker started' });
-  await auditRepository.appendEvent(audit.id, {
+  }, { type: 'audit_started', message: 'Audit worker started' }, { force: true });
+  await writer.addEvent({
     type: 'url_normalized',
     message: `Normalized ${audit.submittedInput} to ${audit.normalizedUrl}`,
     affectedUrl: audit.normalizedUrl,
@@ -196,16 +211,16 @@ async function processAudit(audit: ResourceAuditDocument) {
   await ensureNotCancelled(audit.id);
 
   const origin = new URL(audit.normalizedUrl).origin;
-  await writeProgress(audit.id, {
+  await writeProgress({
     progress: 10,
     currentPhase: 'Checking robots.txt',
     currentUrl: new URL('/robots.txt', origin).toString(),
     currentCheck: 'robots.txt',
   }, { type: 'robots_fetching', message: 'Fetching robots.txt' });
-  const robotsTxt = await fetchRobotsTxt(origin);
+  const robotsTxt = await fetchRobotsTxt(origin, workerFetchOptions(config.timeoutMs));
   const robotsRules = robotsTxt ? parseRobotsTxt(robotsTxt) : null;
 
-  await writeProgress(audit.id, {
+  await writeProgress({
     progress: 14,
     currentPhase: 'Checking sitemap',
     currentUrl: new URL('/sitemap.xml', origin).toString(),
@@ -223,7 +238,7 @@ async function processAudit(audit: ResourceAuditDocument) {
       new URL('/post-sitemap.xml', origin).toString(),
       new URL('/product-sitemap.xml', origin).toString(),
     );
-    await auditRepository.appendEvent(audit.id, {
+    await writer.addEvent({
       type: 'deep_crawl_expansion',
       message: 'Deep audit enabled expanded sitemap discovery and crawl graph coverage.',
       progress: 16,
@@ -231,41 +246,36 @@ async function processAudit(audit: ResourceAuditDocument) {
     });
   }
   for (const sitemapUrl of sitemapCandidates) {
-    if (queue.length >= config.pageLimit) break;
-    const sitemap = await fetchSitemap(sitemapUrl);
+    if (scheduled.size >= config.pageLimit) break;
+    const sitemap = await fetchSitemap(sitemapUrl, workerFetchOptions(config.timeoutMs));
     for (const sitemapPageUrl of sitemap.urls) {
-      if (queue.length >= config.pageLimit) break;
-      const cleanUrl = stripTrackingParams(sitemapPageUrl);
-      if (isSameDomain(cleanUrl, audit.normalizedUrl) && !queue.some((item) => item.url === cleanUrl)) {
-        queue.push({ url: cleanUrl, depth: 1, discoveredFrom: sitemapUrl });
-        await auditRepository.appendEvent(audit.id, {
-          type: 'page_discovered',
-          message: `Discovered ${cleanUrl}`,
-          affectedUrl: cleanUrl,
-          progress: 18,
-          data: { discoveredFrom: sitemapUrl, crawlDepth: 1 },
-        });
-      }
+      if (scheduled.size >= config.pageLimit) break;
+      await enqueuePage(sitemapPageUrl, 1, sitemapUrl);
     }
   }
 
-  await auditRepository.updateAudit(audit.id, {
+  await writeProgress({
     progress: 20,
     currentPhase: 'Crawling pages',
-    pagesDiscovered: queue.length,
-    checksTotal: config.pageLimit * (config.deepSitemapExpansion ? 4 : 2),
+    pagesDiscovered: scheduled.size,
+    checksTotal: 0,
+    checksCompleted: 0,
   });
 
   let active = 0;
   let cancelled = false;
 
   async function processPage(item: QueueItem) {
-    const currentUrl = stripTrackingParams(item.url);
+    if (Date.now() >= auditDeadline) {
+      durationLimitReached = true;
+      return;
+    }
+    const currentUrl = normalizeCrawlUrl(item.url) || item.url;
     if (visited.has(currentUrl) || visited.size >= config.pageLimit) return;
     visited.add(currentUrl);
 
     if (robotsRules && isBlockedByRobots(currentUrl, robotsRules)) {
-      await addIssue(audit.id, {
+      await addIssue({
         severity: 'medium',
         category: 'crawlability',
         title: 'Page blocked by robots.txt',
@@ -278,23 +288,39 @@ async function processAudit(audit: ResourceAuditDocument) {
     }
 
     await ensureNotCancelled(audit.id);
-    const crawlProgress = 20 + Math.floor((visited.size / config.pageLimit) * 35);
-    await writeProgress(audit.id, {
+    const crawlProgress = 20 + Math.floor((visited.size / Math.max(visited.size + queue.length, 1)) * 35);
+    await writeProgress({
       progress: Math.min(55, crawlProgress),
       currentPhase: 'Crawling pages',
       currentUrl,
       currentCheck: 'Fetching HTML',
-      pagesDiscovered: Math.max(queue.length + visited.size, visited.size),
+      pagesDiscovered: scheduled.size,
       pagesCrawled: pages.length,
     }, { type: 'page_crawling', message: `Fetching ${currentUrl}` });
 
     let fetched: FetchedPage;
     try {
-      fetched = await fetchHtmlPage(currentUrl, config.timeoutMs);
+      fetched = await requestScheduler.schedule(currentUrl, () => fetchHtmlPage(currentUrl, config.timeoutMs));
     } catch (error: any) {
+      const publicFetchError = error instanceof PublicFetchError ? error : null;
+      if (publicFetchError?.code === 'RESPONSE_TOO_LARGE' || publicFetchError?.code === 'UNSUPPORTED_CONTENT_TYPE') {
+        await addIssue({
+          severity: 'medium',
+          category: publicFetchError.code === 'RESPONSE_TOO_LARGE' ? 'performance' : 'technical',
+          title: publicFetchError.code === 'RESPONSE_TOO_LARGE' ? 'HTML response exceeded the configured analysis limit' : 'Unsupported page content type',
+          description: publicFetchError.message,
+          affectedUrl: currentUrl,
+          evidence: publicFetchError.code,
+          recommendation: publicFetchError.code === 'RESPONSE_TOO_LARGE' ? 'Reduce the HTML response size and rerun the audit.' : 'Audit an HTML page rather than a binary or unsupported resource.',
+        });
+        return;
+      }
+      if (publicFetchError?.code === 'PRIVATE_NETWORK_TARGET' || publicFetchError?.code === 'UNSUPPORTED_PORT' || publicFetchError?.code === 'EMBEDDED_CREDENTIALS') {
+        throw publicFetchError;
+      }
       if (currentUrl.startsWith('https://')) {
         const httpUrl = currentUrl.replace(/^https:\/\//, 'http://');
-        await addIssue(audit.id, {
+        await addIssue({
           severity: 'high',
           category: 'security',
           title: 'HTTPS failed or unavailable',
@@ -303,10 +329,10 @@ async function processAudit(audit: ResourceAuditDocument) {
           evidence: error?.message || 'HTTPS fetch failed',
           recommendation: 'Fix HTTPS availability and redirect HTTP traffic to HTTPS.',
         });
-        await auditRepository.updateAudit(audit.id, { usedHttpFallback: true });
-        fetched = await fetchHtmlPage(httpUrl, config.timeoutMs);
+        await writeProgress({ usedHttpFallback: true });
+        fetched = await requestScheduler.schedule(httpUrl, () => fetchHtmlPage(httpUrl, config.timeoutMs));
       } else {
-        await addIssue(audit.id, {
+        await addIssue({
           severity: 'medium',
           category: 'crawlability',
           title: 'Page fetch failed',
@@ -320,8 +346,8 @@ async function processAudit(audit: ResourceAuditDocument) {
     }
 
     if (!audit.finalUrl) {
-      await auditRepository.updateAudit(audit.id, { finalUrl: fetched.finalUrl });
-      await auditRepository.appendEvent(audit.id, {
+      await writeProgress({ finalUrl: fetched.finalUrl });
+      await writer.addEvent({
         type: 'homepage_fetched',
         message: `Homepage fetched with status ${fetched.statusCode}`,
         affectedUrl: fetched.finalUrl,
@@ -342,11 +368,12 @@ async function processAudit(audit: ResourceAuditDocument) {
     };
 
     await ensureNotCancelled(audit.id);
-    await writeProgress(audit.id, {
+    const analysisStartedAt = Date.now();
+    await writeProgress({
       currentPhase: 'Running SEO checks',
       currentUrl: fetched.finalUrl,
       currentCheck: 'SEO checks',
-      progress: 55 + Math.floor((pages.length / config.pageLimit) * 20),
+      progress: 55 + Math.floor((pages.length / Math.max(scheduled.size, 1)) * 20),
     }, { type: 'check_started', message: `Running SEO checks for ${fetched.finalUrl}` });
 
     const seoIssues = fetched.parsed
@@ -356,9 +383,9 @@ async function processAudit(audit: ResourceAuditDocument) {
       : [];
     for (const issue of seoIssues) {
       await ensureNotCancelled(audit.id);
-      await addIssue(audit.id, issue);
+      await addIssue(issue);
     }
-    await auditRepository.appendEvent(audit.id, {
+    await writer.addEvent({
       type: 'check_completed',
       message: `SEO checks completed for ${fetched.finalUrl}`,
       affectedUrl: fetched.finalUrl,
@@ -367,18 +394,18 @@ async function processAudit(audit: ResourceAuditDocument) {
     });
 
     await ensureNotCancelled(audit.id);
-    await writeProgress(audit.id, {
+    await writeProgress({
       currentPhase: 'Running passive security checks',
       currentUrl: fetched.finalUrl,
       currentCheck: 'Passive security checks',
-      progress: 75 + Math.floor((pages.length / config.pageLimit) * 15),
+      progress: 75 + Math.floor((pages.length / Math.max(scheduled.size, 1)) * 15),
     }, { type: 'check_started', message: `Running passive security checks for ${fetched.finalUrl}` });
     const securityIssues = buildSecurityIssues(fetched);
     for (const issue of securityIssues) {
       await ensureNotCancelled(audit.id);
-      await addIssue(audit.id, issue);
+      await addIssue(issue);
     }
-    await auditRepository.appendEvent(audit.id, {
+    await writer.addEvent({
       type: 'check_completed',
       message: `Passive security checks completed for ${fetched.finalUrl}`,
       affectedUrl: fetched.finalUrl,
@@ -386,7 +413,8 @@ async function processAudit(audit: ResourceAuditDocument) {
       progress: 90,
     });
 
-    const pageRecord = await auditRepository.appendPage(audit.id, {
+    writer.recordAnalysisDuration(Date.now() - analysisStartedAt);
+    const pageRecord = await writer.addPage({
       url: fetched.finalUrl,
       statusCode: fetched.statusCode,
       responseTimeMs: fetched.responseTimeMs,
@@ -401,12 +429,12 @@ async function processAudit(audit: ResourceAuditDocument) {
     });
     pages.push(pageRecord);
 
-    await writeProgress(audit.id, {
+    await writeProgress({
       currentPhase: 'Crawling pages',
       currentUrl: fetched.finalUrl,
       currentCheck: 'Page crawled',
       pagesCrawled: pages.length,
-      progress: Math.min(90, 20 + Math.floor((pages.length / config.pageLimit) * 70)),
+      progress: Math.min(90, 20 + Math.floor((pages.length / Math.max(scheduled.size, 1)) * 70)),
     }, {
       type: 'page_crawled',
       message: `Crawled ${fetched.finalUrl}`,
@@ -415,21 +443,8 @@ async function processAudit(audit: ResourceAuditDocument) {
 
     if (fetched.parsed) {
       for (const link of fetched.parsed.internalLinks) {
-        if (queue.length + visited.size >= config.pageLimit) break;
-        const normalized = normalizeUrl(link.href, fetched.finalUrl);
-        if (!normalized) continue;
-        const cleanUrl = stripTrackingParams(normalized);
-        if (isSameDomain(cleanUrl, audit.normalizedUrl) && !visited.has(cleanUrl) && !queue.some((queued) => queued.url === cleanUrl)) {
-          queue.push({ url: cleanUrl, depth: item.depth + 1, discoveredFrom: fetched.finalUrl });
-          await auditRepository.appendEvent(audit.id, {
-            type: 'page_discovered',
-            message: `Discovered ${cleanUrl}`,
-            affectedUrl: cleanUrl,
-            progress: Math.min(55, 20 + Math.floor((visited.size / config.pageLimit) * 35)),
-            data: { discoveredFrom: fetched.finalUrl, crawlDepth: item.depth + 1 },
-          });
-          await auditRepository.updateAudit(audit.id, { pagesDiscovered: queue.length + visited.size });
-        }
+        if (scheduled.size >= config.pageLimit) break;
+        await enqueuePage(link.href, item.depth + 1, fetched.finalUrl);
       }
     }
   }
@@ -437,7 +452,8 @@ async function processAudit(audit: ResourceAuditDocument) {
   await new Promise<void>((resolve, reject) => {
     const pump = () => {
       if (cancelled) return resolve();
-      while (active < config.concurrency && queue.length > 0 && visited.size < config.pageLimit) {
+      if (Date.now() >= auditDeadline) durationLimitReached = true;
+      while (!durationLimitReached && active < config.concurrency && queue.length > 0 && visited.size < config.pageLimit) {
         const item = queue.shift()!;
         active++;
         processPage(item)
@@ -450,14 +466,14 @@ async function processAudit(audit: ResourceAuditDocument) {
           })
           .finally(() => {
             active--;
-            if ((queue.length === 0 || visited.size >= config.pageLimit) && active === 0) {
+            if ((durationLimitReached || queue.length === 0 || visited.size >= config.pageLimit) && active === 0) {
               resolve();
             } else {
               pump();
             }
           });
       }
-      if ((queue.length === 0 || visited.size >= config.pageLimit) && active === 0) {
+      if ((durationLimitReached || queue.length === 0 || visited.size >= config.pageLimit) && active === 0) {
         resolve();
       }
     };
@@ -465,7 +481,7 @@ async function processAudit(audit: ResourceAuditDocument) {
   });
 
   if (cancelled || (await auditRepository.getAudit(audit.id))?.status === 'cancelled') {
-    await auditRepository.appendEvent(audit.id, {
+    await writer.addEvent({
       type: 'audit_cancelled',
       message: 'Audit cancelled. Partial results were kept.',
       progress: (await auditRepository.getAudit(audit.id))?.progress,
@@ -473,6 +489,19 @@ async function processAudit(audit: ResourceAuditDocument) {
     return;
   }
 
+  if (durationLimitReached) {
+    await addIssue({
+      severity: 'info',
+      category: 'audit-coverage',
+      title: 'Audit time budget reached',
+      description: 'The audit stopped scheduling new pages after reaching its resource-safe time budget.',
+      affectedUrl: audit.normalizedUrl,
+      evidence: `Stored ${pages.length} completed page checks before the time budget ended.`,
+      recommendation: 'Review the completed evidence or run a narrower audit scope.',
+    });
+  }
+
+  await writer.flush();
   const issues = await auditRepository.getIssues(audit.id);
   const categoryCounts: Record<string, number> = issues.reduce((acc: Record<string, number>, issue) => {
     const key = String(issue.category || 'other').toLowerCase();
@@ -495,27 +524,28 @@ async function processAudit(audit: ResourceAuditDocument) {
     acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
-  const weightedIssueScore = issues.reduce((total, issue) => {
-    const weights = { critical: 12, high: 6, medium: 3, low: 1, info: 0 };
-    return total + weights[issue.severity];
-  }, 0);
-  const overallScore = Math.max(0, Math.min(100, 100 - Math.round(weightedIssueScore / Math.max(1, pages.length))));
-  const seoIssueCount = issues.filter((issue) => !String(issue.category).toLowerCase().includes('security')).length;
-  const securityIssueCount = issues.length - seoIssueCount;
-  const seoScore = Math.max(0, Math.min(100, overallScore + Math.min(10, securityIssueCount) - Math.min(20, seoIssueCount)));
-  const securityScore = Math.max(0, Math.min(100, 100 - securityIssueCount * 8 - issues.filter((issue) => issue.severity === 'critical' && String(issue.category).toLowerCase().includes('security')).length * 10));
-  const crawlabilityScore = Math.min(100, Math.round((pages.length / Math.max(1, config.pageLimit)) * 100));
-  const technicalScore = Math.max(0, Math.min(100, 95 - (categoryCounts.technical || 0) * 5 - (categoryCounts.crawlability || 0) * 4));
-  const performanceScore = Math.max(0, Math.min(100, 95 - pages.filter((page) => page.responseTimeMs > 1500 || page.pageSizeBytes > 1_000_000).length * 8));
+  const transparentScore = calculateTransparentAuditScore({
+    issues,
+    pages,
+    unavailableChecks: {
+      mobile: ['Browser-rendered Core Web Vitals and device interaction metrics were not collected.'],
+    },
+    limitations: [
+      `${config.label} limited the crawl to at most ${config.pageLimit} pages.`,
+      'Provider-dependent rankings, backlinks, traffic, and search-volume data were not collected and did not affect scores.',
+      'Passive Security Review only; no penetration testing was performed.',
+    ],
+  });
+  const overallScore = transparentScore.overall ?? 0;
 
-  await writeProgress(audit.id, {
+  await writeProgress({
     progress: 92,
     currentPhase: 'Scoring',
     currentUrl: null,
     currentCheck: 'Score calculation',
   }, { type: 'score_updated', message: `Overall score updated to ${overallScore}`, data: { overallScore } });
 
-  await writeProgress(audit.id, {
+  await writeProgress({
     progress: 95,
     currentPhase: 'Building report',
     currentCheck: 'Final report',
@@ -523,18 +553,13 @@ async function processAudit(audit: ResourceAuditDocument) {
 
   const report: ResourceAuditReport = {
     scores: {
-      overall: overallScore,
-      seo: seoScore,
-      security: securityScore,
-      technical: technicalScore,
-      performance: performanceScore,
-      crawlability: crawlabilityScore,
+      ...toReportScoreRecord(transparentScore),
       pageTypeCounts,
       issueCategoryCounts: categoryCounts,
       deepAudit: config.deepSitemapExpansion ? {
         sitemapExpansion: true,
         pageCoverageLimit: config.pageLimit,
-        pagesDiscovered: Math.max(queue.length + visited.size, pages.length),
+        pagesDiscovered: Math.max(scheduled.size, pages.length),
         issueClusters: Object.keys(categoryCounts).length,
       } : null,
     },
@@ -553,24 +578,37 @@ async function processAudit(audit: ResourceAuditDocument) {
   };
   await auditRepository.setFinalReport(audit.id, report);
 
-  await auditRepository.updateAudit(audit.id, {
+  const completedAt = nowIso();
+  await writeProgress({
     status: 'completed',
     progress: 100,
     currentPhase: 'Completed',
     currentUrl: null,
     currentCheck: null,
     pagesCrawled: pages.length,
+    checksTotal: pages.length * 2,
     checksCompleted: pages.length * 2,
-    completedAt: nowIso(),
+    completedAt,
     lockedBy: null,
     lockedAt: null,
     leaseExpiresAt: null,
-  });
-  await auditRepository.appendEvent(audit.id, {
+  }, {
     type: 'audit_completed',
     message: `Audit completed in ${Math.max(1, Math.round((Date.now() - new Date(workerStart).getTime()) / 1000))}s`,
     progress: 100,
-  });
+  }, { force: true });
+}
+
+async function processAudit(audit: ResourceAuditDocument) {
+  const writer = new AuditWriteBatch(audit.id);
+  const profile = getAuditProfileForDocument(audit);
+  try {
+    await processAuditJob(audit, writer);
+  } finally {
+    await writer.flush();
+    await auditRepository.trimAuditEvents(audit.id, profile.maxEvents);
+    console.log(`Audit ${audit.id} metrics ${JSON.stringify(writer.getMetrics())}`);
+  }
 }
 
 async function writeWorkerHeartbeat(state: AuditWorkerRuntimeState, patch?: Partial<Pick<AuditWorkerRuntimeState, 'status' | 'currentAuditId'>>) {

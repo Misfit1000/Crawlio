@@ -9,6 +9,14 @@ import { getAuditStartHeaders } from './lib/api/auth-headers';
 import { createAuditSubmitGuard } from './lib/api/audit-submit-guard';
 import { BrandMark, LoadingSkeleton, ThemeToggle } from './components/ui/visual-system';
 import { MarketingShell, WorkspaceShell } from './components/layout/ProductShells';
+import { useLocation, useNavigate } from 'react-router';
+import {
+  TAB_PATHS,
+  isWorkspacePath,
+  parseAuditWorkspacePath,
+  tabForPath,
+  type TabType,
+} from './app/routes';
 
 // Lazy load heavy components
 const Login = lazy(() => import('./components/Login'));
@@ -31,10 +39,12 @@ const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
 const PublicDiscovery = lazy(() => import('./components/PublicDiscovery'));
 const SearchData = lazy(() => import('./components/SearchData'));
 const LiveAuditProgress = lazy(() => import('./components/audit/LiveAuditProgress').then((mod) => ({ default: mod.LiveAuditProgress })));
+const AuditWorkspace = lazy(() => import('./components/audit/AuditWorkspace'));
+const AuditHistoryPage = lazy(() => import('./components/audit/AuditHistoryPage'));
 const BlogIndex = lazy(() => import('./components/blog/BlogIndex'));
 const BlogPostPage = lazy(() => import('./components/blog/BlogPostPage'));
 
-export type TabType = 'dashboard' | 'keyword-research' | 'website-analyzer' | 'keyword-clusters' | 'competitor-gap' | 'content-briefs' | 'seo-audit' | 'seo-findings' | 'technical-seo' | 'crawlability' | 'performance' | 'pages' | 'audit-history' | 'security-audit' | 'rank-tracker' | 'imports' | 'reports' | 'settings' | 'admin-dashboard' | 'public-discovery' | 'search-data';
+export type { TabType } from './app/routes';
 
 const LOCATIONS = [
   { code: 'US', name: 'United States' },
@@ -86,14 +96,16 @@ const LOCATIONS = [
 export default function App() {
   const { user, loading: authLoading, logout, unverifiedEmail, setUnverifiedEmail } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const [pathname, setPathname] = useState(() => window.location.pathname);
+  const routerLocation = useLocation();
+  const navigate = useNavigate();
+  const pathname = routerLocation.pathname;
   const [authMode, setAuthMode] = useState<'login' | 'register' | null>(() => {
-    if (window.location.pathname === '/admin/login') {
+    if (window.location.pathname === '/admin/login' || window.location.pathname === '/login') {
       return 'login';
     }
+    if (window.location.pathname === '/register') return 'register';
     return null;
   });
-  const [isSearching, setIsSearching] = useState(() => window.location.pathname.startsWith('/admin'));
   const [keyword, setKeyword] = useState('');
   const [searchedKeyword, setSearchedKeyword] = useState('');
   const [location, setLocation] = useState('US');
@@ -103,10 +115,7 @@ export default function App() {
   const [isLocating, setIsLocating] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
-  const [liveAuditId, setLiveAuditId] = useState<string | null>(() => {
-    const match = window.location.pathname.match(/^\/audit\/live\/([^/]+)/);
-    return match?.[1] || null;
-  });
+  const liveAuditId = pathname.match(/^\/audit\/live\/([^/]+)/)?.[1] || null;
   const [startAuditError, setStartAuditError] = useState<string | null>(null);
   const auditStartGuardRef = useRef(createAuditSubmitGuard());
 
@@ -126,44 +135,12 @@ export default function App() {
     return () => window.removeEventListener('recentSearchesUpdated', loadRecent);
   }, []);
 
-  useEffect(() => {
-    const syncLiveRoute = () => {
-      setPathname(window.location.pathname);
-      const match = window.location.pathname.match(/^\/audit\/live\/([^/]+)/);
-      setLiveAuditId(match?.[1] || null);
-    };
-    const handleNavigate = (event: Event) => {
-      const auditId = (event as CustomEvent<string>).detail;
-      if (auditId) setLiveAuditId(auditId);
-    };
-    window.addEventListener('popstate', syncLiveRoute);
-    window.addEventListener('navigate-live-audit', handleNavigate);
-    return () => {
-      window.removeEventListener('popstate', syncLiveRoute);
-      window.removeEventListener('navigate-live-audit', handleNavigate);
-    };
-  }, []);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [activeTab, setActiveTab] = useState<TabType>(() => {
-    if (window.location.pathname.startsWith('/admin')) {
-      return 'admin-dashboard';
-    }
-    return 'dashboard';
-  });
+  const activeTab = tabForPath(pathname);
+  const workspaceRoute = parseAuditWorkspacePath(pathname);
+  const isSearching = isWorkspacePath(pathname);
+  const setActiveTab = (tab: TabType) => navigate(TAB_PATHS[tab]);
   const [inDepthAnalysis, setInDepthAnalysis] = useState(false);
-
-  useEffect(() => {
-    if (pathname.startsWith('/blog')) return;
-    if (activeTab === 'admin-dashboard') {
-      if (authMode === 'login') {
-        window.history.replaceState(null, '', '/admin/login');
-      } else {
-        window.history.replaceState(null, '', '/admin');
-      }
-    } else {
-      window.history.replaceState(null, '', '/');
-    }
-  }, [activeTab, authMode, pathname]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -188,6 +165,13 @@ export default function App() {
     window.addEventListener('open-login', handleOpenLogin);
     return () => window.removeEventListener('open-login', handleOpenLogin);
   }, []);
+
+  useEffect(() => {
+    if (pathname === '/login' || pathname === '/admin/login') setAuthMode('login');
+    if (pathname === '/register') setAuthMode('register');
+    if (pathname === '/pricing') window.setTimeout(() => document.getElementById('pricing')?.scrollIntoView({ block: 'start' }), 80);
+    if (pathname === '/reports/example') window.setTimeout(() => document.getElementById('reports')?.scrollIntoView({ block: 'start' }), 80);
+  }, [pathname]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -265,7 +249,7 @@ export default function App() {
     setSearchedLocation(location);
     setSearchedLatLng(location.startsWith('CURRENT_LOCATION') ? userLatLng : null);
     setInDepthAnalysis(!!forceInDepth && !!user);
-    setIsSearching(true);
+    navigate(TAB_PATHS.dashboard);
 
     try {
       const stored = localStorage.getItem('recentSearches');
@@ -281,7 +265,7 @@ export default function App() {
   const handleLogout = async () => {
     try {
       await logout();
-      setIsSearching(false);
+      navigate('/');
       setKeyword('');
       setSearchedKeyword('');
       setInDepthAnalysis(false);
@@ -303,10 +287,7 @@ export default function App() {
         throw new Error((response as any).error || 'Failed to start audit');
       }
       const auditId = response.data.data?.auditId || response.data.auditId;
-      window.history.pushState(null, '', `/audit/live/${auditId}`);
-      setPathname(`/audit/live/${auditId}`);
-      setLiveAuditId(auditId);
-      setIsSearching(false);
+      navigate(`/audit/live/${encodeURIComponent(auditId)}`);
     } catch (error) {
       throw error;
     } finally {
@@ -315,20 +296,14 @@ export default function App() {
   };
 
   const openHomeSection = (sectionId: string) => {
-    setLiveAuditId(null);
-    setIsSearching(false);
-    window.history.pushState(null, '', '/');
-    setPathname('/');
+    navigate('/');
     window.setTimeout(() => {
       document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 80);
   };
 
   const openAppTab = (tab: TabType) => {
-    setActiveTab(tab);
-    setIsSearching(true);
-    window.history.pushState(null, '', '/');
-    setPathname('/');
+    navigate(TAB_PATHS[tab]);
   };
 
   const handleLandingNavigate = (destination: LandingDestination) => {
@@ -375,6 +350,32 @@ export default function App() {
     );
   }
 
+  if (isSearching && authLoading) {
+    return <div className="flex min-h-screen items-center justify-center bg-background text-foreground"><Loader2 className="h-7 w-7 animate-spin text-accent" /><span className="ml-3 text-sm font-semibold">Loading your workspace...</span></div>;
+  }
+
+  if (pathname.startsWith('/app') && !user) {
+    return (
+      <div className="min-h-screen bg-background text-foreground">
+        <header className="flex h-16 items-center justify-between border-b border-border bg-card px-4 md:px-6"><button type="button" onClick={() => navigate('/')}><BrandMark /></button><ThemeToggle theme={theme} onToggle={toggleTheme} /></header>
+        <main className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-md items-center p-4">
+          <Suspense fallback={<LoadingSkeleton rows={4} />}>{authMode === 'register' ? <Register onToggle={() => setAuthMode('login')} /> : <Login onToggle={() => setAuthMode('register')} />}</Suspense>
+        </main>
+      </div>
+    );
+  }
+
+  if (pathname.startsWith('/admin') && user?.role !== 'admin') {
+    return (
+      <div className="min-h-screen bg-background text-foreground">
+        <header className="flex h-16 items-center justify-between border-b border-border bg-card px-4 md:px-6"><button type="button" onClick={() => navigate('/')}><BrandMark /></button><ThemeToggle theme={theme} onToggle={toggleTheme} /></header>
+        <main className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-lg items-center p-4">
+          {user ? <div className="w-full rounded-lg border border-border bg-card p-6"><h1 className="text-xl font-semibold">Admin access required</h1><p className="mt-2 text-sm text-muted-foreground">This account does not have permission to open the administration workspace.</p><button type="button" className="trust-button mt-5" onClick={() => navigate('/app')}>Return to workspace</button></div> : <Suspense fallback={<LoadingSkeleton rows={4} />}>{authMode === 'register' ? <Register onToggle={() => setAuthMode('login')} /> : <Login onToggle={() => setAuthMode('register')} />}</Suspense>}
+        </main>
+      </div>
+    );
+  }
+
   if (liveAuditId) {
     return (
       <div className="min-h-screen bg-background text-foreground font-sans transition-colors duration-300">
@@ -382,12 +383,7 @@ export default function App() {
           <button
             type="button"
             className="rounded-2xl"
-            onClick={() => {
-              window.history.pushState(null, '', '/');
-              setPathname('/');
-              setLiveAuditId(null);
-              setIsSearching(false);
-            }}
+            onClick={() => navigate('/')}
           >
             <BrandMark />
           </button>
@@ -395,7 +391,7 @@ export default function App() {
         </header>
         <main className="mx-auto w-full max-w-[1600px] p-3 sm:p-5 md:p-8">
           <Suspense fallback={<div className="h-64 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-accent" /></div>}>
-            <LiveAuditProgress auditId={liveAuditId} onRerun={(url) => startLiveAudit(url, 'quick')} />
+            <LiveAuditProgress auditId={liveAuditId} onRerun={(url) => startLiveAudit(url, 'quick')} onOpenWorkspace={() => navigate(`/app/audits/${encodeURIComponent(liveAuditId)}/overview`)} />
           </Suspense>
         </main>
       </div>
@@ -415,6 +411,10 @@ export default function App() {
     const locationName = searchedLocation.startsWith('CURRENT_LOCATION') 
       ? (searchedLocation.split(':')[1] || 'Current Location') 
       : LOCATIONS.find(l => l.code === searchedLocation)?.name;
+
+    if (workspaceRoute) {
+      return <AuditWorkspace auditId={workspaceRoute.auditId} section={workspaceRoute.section} />;
+    }
 
     switch (activeTab) {
       case 'dashboard':
@@ -460,7 +460,7 @@ export default function App() {
       case 'pages':
         return <Reports onStartAudit={() => setActiveTab('seo-audit')} initialSection="report-pages" />;
       case 'audit-history':
-        return <Reports onStartAudit={() => setActiveTab('seo-audit')} initialSection="report-history" />;
+        return <AuditHistoryPage onStartAudit={() => setActiveTab('seo-audit')} />;
       case 'security-audit':
         return <SecurityAudit />;
       case 'rank-tracker':
@@ -497,9 +497,9 @@ export default function App() {
           <div className="relative w-full max-w-md">
             <Suspense fallback={<div className="flex items-center justify-center rounded-2xl border border-border bg-card p-8"><Loader2 className="h-6 w-6 animate-spin text-accent" /></div>}>
               {authMode === 'login' ? (
-                <Login onToggle={() => setAuthMode('register')} onClose={() => setAuthMode(null)} />
+                <Login onToggle={() => { setAuthMode('register'); if (pathname === '/login') navigate('/register'); }} onClose={() => { setAuthMode(null); if (pathname === '/login' || pathname === '/admin/login') navigate('/'); }} />
               ) : (
-                <Register onToggle={() => setAuthMode('login')} onClose={() => setAuthMode(null)} />
+                <Register onToggle={() => { setAuthMode('login'); if (pathname === '/register') navigate('/login'); }} onClose={() => { setAuthMode(null); if (pathname === '/register') navigate('/'); }} />
               )}
             </Suspense>
           </div>
@@ -514,11 +514,7 @@ export default function App() {
             userLabel={user?.username || (user ? 'Account' : null)}
             authLoading={authLoading}
             navigationBase="/"
-            onHome={() => {
-              window.history.pushState(null, '', '/');
-              setPathname('/');
-              setIsSearching(false);
-            }}
+            onHome={() => navigate('/')}
             onLogin={() => setAuthMode('login')}
             onSettings={() => openAppTab('settings')}
             onLogout={handleLogout}
@@ -533,11 +529,7 @@ export default function App() {
               onToggleTheme={toggleTheme}
               userLabel={user?.username || (user ? 'Account' : null)}
               authLoading={authLoading}
-              onHome={() => {
-                window.history.pushState(null, '', '/');
-                setPathname('/');
-                setIsSearching(false);
-              }}
+              onHome={() => navigate('/')}
               onLogin={() => setAuthMode('login')}
               onSettings={() => openAppTab('settings')}
               onLogout={handleLogout}
@@ -551,7 +543,6 @@ export default function App() {
                     setKeyword(url);
                     setSearchedKeyword(url);
                     setActiveTab('seo-audit');
-                    setIsSearching(true);
                   }
                 }}
                 onExploreFeatures={() => {
@@ -571,11 +562,7 @@ export default function App() {
               onToggleTheme={toggleTheme}
               sidebarOpen={isSidebarOpen}
               onToggleSidebar={() => setIsSidebarOpen((open) => !open)}
-              onHome={() => {
-                window.history.pushState(null, '', '/');
-                setPathname('/');
-                setIsSearching(false);
-              }}
+              onHome={() => navigate('/')}
               query={keyword}
               onQueryChange={setKeyword}
               onSearch={(event) => handleSearch(event, undefined, false)}

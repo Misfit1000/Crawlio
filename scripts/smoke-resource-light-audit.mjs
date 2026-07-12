@@ -5,6 +5,8 @@ import { apiRouter } from '../src/api/index.ts';
 import { auditRepository } from '../src/lib/supabase/audit-repository.ts';
 import { runOneAudit } from '../src/workers/audit-worker.ts';
 
+process.env.SEOINTEL_ALLOW_PRIVATE_TEST_TARGETS = 'true';
+
 if (!auditRepository.isSupabaseEnabled()) {
   console.log('Running local in-memory E2E mode - not production Supabase.');
 }

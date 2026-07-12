@@ -1,9 +1,15 @@
-export async function fetchSitemap(url: string) {
+import { safePublicFetch, type SafePublicFetchOptions } from '../security/safe-public-fetch';
+
+export async function fetchSitemap(url: string, options: SafePublicFetchOptions = {}) {
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': 'SEOIntelBot/1.0' }, timeout: 10000 } as any);
-    if (!res.ok) return { urls: [], errors: ['HTTP ' + res.status] };
-    const xml = await res.text();
-    return parseSitemapXml(xml);
+    const response = await safePublicFetch(url, {
+      ...options,
+      timeoutMs: options.timeoutMs ?? 10_000,
+      maxBytes: Math.min(options.maxBytes ?? 2_000_000, 2_000_000),
+      allowedContentTypes: ['application/xml', 'text/xml', 'text/plain', 'application/xhtml+xml'],
+    });
+    if (response.status < 200 || response.status >= 300) return { urls: [], errors: [`HTTP ${response.status}`] };
+    return parseSitemapXml(response.body);
   } catch(e: any) {
     return { urls: [], errors: [e.message] };
   }

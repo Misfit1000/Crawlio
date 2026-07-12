@@ -39,18 +39,18 @@
 
   .dark {
     color-scheme: dark;
-    --background: #090f1d;
+    --background: #0b1324;
     --foreground: #eef3ff;
-    --card: #111a2b;
+    --card: #131f35;
     --card-foreground: #f4f7ff;
-    --border: rgba(148, 163, 184, 0.15);
-    --border-strong: rgba(148, 163, 184, 0.28);
-    --accent: #6f98ff;
-    --accent-hover: #84a7ff;
+    --border: rgba(153, 177, 216, 0.2);
+    --border-strong: rgba(153, 177, 216, 0.34);
+    --accent: #7099ff;
+    --accent-hover: #86a8ff;
     --accent-foreground: #ffffff;
-    --muted: #182235;
-    --muted-foreground: #aebbd0;
-    --subtle-foreground: #8290a8;
+    --muted: #1a2942;
+    --muted-foreground: #b7c3d8;
+    --subtle-foreground: #91a1bb;
   }
 
   body {
@@ -113,7 +113,7 @@
   }
 
   .suite-page {
-    @apply mx-auto w-full max-w-[1600px] space-y-8 px-4 py-6 sm:px-5 md:px-7 md:py-8 xl:px-10 xl:py-10;
+    @apply mx-auto w-full max-w-[1800px] space-y-8 px-4 py-6 sm:px-5 md:px-7 md:py-8 xl:px-10 xl:py-10;
   }
 
   .suite-panel {

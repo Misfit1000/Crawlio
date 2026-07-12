@@ -2,6 +2,8 @@ export const API_ROUTES = {
   auditStart: "/api/tools/audit/start",
   auditStatus: (id: string) => `/api/tools/audit/status/${id}`,
   auditResult: (id: string) => `/api/tools/audit/result/${id}`,
+  auditHistory: "/api/tools/audits/history",
+  auditCompare: (currentId: string, baselineId: string) => `/api/tools/audit/compare/${encodeURIComponent(currentId)}/${encodeURIComponent(baselineId)}`,
   auditEvents: (id: string) => `/api/tools/audit/events/${id}`,
   auditCancel: (id: string) => `/api/tools/audit/cancel/${id}`,
   auditExport: (id: string, format: string) => `/api/tools/audit/export/${id}/${format}`,

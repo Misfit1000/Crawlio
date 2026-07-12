@@ -1,15 +1,16 @@
 # SEOIntel
 
-SEOIntel is a professional, full-featured SEO audit suite and technical analysis platform that operates **entirely without external AI/LLM APIs**.
+SEOIntel is a resource-aware SEO, technical SEO, and passive security audit platform. Vercel serves the Vite application and lightweight API; Supabase stores jobs and results; a separate Render worker performs public-site analysis.
 
 ## Features
 
-- **Full SEO Audit Engine**: 70+ technical, on-page, crawlability, indexability, content, and security checks.
-- **Local Website Crawler**: Extract keywords and audit entire sites locally.
+- **Deterministic Audit Engine**: Technical, on-page, crawlability, content, and passive browser-protection checks.
+- **Safe Worker Crawling**: SSRF controls, pinned DNS, redirect revalidation, response limits, per-host scheduling, and bounded audit duration.
 - **Technical SEO**: Find broken links, redirect chains, missing schemas, and more.
 - **Search Data Imports**: Import real performance data from Google Search Console and Bing Webmaster Tools.
 - **Public Web Discovery**: Discover mentions and backlinks via Common Crawl.
-- **No AI Dependency**: This app does NOT use Gemini, OpenAI, Claude, or any paid AI API.
+- **Transparent Scores**: Measured deductions are stored with limitations; unavailable provider data does not affect scores.
+- **Account History And Comparison**: Owner-scoped Supabase history with new, resolved, and persistent issue comparison.
 - **No Paid APIs**: Operates using free data and local analysis rules.
 
 ## Getting Started
@@ -21,7 +22,7 @@ SEOIntel is a professional, full-featured SEO audit suite and technical analysis
 
 ## Deployment
 
-Deploy using Vercel or any standard Node.js server. Keep in mind serverless timeout limits if crawling very large websites.
+Deploy the frontend and lightweight API to Vercel, apply Supabase migrations, and deploy the audit worker separately to Render. Never run the crawl loop inside a Vercel function. See `docs/setup/deployment-checklist.md`.
 
 ## License
 

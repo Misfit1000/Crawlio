@@ -23,6 +23,7 @@ import {
 import { API_ROUTES } from '../lib/api/routes';
 import { getAuditAccessHeaders } from '../lib/api/auth-headers';
 import {
+  buildHistoryEntry,
   buildIssueInsight,
   readAuditHistory,
   upsertAuditHistory,
@@ -39,7 +40,7 @@ import {
   type RecommendationGroup,
   type ReportSectionId,
 } from '../lib/audit/report-insights';
-import type { ResourceAuditIssue, ResourceAuditLiveData, ResourceAuditPage } from '../lib/audit/resource-types';
+import type { AuditHistoryPage, ResourceAuditIssue, ResourceAuditLiveData, ResourceAuditPage } from '../lib/audit/resource-types';
 import { downloadAuditExport } from '../lib/http/download';
 import { safeJsonFetch } from '../lib/http/safe-json';
 import {
@@ -156,11 +157,26 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
   const [pageNumber, setPageNumber] = useState(1);
 
   useEffect(() => {
-    const entries = readAuditHistory();
+    let active = true;
     const requestedId = window.localStorage.getItem('seointel_selected_report_id');
-    const initialId = entries.some((entry) => entry.auditId === requestedId) ? requestedId : entries[0]?.auditId || null;
-    setHistory(entries);
-    setSelectedId(initialId);
+    getAuditAccessHeaders()
+      .then((headers) => safeJsonFetch<any>(`${API_ROUTES.auditHistory}?limit=100`, { headers }))
+      .then((response) => {
+        if (!active || !response.success) throw new Error((response as any).error || 'Stored audit history is unavailable.');
+        const page = (response.data.data || response.data) as AuditHistoryPage;
+        const entries = page.items
+          .map((item) => buildHistoryEntry({ audit: item.audit, latestEvents: [], latestPages: item.finalReport?.pages || [], latestIssues: item.finalReport?.topIssues || [], finalReport: item.finalReport }))
+          .filter((entry): entry is AuditHistoryEntry => Boolean(entry));
+        setHistory(entries);
+        setSelectedId(entries.some((entry) => entry.auditId === requestedId) ? requestedId : entries[0]?.auditId || null);
+      })
+      .catch(() => {
+        if (!active) return;
+        const cached = readAuditHistory();
+        setHistory(cached);
+        setSelectedId(cached.some((entry) => entry.auditId === requestedId) ? requestedId : cached[0]?.auditId || null);
+      });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -190,7 +206,8 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
         if (!response.data.success || !response.data.data?.audit) throw new Error(response.data.error || 'Audit report data is unavailable.');
         setReportData(response.data.data);
         upsertAuditHistory(response.data.data);
-        setHistory(readAuditHistory());
+        const nextEntry = buildHistoryEntry(response.data.data);
+        if (nextEntry) setHistory((current) => [nextEntry, ...current.filter((entry) => entry.auditId !== nextEntry.auditId)]);
       })
       .catch((error) => {
         if (active) setReportError(error instanceof Error ? error.message : 'Could not load this audit report.');
@@ -408,7 +425,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
           <p className="mt-1 text-sm text-muted-foreground">Repeated findings are grouped by issue type and ordered by priority and affected pages.</p>
         </div>
         {recommendations.length ? (
-          <div className="space-y-3">
+          <div className="grid gap-3 xl:grid-cols-2">
             {recommendations.slice(0, 5).map((group) => {
               const representative = groupRepresentative(group, issues);
               const insight = representative ? buildIssueInsight(representative) : null;
@@ -447,7 +464,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
             {section.id === 'security' && <p className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-3 text-xs leading-5 text-muted-foreground">SEOIntel checks public HTTPS and browser protection signals only. It does not scan ports, submit attack payloads, brute-force credentials, or attempt exploitation.</p>}
 
             {sectionFindings.length ? (
-              <div className="space-y-3">
+              <div className="grid gap-3 xl:grid-cols-2">
                 {sectionFindings.map((group) => {
                   const representative = groupRepresentative(group, issues);
                   const insight = representative ? buildIssueInsight(representative) : null;

@@ -1,8 +1,15 @@
-export async function fetchRobotsTxt(origin: string): Promise<string> {
+import { safePublicFetch, type SafePublicFetchOptions } from '../security/safe-public-fetch';
+
+export async function fetchRobotsTxt(origin: string, options: SafePublicFetchOptions = {}): Promise<string> {
   try {
     const url = new URL('/robots.txt', origin).toString();
-    const res = await fetch(url, { headers: { 'User-Agent': 'SEOIntelBot/1.0' }, timeout: 5000 } as any);
-    if (res.ok) return await res.text();
+    const response = await safePublicFetch(url, {
+      ...options,
+      timeoutMs: options.timeoutMs ?? 5_000,
+      maxBytes: Math.min(options.maxBytes ?? 512_000, 512_000),
+      allowedContentTypes: ['text/plain', 'text/html'],
+    });
+    if (response.status >= 200 && response.status < 300) return response.body;
   } catch(e) {}
   return '';
 }

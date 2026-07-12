@@ -3,6 +3,8 @@ import {
   AUDIT_LIMITS,
   type AuditMode,
   type ResourceAuditDocument,
+  type AuditComparison,
+  type AuditHistoryPage,
   type ResourceAuditEvent,
   type ResourceAuditIssue,
   type ResourceAuditLiveData,
@@ -98,6 +100,22 @@ function assertNoError(error: { message?: string } | null | undefined, action: s
   if (error) {
     throw new Error(`${action}: ${error.message || 'Unknown Supabase error'}`);
   }
+}
+
+async function withTransientRetry<T>(action: string, operation: () => Promise<T>, attempts = 3): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      const transient = /timeout|timed out|fetch failed|network|socket|429|502|503|504|temporar/i.test(message);
+      if (!transient || attempt === attempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 150 * (2 ** (attempt - 1))));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(`${action} failed.`);
 }
 
 function toAuditDocument(row: DbRow | null | undefined): ResourceAuditDocument | null {
@@ -365,6 +383,23 @@ function reportToRow(auditId: string, report: ResourceAuditReport) {
     exports: report.exports,
     generated_at: report.generatedAt,
   };
+}
+
+function reportOverallScore(report: ResourceAuditReport | null) {
+  const value = report?.scores?.overall;
+  const score = Number(value);
+  return value == null || !Number.isFinite(score) ? null : Math.max(0, Math.min(100, score));
+}
+
+function comparisonIssueKey(issue: ResourceAuditIssue) {
+  let path = issue.affectedUrl;
+  try {
+    const parsed = new URL(issue.affectedUrl);
+    path = `${parsed.hostname.toLowerCase()}${parsed.pathname.replace(/\/$/, '') || '/'}`;
+  } catch {
+    path = issue.affectedUrl.toLowerCase();
+  }
+  return `${issue.category}|${issue.title}|${path}`.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
 const memory = {
@@ -710,6 +745,60 @@ export const auditRepository = {
     return this.appendAuditEvent(auditId, event);
   },
 
+  async appendEvents(auditId: string, events: Array<Omit<Partial<ResourceAuditEvent>, 'id'>>) {
+    if (!events.length) return [];
+    const audit = await this.getAuditJob(auditId);
+    const fullEvents: ResourceAuditEvent[] = events.map((event) => ({
+      id: randomUUID(),
+      type: event.type || 'progress_update',
+      timestamp: event.timestamp || nowIso(),
+      message: event.message || '',
+      phase: event.phase,
+      currentUrl: event.currentUrl,
+      affectedUrl: event.affectedUrl,
+      category: event.category,
+      checkId: event.checkId,
+      checkTitle: event.checkTitle,
+      severity: event.severity,
+      progress: event.progress ?? audit?.progress,
+      data: event.data,
+    }));
+    const client = getSupabaseAdminClient();
+    if (client) {
+      await withTransientRetry('Append audit event batch', async () => {
+        const { error } = await client.from('audit_events').insert(fullEvents.map((event) => eventToRow(auditId, event)));
+        assertNoError(error, 'Append audit event batch');
+      });
+      return fullEvents;
+    }
+    const current = memory.events.get(auditId) ?? [];
+    memory.events.set(auditId, [...current, ...fullEvents].slice(-AUDIT_LIMITS.maxEvents));
+    return fullEvents;
+  },
+
+  async trimAuditEvents(auditId: string, limit = AUDIT_LIMITS.maxEvents) {
+    const safeLimit = Math.max(1, Math.min(5_000, Math.floor(limit)));
+    const client = getSupabaseAdminClient();
+    if (client) {
+      const countResult = await client.from('audit_events').select('id', { count: 'exact', head: true }).eq('audit_id', auditId);
+      assertNoError(countResult.error, 'Count audit events before trim');
+      const overLimit = (countResult.count ?? 0) - safeLimit;
+      if (overLimit <= 0) return 0;
+      const oldest = await client.from('audit_events').select('id').eq('audit_id', auditId).order('created_at', { ascending: true }).limit(overLimit);
+      assertNoError(oldest.error, 'Find audit events to trim');
+      const ids = (oldest.data ?? []).map((row) => row.id);
+      if (ids.length) {
+        const removed = await client.from('audit_events').delete().in('id', ids);
+        assertNoError(removed.error, 'Trim audit events');
+      }
+      return ids.length;
+    }
+    const current = memory.events.get(auditId) ?? [];
+    const removed = Math.max(0, current.length - safeLimit);
+    memory.events.set(auditId, current.slice(-safeLimit));
+    return removed;
+  },
+
   async addCrawledPage(auditId: string, page: Omit<ResourceAuditPage, 'id'>) {
     const fullPage: ResourceAuditPage = { id: pageIdForAuditUrl(auditId, page.url), ...page };
     const client = getSupabaseAdminClient();
@@ -728,6 +817,24 @@ export const auditRepository = {
 
   async appendPage(auditId: string, page: Omit<ResourceAuditPage, 'id'>) {
     return this.addCrawledPage(auditId, page);
+  },
+
+  async appendPages(auditId: string, pages: Array<Omit<ResourceAuditPage, 'id'> & { id?: string }>) {
+    if (!pages.length) return [];
+    const fullPages = pages.map((page) => ({ id: page.id || pageIdForAuditUrl(auditId, page.url), ...page } as ResourceAuditPage));
+    const client = getSupabaseAdminClient();
+    if (client) {
+      await withTransientRetry('Append audit page batch', async () => {
+        const { error } = await client.from('audit_pages').upsert(fullPages.map((page) => pageToRow(auditId, page)), { onConflict: 'id' });
+        assertNoError(error, 'Append audit page batch');
+      });
+      return fullPages;
+    }
+    const current = memory.pages.get(auditId) ?? [];
+    const byId = new Map(current.map((page) => [page.id, page]));
+    fullPages.forEach((page) => byId.set(page.id, page));
+    memory.pages.set(auditId, Array.from(byId.values()));
+    return fullPages;
   },
 
   async addIssue(auditId: string, issue: Omit<ResourceAuditIssue, 'id' | 'detectedAt'> & { id?: string; detectedAt?: string }) {
@@ -791,6 +898,57 @@ export const auditRepository = {
 
   async appendIssue(auditId: string, issue: Omit<ResourceAuditIssue, 'id' | 'detectedAt'> & { id?: string; detectedAt?: string }) {
     return this.addIssue(auditId, issue);
+  },
+
+  async appendIssues(auditId: string, issues: Array<Omit<ResourceAuditIssue, 'id' | 'detectedAt'> & { id?: string; detectedAt?: string }>) {
+    if (!issues.length) return [];
+    const fullIssues: ResourceAuditIssue[] = issues.map((issue) => ({
+      id: issue.id || randomUUID(),
+      severity: issue.severity,
+      category: issue.category,
+      title: issue.title,
+      description: issue.description,
+      affectedUrl: issue.affectedUrl,
+      evidence: issue.evidence,
+      recommendation: issue.recommendation,
+      detectedAt: issue.detectedAt || nowIso(),
+    }));
+    const client = getSupabaseAdminClient();
+    let stored = fullIssues;
+    if (client) {
+      const countResult = await client.from('audit_issues').select('id', { count: 'exact', head: true }).eq('audit_id', auditId);
+      assertNoError(countResult.error, 'Count audit issues before batch');
+      stored = fullIssues.slice(0, Math.max(0, AUDIT_LIMITS.maxIssues - (countResult.count ?? 0)));
+      if (stored.length) {
+        await withTransientRetry('Append audit issue batch', async () => {
+          const { error } = await client.from('audit_issues').insert(stored.map((issue) => issueToRow(auditId, issue)));
+          assertNoError(error, 'Append audit issue batch');
+        });
+      }
+      const severityRows = await client.from('audit_issues').select('severity').eq('audit_id', auditId).limit(AUDIT_LIMITS.maxIssues);
+      assertNoError(severityRows.error, 'Count audit issue severities');
+      const rows = severityRows.data ?? [];
+      await this.updateAuditJob(auditId, {
+        issuesFound: rows.length,
+        criticalCount: rows.filter((item) => item.severity === 'critical').length,
+        highCount: rows.filter((item) => item.severity === 'high').length,
+        mediumCount: rows.filter((item) => item.severity === 'medium').length,
+        lowCount: rows.filter((item) => item.severity === 'low').length,
+      });
+      return stored;
+    }
+    const current = memory.issues.get(auditId) ?? [];
+    stored = fullIssues.slice(0, Math.max(0, AUDIT_LIMITS.maxIssues - current.length));
+    const next = [...current, ...stored];
+    memory.issues.set(auditId, next);
+    await this.updateAuditJob(auditId, {
+      issuesFound: next.length,
+      criticalCount: next.filter((item) => item.severity === 'critical').length,
+      highCount: next.filter((item) => item.severity === 'high').length,
+      mediumCount: next.filter((item) => item.severity === 'medium').length,
+      lowCount: next.filter((item) => item.severity === 'low').length,
+    });
+    return stored;
   },
 
   async getLatestEvents(auditId: string, limit = 50): Promise<ResourceAuditEvent[]> {
@@ -886,6 +1044,91 @@ export const auditRepository = {
 
   async getLiveData(auditId: string) {
     return this.getAuditLiveSnapshot(auditId);
+  },
+
+  async listAuditHistoryForUser(input: {
+    userId: string;
+    status?: string;
+    hostname?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<AuditHistoryPage> {
+    const limit = Math.max(1, Math.min(100, Math.floor(input.limit ?? 25)));
+    const offset = Math.max(0, Math.floor(input.offset ?? 0));
+    const client = getSupabaseAdminClient();
+    if (client) {
+      let query = client
+        .from('audits')
+        .select('*', { count: 'exact' })
+        .eq('user_id', input.userId)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
+      if (input.status) query = query.eq('status', input.status);
+      if (input.hostname) query = query.eq('hostname', input.hostname);
+      const { data, error, count } = await query;
+      assertNoError(error, 'List audit history');
+      const audits = (data ?? []).map(toAuditDocument).filter((audit): audit is ResourceAuditDocument => Boolean(audit));
+      const reportByAudit = new Map<string, ResourceAuditReport>();
+      if (audits.length) {
+        const reports = await client.from('audit_reports').select('*').in('audit_id', audits.map((audit) => audit.id));
+        assertNoError(reports.error, 'Load audit history reports');
+        for (const row of reports.data ?? []) {
+          const report = toAuditReport(row);
+          if (report) reportByAudit.set(String(row.audit_id), report);
+        }
+      }
+      return {
+        items: audits.map((audit) => ({ audit, finalReport: reportByAudit.get(audit.id) ?? null })),
+        total: count ?? audits.length,
+        limit,
+        offset,
+      };
+    }
+
+    const all = Array.from(memory.audits.values())
+      .filter((audit) => audit.userId === input.userId)
+      .filter((audit) => !input.status || audit.status === input.status)
+      .filter((audit) => !input.hostname || audit.hostname === input.hostname)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    return {
+      items: all.slice(offset, offset + limit).map((audit) => ({ audit, finalReport: memory.reports.get(audit.id) ?? null })),
+      total: all.length,
+      limit,
+      offset,
+    };
+  },
+
+  async compareAudits(currentAuditId: string, baselineAuditId: string): Promise<AuditComparison | null> {
+    const [currentAudit, baselineAudit] = await Promise.all([
+      this.getAuditJob(currentAuditId),
+      this.getAuditJob(baselineAuditId),
+    ]);
+    if (!currentAudit || !baselineAudit) return null;
+    const [currentIssuesResult, baselineIssuesResult, currentReport, baselineReport] = await Promise.all([
+      this.getIssues(currentAuditId),
+      this.getIssues(baselineAuditId),
+      this.getFinalReport(currentAuditId),
+      this.getFinalReport(baselineAuditId),
+    ]);
+    const currentIssues = currentIssuesResult as ResourceAuditIssue[];
+    const baselineIssues = baselineIssuesResult as ResourceAuditIssue[];
+    const currentByKey = new Map(currentIssues.map((issue) => [comparisonIssueKey(issue), issue]));
+    const baselineByKey = new Map(baselineIssues.map((issue) => [comparisonIssueKey(issue), issue]));
+    const currentScore = reportOverallScore(currentReport);
+    const baselineScore = reportOverallScore(baselineReport);
+    return {
+      currentAuditId,
+      baselineAuditId,
+      normalizedUrl: currentAudit.normalizedUrl,
+      currentScore,
+      baselineScore,
+      scoreDelta: currentScore == null || baselineScore == null ? null : currentScore - baselineScore,
+      newIssues: Array.from(currentByKey.entries()).filter(([key]) => !baselineByKey.has(key)).map(([, issue]) => issue),
+      resolvedIssues: Array.from(baselineByKey.entries()).filter(([key]) => !currentByKey.has(key)).map(([, issue]) => issue),
+      persistentIssues: Array.from(currentByKey.entries())
+        .filter(([key]) => baselineByKey.has(key))
+        .map(([key, current]) => ({ current, baseline: baselineByKey.get(key)! })),
+    };
   },
 
   async claimQueuedAuditJob(workerId: string, workerRuntime = 'node-worker'): Promise<ResourceAuditDocument | null> {

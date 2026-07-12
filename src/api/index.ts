@@ -429,6 +429,40 @@ apiRouter.get('/audit/result/:id', asyncJsonRoute(async (req, res) => {
   }
 }));
 
+apiRouter.get('/audits/history', asyncJsonRoute(async (req, res) => {
+  const requester = await getRequester(req);
+  if (!requester.userId) return res.status(401).json({ success: false, error: 'Authentication required.' });
+  const allowedStatuses = new Set(['queued', 'running', 'completed', 'failed', 'cancelled']);
+  const requestedStatus = String(req.query.status || '');
+  const status = allowedStatuses.has(requestedStatus) ? requestedStatus : undefined;
+  const hostname = String(req.query.hostname || '').trim().toLowerCase().slice(0, 253) || undefined;
+  const data = await auditRepository.listAuditHistoryForUser({
+    userId: requester.userId,
+    status,
+    hostname,
+    limit: Number(req.query.limit || 25),
+    offset: Number(req.query.offset || 0),
+  });
+  res.json({ success: true, data });
+}));
+
+apiRouter.get('/audit/compare/:currentId/:baselineId', asyncJsonRoute(async (req, res) => {
+  const [currentAudit, baselineAudit] = await Promise.all([
+    auditRepository.getAudit(req.params.currentId),
+    auditRepository.getAudit(req.params.baselineId),
+  ]);
+  if (!currentAudit || !baselineAudit) return res.status(404).json({ success: false, error: 'Audit not found' });
+  if (!(await canAccessAudit(req, currentAudit)) || !(await canAccessAudit(req, baselineAudit))) {
+    return res.status(404).json({ success: false, error: 'Audit not found' });
+  }
+  if (currentAudit.hostname !== baselineAudit.hostname) {
+    return res.status(400).json({ success: false, error: 'Only audits for the same website can be compared.' });
+  }
+  const comparison = await auditRepository.compareAudits(currentAudit.id, baselineAudit.id);
+  if (!comparison) return res.status(404).json({ success: false, error: 'Audit comparison is unavailable.' });
+  res.json({ success: true, data: comparison });
+}));
+
 apiRouter.get('/audit/export/:id/:format', asyncJsonRoute(async (req, res) => {
   const { id, format } = req.params;
   const liveData = await auditRepository.getLiveData(id);

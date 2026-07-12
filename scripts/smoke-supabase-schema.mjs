@@ -6,6 +6,7 @@ const migrationPath = resolve('supabase/migrations/001_resource_light_audit.sql'
 const sql = readFileSync(migrationPath, 'utf8');
 const privatePoliciesPath = resolve('supabase/migrations/006_private_audit_read_policies.sql');
 const privatePoliciesSql = readFileSync(privatePoliciesPath, 'utf8');
+const historyMigrationSql = readFileSync(resolve('supabase/migrations/008_audit_history_comparison.sql'), 'utf8');
 
 for (const table of ['audits', 'audit_events', 'audit_pages', 'audit_issues', 'audit_reports']) {
   assert.match(sql, new RegExp(`create table if not exists public\\.${table}\\b`, 'i'), `${table} table is missing`);
@@ -30,6 +31,9 @@ for (const table of ['audits', 'audit_events', 'audit_pages', 'audit_issues', 'a
 }
 assert.match(privatePoliciesSql, /drop policy if exists "users can read own or guest audits"/i, 'permissive guest audit policy is not removed');
 assert.equal(/for select\s+to anon/i.test(privatePoliciesSql), false, 'private audit read policies must not grant anon table reads');
+for (const indexName of ['audits_user_created_at_idx', 'audits_user_hostname_created_at_idx', 'audits_user_status_created_at_idx', 'audit_issues_comparison_key_idx']) {
+  assert.match(historyMigrationSql, new RegExp(`create index if not exists ${indexName}\\b`, 'i'), `${indexName} is missing`);
+}
 for (const bannedTerm of ['fire' + 'base', 'fire' + 'store']) {
   assert.equal(sql.toLowerCase().includes(bannedTerm), false, `migration should not contain ${bannedTerm} references`);
 }

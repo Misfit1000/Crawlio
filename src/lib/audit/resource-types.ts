@@ -124,3 +124,27 @@ export interface ResourceAuditLiveData {
   latestIssues: ResourceAuditIssue[];
   finalReport?: ResourceAuditReport | null;
 }
+
+export interface AuditHistoryItem {
+  audit: ResourceAuditDocument;
+  finalReport: ResourceAuditReport | null;
+}
+
+export interface AuditHistoryPage {
+  items: AuditHistoryItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface AuditComparison {
+  currentAuditId: string;
+  baselineAuditId: string;
+  normalizedUrl: string;
+  currentScore: number | null;
+  baselineScore: number | null;
+  scoreDelta: number | null;
+  newIssues: ResourceAuditIssue[];
+  resolvedIssues: ResourceAuditIssue[];
+  persistentIssues: Array<{ current: ResourceAuditIssue; baseline: ResourceAuditIssue }>;
+}

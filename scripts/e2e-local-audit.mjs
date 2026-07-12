@@ -8,7 +8,7 @@ if (!process.env.SEOINTEL_E2E_TSX_LOADED) {
     ['--import', 'tsx', fileURLToPath(import.meta.url)],
     {
       stdio: 'inherit',
-      env: { ...process.env, SEOINTEL_E2E_TSX_LOADED: '1' },
+      env: { ...process.env, SEOINTEL_E2E_TSX_LOADED: '1', SEOINTEL_ALLOW_PRIVATE_TEST_TARGETS: 'true' },
     },
   );
   process.exit(result.status ?? 1);

@@ -12,7 +12,7 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
     try {
-      const saved = localStorage.getItem('theme');
+      const saved = localStorage.getItem('seointel-theme-v2');
       if (saved === 'light' || saved === 'dark') return saved;
       return 'light';
     } catch {
@@ -26,7 +26,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     root.classList.add(theme);
     root.style.colorScheme = theme;
     try {
-      localStorage.setItem('theme', theme);
+      localStorage.setItem('seointel-theme-v2', theme);
     } catch {}
   }, [theme]);
 
