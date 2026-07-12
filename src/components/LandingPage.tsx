@@ -641,12 +641,12 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
         <AudienceSection onNavigate={onNavigate} />
       </section>
 
-      <section id="reports" className="border-y border-border bg-muted/30 py-16 md:py-20">
-        <div className="mx-auto w-full max-w-[1600px] px-4 sm:px-6 lg:px-10">
+      <section id="reports" className="border-y border-border bg-muted/20 py-16 md:py-20">
+        <div className="section-shell">
           <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr] lg:items-end">
             <div>
               <StatusBadge tone="success">Visual report workflow</StatusBadge>
-              <h2 className="mt-4 text-3xl font-bold tracking-tight md:text-5xl">Reports should feel like decisions, not dense technical logs.</h2>
+              <h2 className="mt-4 max-w-2xl text-3xl font-semibold tracking-tight md:text-4xl">Reports should lead to decisions, not more technical clutter.</h2>
             </div>
             <p className="max-w-3xl text-base leading-7 text-muted-foreground md:text-lg">
               SEOIntel now leads with score context, top fixes, page previews, and clear ranking-data status. Technical detail is still available, but the first view is built for fast decisions on desktop and mobile.
@@ -923,8 +923,8 @@ function ReportShowcase({ onNavigate }: { onNavigate: (destination: LandingDesti
   };
 
   return (
-      <div className="mt-10 w-full min-w-0 overflow-hidden rounded-xl border border-border bg-card shadow-sm shadow-slate-950/10 dark:shadow-black/40">
-      <div className="border-b border-border bg-background/80 px-4 py-3 sm:px-5">
+      <div className="mt-10 w-full min-w-0 overflow-hidden rounded-xl border border-border bg-card shadow-[0_18px_50px_-34px_rgba(15,31,74,0.45)] dark:shadow-black/20">
+      <div className="border-b border-border bg-card px-4 py-3 sm:px-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex min-w-0 items-center gap-3">
             <span className="h-3 w-3 rounded-full bg-red-400" />
@@ -939,7 +939,7 @@ function ReportShowcase({ onNavigate }: { onNavigate: (destination: LandingDesti
           </div>
         </div>
         <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="inline-flex w-full rounded-2xl border border-border bg-card p-1 text-sm font-semibold sm:w-auto">
+          <div className="inline-flex w-full rounded-lg border border-border bg-muted/45 p-1 text-sm font-semibold sm:w-auto">
             {[
               ['summary', 'Summary'],
               ['previews', 'Previews'],
@@ -949,7 +949,7 @@ function ReportShowcase({ onNavigate }: { onNavigate: (destination: LandingDesti
                 key={id}
                 type="button"
                 onClick={() => setActiveView(id as typeof activeView)}
-                className={`flex-1 rounded-xl px-3 py-2 transition-colors sm:flex-none ${
+                className={`flex-1 rounded-md px-3 py-2 transition-colors sm:flex-none ${
                   activeView === id ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                 }`}
               >
@@ -966,11 +966,12 @@ function ReportShowcase({ onNavigate }: { onNavigate: (destination: LandingDesti
         </div>
       </div>
 
-      <div className="grid min-w-0 gap-0 xl:grid-cols-[minmax(340px,0.92fr)_minmax(640px,1.28fr)]">
-        <div className="min-w-0 border-b border-border p-4 sm:p-6 xl:border-b-0 xl:border-r">
-          <div className="grid min-w-0 gap-5 lg:grid-cols-[210px_1fr] xl:grid-cols-1 2xl:grid-cols-[220px_1fr]">
-            <div className="min-w-0 rounded-[1.5rem] border border-border bg-background/70 p-5">
-              <RadialScoreGauge value={84} label="Website health" detail="Example score display from audit signals" size="lg" />
+      <div className="min-w-0 bg-muted/25 p-4 sm:p-6">
+        {activeView === 'summary' && (
+        <div className="min-w-0">
+          <div className="grid min-w-0 gap-5 md:grid-cols-[180px_minmax(0,1fr)]">
+            <div className="min-w-0 rounded-xl border border-border bg-muted/30 p-5">
+              <RadialScoreGauge value={84} label="Website health" detail="Example score display from audit signals" size="md" />
             </div>
             <div className="grid min-w-0 content-start gap-3">
               <CategoryScoreBar label="SEO audit" value={86} detail="Titles, descriptions, headings, links" />
@@ -987,9 +988,9 @@ function ReportShowcase({ onNavigate }: { onNavigate: (destination: LandingDesti
             <SeverityDistribution critical={3} high={6} medium={12} low={8} />
           </div>
 
-          <div className="mt-6 grid gap-3">
+          <div className="mt-6 grid gap-3 lg:grid-cols-3">
             {issueRows.map((issue) => (
-              <div key={issue.title} className="rounded-2xl border border-border bg-background/70 p-4">
+              <div key={issue.title} className="rounded-lg border border-border bg-muted/25 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <h4 className="font-bold">{issue.title}</h4>
@@ -1001,17 +1002,19 @@ function ReportShowcase({ onNavigate }: { onNavigate: (destination: LandingDesti
             ))}
           </div>
         </div>
+        )}
 
-        <div className="grid min-w-0 gap-5 bg-muted/20 p-4 sm:p-6">
+        {activeView === 'previews' && (
+        <div className="grid min-w-0 gap-5">
           <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
             <HomepageDesktopPreview />
             <HomepageMobilePreview />
           </div>
-          <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]">
-            <HomepageSerpPreview />
-            <SerpRankingDataPanel />
-          </div>
+          <HomepageSerpPreview />
         </div>
+        )}
+
+        {activeView === 'imports' && <SerpRankingDataPanel />}
       </div>
     </div>
   );
@@ -1019,22 +1022,22 @@ function ReportShowcase({ onNavigate }: { onNavigate: (destination: LandingDesti
 
 function HomepageDesktopPreview() {
   return (
-    <div className="w-full min-w-0 overflow-hidden rounded-[1.5rem] border border-border bg-background shadow-md shadow-slate-950/5">
+    <div className="w-full min-w-0 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
       <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-4 py-3">
         <Monitor className="h-4 w-4 text-accent" />
         <span className="text-sm font-bold">Desktop page preview</span>
       </div>
-      <div className="bg-gradient-to-br from-slate-50 via-white to-blue-50 p-3 text-slate-950 sm:p-5 dark:from-slate-900 dark:via-slate-950 dark:to-blue-950 dark:text-white">
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-lg shadow-slate-900/10 dark:border-slate-700 dark:bg-slate-900">
-          <div className="flex items-center justify-between border-b border-slate-200 px-3 py-3 sm:px-5 sm:py-4 dark:border-slate-700">
+      <div className="bg-muted/35 p-3 text-slate-950 sm:p-5">
+        <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-200 px-3 py-3 sm:px-5 sm:py-4">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-sm font-bold text-white">E</div>
               <div>
                 <div className="font-bold">Example Brand</div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">Local service website</div>
+                <div className="text-xs text-slate-500">Local service website</div>
               </div>
             </div>
-            <div className="hidden gap-5 text-sm font-semibold text-slate-600 dark:text-slate-300 sm:flex">
+            <div className="hidden gap-5 text-sm font-semibold text-slate-600 sm:flex">
               <span>Services</span>
               <span>Pricing</span>
               <span>Reviews</span>
@@ -1042,12 +1045,12 @@ function HomepageDesktopPreview() {
           </div>
           <div className="grid gap-4 p-3 sm:gap-5 sm:p-5 md:grid-cols-[1.15fr_0.85fr]">
             <div className="min-w-0">
-              <div className="mb-3 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200">Metadata preview</div>
-              <h3 className="text-2xl font-bold leading-tight sm:text-3xl">Clear service page headline with trust proof</h3>
-              <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">This visual preview gives report readers page context before they review SEO and safety fixes.</p>
+              <div className="mb-3 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">Metadata preview</div>
+              <h3 className="text-2xl font-bold leading-tight text-slate-950 sm:text-3xl">Clear service page headline with trust proof</h3>
+              <p className="mt-3 text-sm leading-6 text-slate-600">This visual preview gives report readers page context before they review SEO and safety fixes.</p>
               <div className="mt-5 flex flex-wrap gap-2">
                 {['Primary CTA visible', 'Heading found', 'Internal links'].map((item) => (
-                  <span key={item} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">{item}</span>
+                  <span key={item} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">{item}</span>
                 ))}
               </div>
             </div>
@@ -1067,7 +1070,7 @@ function HomepageDesktopPreview() {
 
 function HomepageMobilePreview() {
   return (
-    <div className="w-full min-w-0 rounded-[1.5rem] border border-border bg-background p-4 shadow-md shadow-slate-950/5">
+    <div className="w-full min-w-0 rounded-xl border border-border bg-card p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Globe className="h-4 w-4 text-accent" />
@@ -1090,7 +1093,7 @@ function HomepageMobilePreview() {
           </div>
           <div className="p-4">
             <div className="h-28 rounded-2xl bg-gradient-to-br from-blue-100 to-emerald-100" />
-            <h3 className="mt-4 text-xl font-bold leading-tight">Example Brand Services</h3>
+            <h3 className="mt-4 text-xl font-bold leading-tight text-slate-950">Example Brand Services</h3>
             <p className="mt-2 text-xs leading-5 text-slate-600">Tap targets, visible CTA, and readable mobile copy are checked from public signals.</p>
             <div className="mt-4 w-full rounded-xl bg-blue-600 px-4 py-3 text-center text-sm font-bold text-white">Sample CTA area</div>
           </div>
@@ -1102,7 +1105,7 @@ function HomepageMobilePreview() {
 
 function HomepageSerpPreview() {
   return (
-    <div className="w-full min-w-0 rounded-xl border border-border bg-background p-4 shadow-sm sm:p-5">
+    <div className="w-full min-w-0 rounded-xl border border-border bg-card p-4 shadow-sm sm:p-5">
       <div className="mb-4 flex items-center gap-2">
         <Search className="h-5 w-5 text-accent" />
         <h3 className="text-lg font-bold">Google-style preview</h3>
@@ -1131,7 +1134,7 @@ function HomepageSerpPreview() {
 
 function SerpRankingDataPanel() {
   return (
-    <div className="w-full min-w-0 rounded-xl border border-border bg-background p-4 shadow-sm sm:p-5">
+    <div className="w-full min-w-0 rounded-xl border border-border bg-card p-4 shadow-sm sm:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h3 className="text-lg font-bold">Actual SERP ranking data</h3>
@@ -1141,7 +1144,7 @@ function SerpRankingDataPanel() {
         </div>
         <StatusBadge tone="warning">Import required</StatusBadge>
       </div>
-      <div className="mt-5 max-w-full overflow-x-auto rounded-2xl border border-border">
+      <div className="mt-5 max-w-full overflow-x-auto rounded-lg border border-border">
         <table className="w-full text-left text-sm">
           <thead className="bg-muted/60 text-xs text-muted-foreground">
             <tr>

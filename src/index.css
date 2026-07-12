@@ -38,18 +38,19 @@
   }
 
   .dark {
-    --background: #0c1426;
-    --foreground: #f8fafc;
-    --card: #162239;
-    --card-foreground: #f8fafc;
-    --border: rgba(148, 163, 184, 0.18);
-    --border-strong: rgba(148, 163, 184, 0.3);
-    --accent: #5d86ff;
-    --accent-hover: #7497ff;
+    color-scheme: dark;
+    --background: #090f1d;
+    --foreground: #eef3ff;
+    --card: #111a2b;
+    --card-foreground: #f4f7ff;
+    --border: rgba(148, 163, 184, 0.15);
+    --border-strong: rgba(148, 163, 184, 0.28);
+    --accent: #6f98ff;
+    --accent-hover: #84a7ff;
     --accent-foreground: #ffffff;
-    --muted: #111c31;
-    --muted-foreground: #b0bdd0;
-    --subtle-foreground: #8896aa;
+    --muted: #182235;
+    --muted-foreground: #aebbd0;
+    --subtle-foreground: #8290a8;
   }
 
   body {
@@ -126,6 +127,12 @@
   .suite-input {
     @apply min-h-11 w-full rounded-lg border border-border bg-card px-4 py-3 text-sm font-medium text-foreground shadow-sm transition-[border-color,box-shadow,background-color] placeholder:text-[var(--subtle-foreground)] hover:border-[var(--border-strong)] focus:border-accent focus:bg-card focus:ring-2 focus:ring-accent/20;
   }
+
+  /* Component padding must win over the shared horizontal input padding. */
+  .suite-input.pl-9 { padding-left: 2.25rem; }
+  .suite-input.pl-10 { padding-left: 2.5rem; }
+  .suite-input.pl-11 { padding-left: 2.75rem; }
+  .suite-input.pr-12 { padding-right: 3rem; }
 
   .suite-chip {
     @apply inline-flex items-center gap-2 rounded-full border border-border bg-card/85 px-3 py-1.5 text-xs font-bold text-muted-foreground shadow-sm;
