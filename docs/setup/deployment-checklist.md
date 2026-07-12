@@ -44,7 +44,7 @@ git diff --check
 
 ## Supabase
 
-- Apply every file in `supabase/migrations/` in numeric order, including `006_private_audit_read_policies.sql` and `007_blog_cms.sql` for existing projects.
+- Apply every file in `supabase/migrations/` in numeric order, including `006_private_audit_read_policies.sql`, `007_blog_cms.sql`, `008_audit_history_comparison.sql`, and `009_audit_page_preview_metadata.sql` for existing projects.
 - Confirm Supabase Realtime is enabled for audit tables.
 - Confirm the live audit page shows `WebSocket live` after opening an audit.
 - Confirm RLS is enabled on audit tables.
@@ -59,6 +59,7 @@ git diff --check
 3. Confirm the worker picks it up.
 4. Confirm current page URL updates.
 5. Confirm current check updates.
+6. Confirm the compact desktop/mobile preview is labelled as a screenshot, Open Graph preview, metadata preview, or unavailable state and does not attempt to embed the audited site.
 6. Confirm the `Working now` panel updates phase, action, and target URL.
 7. Confirm issue feed updates.
 8. Confirm final report appears.

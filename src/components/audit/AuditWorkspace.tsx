@@ -9,7 +9,7 @@ import { classifyReportSection, extractReportScores, observedPageMetrics } from 
 import type { AuditComparison, AuditHistoryPage, ResourceAuditIssue } from '../../lib/audit/resource-types';
 import { downloadAuditExport } from '../../lib/http/download';
 import { safeJsonFetch } from '../../lib/http/safe-json';
-import { EmptyState, MetricCard, RadialScoreGauge, SeverityDistribution, StatusBadge, SurfaceCard } from '../ui/visual-system';
+import { EmptyState, MetricCard, RadialScoreGauge, SeverityDistribution, SitePreviewSection, StatusBadge, SurfaceCard } from '../ui/visual-system';
 import { Notice, PageHeader } from '../ui/page-system';
 import { AuditWorkspaceProvider, useAuditWorkspace } from './AuditWorkspaceContext';
 
@@ -113,6 +113,7 @@ function AuditWorkspaceContent({ section }: { section: AuditWorkspaceSection }) 
   const audit = data.audit;
   const scores = extractReportScores(data.finalReport?.scores);
   const metrics = observedPageMetrics(data.latestPages);
+  const firstPage = data.latestPages[0];
   const issues = useMemo(() => {
     const target = reportSectionForRoute[section];
     return target ? data.latestIssues.filter((issue) => classifyReportSection(issue) === target) : data.latestIssues;
@@ -143,6 +144,19 @@ function AuditWorkspaceContent({ section }: { section: AuditWorkspaceSection }) 
           <SurfaceCard className="p-5 md:p-6"><h2 className="text-xl font-semibold">Fix priority</h2><p className="mb-5 mt-1 text-sm text-muted-foreground">Measured findings grouped by urgency.</p><SeverityDistribution critical={audit.criticalCount} high={audit.highCount} medium={audit.mediumCount} low={audit.lowCount} /></SurfaceCard>
           <SurfaceCard className="p-5 md:p-6"><h2 className="text-xl font-semibold">Scoring transparency</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Scores use measured, deduplicated findings and affected-page reach. Plan page limits never improve or reduce a score. Unavailable provider or browser metrics remain unscored.</p><div className="mt-4 grid grid-cols-2 gap-3 text-sm"><div className="rounded-lg bg-muted/35 p-3">SEO <strong className="float-right">{scores.seo ?? '--'}</strong></div><div className="rounded-lg bg-muted/35 p-3">Technical <strong className="float-right">{scores.technical ?? '--'}</strong></div><div className="rounded-lg bg-muted/35 p-3">Crawlability <strong className="float-right">{scores.crawlability ?? '--'}</strong></div><div className="rounded-lg bg-muted/35 p-3">Security <strong className="float-right">{scores.security ?? '--'}</strong></div></div></SurfaceCard>
         </div>
+        {firstPage && <SitePreviewSection
+          url={firstPage.url || audit.normalizedUrl}
+          hostname={audit.hostname}
+          title={firstPage.title}
+          description={firstPage.metaDescription}
+          h1={firstPage.h1}
+          canonicalUrl={firstPage.canonicalUrl}
+          siteName={firstPage.siteName}
+          faviconUrl={firstPage.faviconUrl}
+          openGraphImage={firstPage.openGraphImage}
+          screenshotUrl={firstPage.screenshotUrl}
+          themeColor={firstPage.themeColor}
+        />}
         <ComparisonPanel />
         <section><h2 className="text-xl font-semibold">Top fixes first</h2><p className="mt-1 text-sm text-muted-foreground">Start with the highest-priority measured findings.</p><div className="mt-4 grid gap-4 xl:grid-cols-2">{data.latestIssues.slice().sort((a, b) => ['critical','high','medium','low','info'].indexOf(a.severity) - ['critical','high','medium','low','info'].indexOf(b.severity)).slice(0, 8).map((issue) => <FindingCard key={issue.id} issue={issue} />)}</div></section>
       </>}

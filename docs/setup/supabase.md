@@ -5,7 +5,7 @@
 1. Create a Supabase project.
 2. Copy the project URL and anon key for the frontend.
 3. Copy the service role key for the API and worker only.
-4. Apply every SQL file in `supabase/migrations/` in numeric order. Existing projects must also apply `006_private_audit_read_policies.sql`.
+4. Apply every SQL file in `supabase/migrations/` in numeric order. Existing projects must also apply the later policy, history, blog, and preview metadata migrations through `009_audit_page_preview_metadata.sql`.
 
 ## Frontend Environment
 

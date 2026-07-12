@@ -272,10 +272,15 @@ export default function Dashboard(props: DashboardProps) {
         <SitePreviewSection
           url={latestPreview.url || latest.normalizedUrl}
           hostname={latest.hostname}
-          title={latestPreview.title || `${latest.hostname} audit preview`}
-          description={latestPreview.metaDescription || 'No meta description was stored for this scanned page.'}
-          canonicalUrl={latest.normalizedUrl}
-          livePreview
+          title={latestPreview.title}
+          description={latestPreview.metaDescription}
+          h1={latestPreview.h1}
+          canonicalUrl={latestPreview.canonicalUrl}
+          siteName={latestPreview.siteName}
+          faviconUrl={latestPreview.faviconUrl}
+          openGraphImage={latestPreview.openGraphImage}
+          screenshotUrl={latestPreview.screenshotUrl}
+          themeColor={latestPreview.themeColor}
         />
       )}
 

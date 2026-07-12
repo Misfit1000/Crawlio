@@ -46378,6 +46378,12 @@ function toAuditPage(row) {
     title: row.title ?? "",
     metaDescription: row.meta_description ?? "",
     h1: row.h1 ?? "",
+    canonicalUrl: row.canonical_url ?? "",
+    siteName: row.site_name ?? "",
+    faviconUrl: row.favicon_url ?? "",
+    openGraphImage: row.open_graph_image ?? "",
+    themeColor: row.theme_color ?? "",
+    screenshotUrl: row.screenshot_url ?? "",
     wordCount: row.word_count ?? 0,
     crawlDepth: row.crawl_depth ?? 0,
     issueCount: row.issue_count ?? 0,
@@ -46395,11 +46401,40 @@ function pageToRow(auditId, page) {
     title: page.title,
     meta_description: page.metaDescription,
     h1: page.h1,
+    canonical_url: page.canonicalUrl ?? "",
+    site_name: page.siteName ?? "",
+    favicon_url: page.faviconUrl ?? "",
+    open_graph_image: page.openGraphImage ?? "",
+    theme_color: page.themeColor ?? "",
+    screenshot_url: page.screenshotUrl ?? "",
     word_count: page.wordCount,
     crawl_depth: page.crawlDepth,
     issue_count: page.issueCount,
     crawled_at: page.crawledAt
   };
+}
+function pageToLegacyRow(auditId, page) {
+  return Object.fromEntries(
+    Object.entries(pageToRow(auditId, page)).filter(([column]) => !PREVIEW_METADATA_COLUMNS.has(column))
+  );
+}
+function isMissingPreviewMetadataColumn(error) {
+  if (!error || typeof error !== "object") return false;
+  const details = [
+    "message" in error ? String(error.message) : "",
+    "details" in error ? String(error.details) : "",
+    "hint" in error ? String(error.hint) : ""
+  ].join(" ").toLowerCase();
+  return Array.from(PREVIEW_METADATA_COLUMNS).some((column) => details.includes(column));
+}
+async function upsertAuditPages(client, auditId, pages) {
+  const result = await client.from("audit_pages").upsert(pages.map((page) => pageToRow(auditId, page)), { onConflict: "id" });
+  if (!result.error) return;
+  if (!isMissingPreviewMetadataColumn(result.error)) {
+    assertNoError(result.error, "Append audit pages");
+  }
+  const legacyResult = await client.from("audit_pages").upsert(pages.map((page) => pageToLegacyRow(auditId, page)), { onConflict: "id" });
+  assertNoError(legacyResult.error, "Append audit pages without preview metadata");
 }
 function toAuditIssue(row) {
   return {
@@ -46465,11 +46500,19 @@ function comparisonIssueKey(issue) {
   }
   return `${issue.category}|${issue.title}|${path}`.toLowerCase().replace(/\s+/g, " ").trim();
 }
-var memory, auditRepository;
+var PREVIEW_METADATA_COLUMNS, memory, auditRepository;
 var init_audit_repository = __esm({
   "src/lib/supabase/audit-repository.ts"() {
     init_resource_types();
     init_server();
+    PREVIEW_METADATA_COLUMNS = /* @__PURE__ */ new Set([
+      "canonical_url",
+      "site_name",
+      "favicon_url",
+      "open_graph_image",
+      "theme_color",
+      "screenshot_url"
+    ]);
     memory = {
       audits: /* @__PURE__ */ new Map(),
       events: /* @__PURE__ */ new Map(),
@@ -46781,8 +46824,7 @@ var init_audit_repository = __esm({
         const fullPage = { id: pageIdForAuditUrl(auditId, page.url), ...page };
         const client = getSupabaseAdminClient();
         if (client) {
-          const { error } = await client.from("audit_pages").upsert(pageToRow(auditId, fullPage), { onConflict: "id" });
-          assertNoError(error, "Add crawled page");
+          await upsertAuditPages(client, auditId, [fullPage]);
           return fullPage;
         }
         const pages = memory.pages.get(auditId) ?? [];
@@ -46800,8 +46842,7 @@ var init_audit_repository = __esm({
         const client = getSupabaseAdminClient();
         if (client) {
           await withTransientRetry("Append audit page batch", async () => {
-            const { error } = await client.from("audit_pages").upsert(fullPages.map((page) => pageToRow(auditId, page)), { onConflict: "id" });
-            assertNoError(error, "Append audit page batch");
+            await upsertAuditPages(client, auditId, fullPages);
           });
           return fullPages;
         }

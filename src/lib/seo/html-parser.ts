@@ -17,6 +17,9 @@ export interface ParsedPageData {
   ogTitle: string;
   ogDescription: string;
   ogImage: string;
+  siteName: string;
+  faviconUrl: string;
+  themeColor: string;
   twitterCard: string;
   jsonLd: string[];
   viewport: string;
@@ -72,7 +75,21 @@ export function parseHtml(html: string, baseUrl: string): ParsedPageData {
   
   const ogTitle = $('meta[property="og:title"]').attr('content') || '';
   const ogDescription = $('meta[property="og:description"]').attr('content') || '';
-  const ogImage = $('meta[property="og:image"]').attr('content') || '';
+  const resolvePublicAssetUrl = (value: string) => {
+    if (!value) return '';
+    try {
+      const resolved = new URL(value, baseUrl);
+      return resolved.protocol === 'http:' || resolved.protocol === 'https:' ? resolved.toString() : '';
+    } catch {
+      return '';
+    }
+  };
+  const ogImage = resolvePublicAssetUrl($('meta[property="og:image"]').attr('content') || '');
+  const siteName = $('meta[property="og:site_name"]').attr('content')?.trim() || '';
+  const faviconUrl = resolvePublicAssetUrl(
+    $('link[rel~="icon"]').first().attr('href') || $('link[rel="apple-touch-icon"]').first().attr('href') || '',
+  );
+  const themeColor = $('meta[name="theme-color"]').attr('content')?.trim() || '';
   const twitterCard = $('meta[name="twitter:card"]').attr('content') || '';
 
   const jsonLd: string[] = [];
@@ -124,7 +141,7 @@ export function parseHtml(html: string, baseUrl: string): ParsedPageData {
     }
   });
 
-  const canonical = $('link[rel="canonical"]').attr('href') || '';
+  const canonical = resolvePublicAssetUrl($('link[rel="canonical"]').attr('href') || '');
   
   const allText = `${title} ${metaDescription} ${h1.join(' ')} ${h2.join(' ')} ${$('p').text()}`;
   const { topKeywords, topPhrases } = getTopPhrases(allText);
@@ -145,6 +162,9 @@ export function parseHtml(html: string, baseUrl: string): ParsedPageData {
     ogTitle,
     ogDescription,
     ogImage,
+    siteName,
+    faviconUrl,
+    themeColor,
     twitterCard,
     jsonLd,
     viewport,

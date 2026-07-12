@@ -86,6 +86,12 @@ export interface ResourceAuditPage {
   title: string;
   metaDescription: string;
   h1: string;
+  canonicalUrl?: string;
+  siteName?: string;
+  faviconUrl?: string;
+  openGraphImage?: string;
+  themeColor?: string;
+  screenshotUrl?: string;
   wordCount: number;
   crawlDepth: number;
   issueCount: number;

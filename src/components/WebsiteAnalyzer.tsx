@@ -156,8 +156,14 @@ export default function WebsiteAnalyzer() {
           <SitePreviewSection
             url={url}
             hostname={url}
-            title={result.data?.title || 'Website analyzer preview'}
-            description={result.data?.metaDescription || 'Page preview from the scanned website.'}
+            title={result.data?.title}
+            description={result.data?.metaDescription}
+            h1={result.data?.h1?.[0]}
+            canonicalUrl={result.data?.canonical}
+            siteName={result.data?.siteName}
+            faviconUrl={result.data?.faviconUrl}
+            openGraphImage={result.data?.ogImage}
+            themeColor={result.data?.themeColor}
           />
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-card border border-border p-6 rounded-2xl flex items-center justify-between shadow-sm">

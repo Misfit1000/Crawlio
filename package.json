@@ -36,6 +36,7 @@
     "smoke:report-workspace": "tsx scripts/smoke-report-workspace.mts",
     "smoke:audit-pdf": "tsx scripts/smoke-audit-pdf.mts",
     "smoke:report-insights": "tsx scripts/smoke-report-insights.mts",
+    "smoke:preview-fallback": "tsx scripts/smoke-preview-fallback.mts",
     "smoke:supabase-schema": "node scripts/smoke-supabase-schema.mjs",
     "smoke:blog": "tsx scripts/smoke-blog-cms.mts",
     "smoke:url": "tsx scripts/smoke-url-normalization.mjs",

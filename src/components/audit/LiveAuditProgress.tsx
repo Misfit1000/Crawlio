@@ -430,10 +430,15 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun, onOpenWorkspac
       <SitePreviewSection
         url={audit.currentUrl || audit.finalUrl || firstPage?.url || audit.normalizedUrl}
         hostname={audit.hostname}
-        title={firstPage?.title || `${audit.hostname} audit preview`}
-        description={firstPage?.metaDescription || humanizeAuditText(latestEvent?.message) || 'Preview updates from scanned page details without storing raw HTML.'}
-        canonicalUrl={audit.finalUrl || audit.normalizedUrl}
-        livePreview
+        title={firstPage?.title}
+        description={firstPage?.metaDescription}
+        h1={firstPage?.h1}
+        canonicalUrl={firstPage?.canonicalUrl}
+        siteName={firstPage?.siteName}
+        faviconUrl={firstPage?.faviconUrl}
+        openGraphImage={firstPage?.openGraphImage}
+        screenshotUrl={firstPage?.screenshotUrl}
+        themeColor={firstPage?.themeColor}
       />
 
       <AuditWorkflowPanel

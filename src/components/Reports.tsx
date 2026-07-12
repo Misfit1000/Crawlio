@@ -412,10 +412,15 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
         <SitePreviewSection
           url={firstPage.url || reportData.audit.normalizedUrl}
           hostname={reportData.audit.hostname}
-          title={firstPage.title || `${reportData.audit.hostname} audit preview`}
-          description={firstPage.metaDescription || 'No meta description was stored for this page.'}
-          canonicalUrl={reportData.audit.finalUrl || reportData.audit.normalizedUrl}
-          livePreview
+          title={firstPage.title}
+          description={firstPage.metaDescription}
+          h1={firstPage.h1}
+          canonicalUrl={firstPage.canonicalUrl}
+          siteName={firstPage.siteName}
+          faviconUrl={firstPage.faviconUrl}
+          openGraphImage={firstPage.openGraphImage}
+          screenshotUrl={firstPage.screenshotUrl}
+          themeColor={firstPage.themeColor}
         />
       )}
 

@@ -38,6 +38,13 @@ export interface AuditHistoryEntry {
     pageSizeBytes?: number;
     title?: string;
     metaDescription?: string;
+    h1?: string;
+    canonicalUrl?: string;
+    siteName?: string;
+    faviconUrl?: string;
+    openGraphImage?: string;
+    themeColor?: string;
+    screenshotUrl?: string;
   }>;
 }
 
@@ -149,6 +156,13 @@ export function buildHistoryEntry(data: ResourceAuditLiveData): AuditHistoryEntr
       pageSizeBytes: page.pageSizeBytes,
       title: page.title,
       metaDescription: page.metaDescription,
+      h1: page.h1,
+      canonicalUrl: page.canonicalUrl,
+      siteName: page.siteName,
+      faviconUrl: page.faviconUrl,
+      openGraphImage: page.openGraphImage,
+      themeColor: page.themeColor,
+      screenshotUrl: page.screenshotUrl,
     })),
   };
 }

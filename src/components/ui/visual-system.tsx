@@ -1,13 +1,16 @@
 import React from 'react';
-import { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ChevronDown, ExternalLink, Eye, Globe, Loader2, Monitor, Moon, Search, ShieldCheck, Smartphone, Sun, TrendingUp } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, Globe, Monitor, Moon, Search, ShieldCheck, Smartphone, Sun, TrendingUp } from 'lucide-react';
+import { safePreviewMediaUrl } from '../../lib/audit/preview-model';
 import { gradeRangeLabel, scoreToGrade, scoreTone as reportScoreTone } from '../../lib/audit/report-insights';
+import { CompactWebsitePreview, DesktopHomepagePreview, MobileHomepagePreview, PreviewUnavailableState, type CompactPreviewProps } from './compact-site-preview';
+
+export { CompactWebsitePreview, DesktopHomepagePreview, MobileHomepagePreview, PreviewUnavailableState } from './compact-site-preview';
 
 type VisualIcon = React.ComponentType<{ className?: string }>;
 type ScoreTone = 'accent' | 'green' | 'yellow' | 'red';
 type SeverityTone = 'critical' | 'high' | 'medium' | 'low' | 'info';
 
-type PreviewProps = {
+export type PreviewProps = CompactPreviewProps & {
   url?: string | null;
   title?: string | null;
   description?: string | null;
@@ -1126,8 +1129,9 @@ function BrandInitialMark({ host, className = '' }: { host: string; className?: 
 }
 
 function PreviewLogo({ host, faviconUrl, className = '' }: { host: string; faviconUrl?: string | null; className?: string }) {
-  if (faviconUrl) {
-    return <img src={faviconUrl} alt="" className={`bg-white object-contain ${className}`} loading="lazy" />;
+  const safeFaviconUrl = safePreviewMediaUrl(faviconUrl);
+  if (safeFaviconUrl) {
+    return <img src={safeFaviconUrl} alt="" className={`bg-white object-contain ${className}`} loading="lazy" referrerPolicy="no-referrer" />;
   }
   return <BrandInitialMark host={host} className={className} />;
 }
@@ -1291,8 +1295,8 @@ export function RealisticSerpPreviewCard({
 }: PreviewProps) {
   const displayUrl = canonicalUrl || previewUrl(url);
   const host = previewHost(displayUrl, hostname);
-  const serpTitle = title || `${host.replace(/^www\./, '')} - SEO preview`;
-  const serpDescription = description || 'Search result preview appears as soon as the page title and description are available from the scan.';
+  const serpTitle = title?.trim() || '';
+  const serpDescription = description?.trim() || '';
   const titleGood = serpTitle.length >= 30 && serpTitle.length <= 60;
   const descGood = serpDescription.length >= 120 && serpDescription.length <= 160;
   return (
@@ -1301,7 +1305,7 @@ export function RealisticSerpPreviewCard({
         <Search className="h-5 w-5 text-accent" />
         <h3 className="text-lg font-bold">Google-style preview</h3>
       </div>
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 shadow-sm dark:bg-white">
+      {serpTitle || serpDescription ? <div className="rounded-lg border border-slate-200 bg-white p-4 text-slate-900 shadow-sm dark:bg-white">
         <div className="mb-4 flex items-center gap-2 text-xs text-slate-500">
           <span className="text-lg font-bold text-blue-600">G</span>
           <span className="font-medium">Search result preview</span>
@@ -1315,17 +1319,17 @@ export function RealisticSerpPreviewCard({
             <div className="truncate text-xs text-slate-600">{displayUrl.replace(/^https?:\/\//, '').replace(/\//g, ' > ')}</div>
           </div>
         </div>
-        <div className="mt-3 line-clamp-2 text-xl text-blue-700">{serpTitle}</div>
-        <p className="mt-1 line-clamp-3 text-sm leading-6 text-slate-600">{serpDescription}</p>
-      </div>
-      <div className="mt-4 grid gap-2 text-xs md:grid-cols-2">
+        <div className="mt-3 line-clamp-2 text-xl text-blue-700">{serpTitle || 'No page title collected'}</div>
+        <p className="mt-1 line-clamp-3 text-sm leading-6 text-slate-600">{serpDescription || 'No meta description collected.'}</p>
+      </div> : <div className="rounded-lg border border-dashed border-border bg-muted/25 p-6 text-center"><Search className="mx-auto h-6 w-6 text-muted-foreground" /><h4 className="mt-3 font-semibold">Search preview unavailable</h4><p className="mt-1 text-sm leading-6 text-muted-foreground">The audit engine has not collected a page title or meta description yet.</p></div>}
+      {(serpTitle || serpDescription) && <div className="mt-4 grid gap-2 text-xs md:grid-cols-2">
         <span className={`rounded-full border px-3 py-2 font-semibold ${titleGood ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700' : 'border-amber-500/20 bg-amber-500/10 text-amber-700'}`}>
-          Title {serpTitle.length} chars {titleGood ? 'good' : 'review'}
+          {serpTitle ? `Title ${serpTitle.length} chars ${titleGood ? 'good' : 'review'}` : 'Title not collected'}
         </span>
         <span className={`rounded-full border px-3 py-2 font-semibold ${descGood ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700' : 'border-amber-500/20 bg-amber-500/10 text-amber-700'}`}>
-          Description {serpDescription.length} chars {descGood ? 'good' : 'review'}
+          {serpDescription ? `Description ${serpDescription.length} chars ${descGood ? 'good' : 'review'}` : 'Description not collected'}
         </span>
-      </div>
+      </div>}
     </SurfaceCard>
   );
 }
@@ -1335,98 +1339,25 @@ export function SerpPreviewCard(props: PreviewProps) {
 }
 
 export function HybridSitePreview(props: PreviewProps) {
-  const [view, setView] = useState<'live' | 'metadata'>('live');
-  const [viewport, setViewport] = useState<'desktop' | 'mobile'>('desktop');
-  const [frameState, setFrameState] = useState<'loading' | 'live' | 'blocked'>('loading');
   const frameUrl = previewUrl(props.url, props.hostname);
-  const isSafeFrameUrl = /^https?:\/\//i.test(frameUrl);
-
-  useEffect(() => {
-    setFrameState('loading');
-    if (!isSafeFrameUrl || view !== 'live') return;
-    const timeout = window.setTimeout(() => setFrameState((current) => current === 'loading' ? 'blocked' : current), 8000);
-    return () => window.clearTimeout(timeout);
-  }, [frameUrl, isSafeFrameUrl, view, viewport]);
-
   return (
     <section className="space-y-4">
-      <div className="flex flex-col gap-4 border-b border-border pb-4 lg:flex-row lg:items-end lg:justify-between">
+      <div className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="text-xs font-bold uppercase tracking-wider text-accent">Audited page view</div>
-          <h2 className="mt-1 text-2xl font-bold">See the page the audit engine is checking</h2>
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">Live view uses the public URL in an isolated frame. No page HTML is copied or stored.</p>
+          <div className="text-xs font-semibold text-accent">Audited page preview</div>
+          <h2 className="mt-1 text-xl font-semibold sm:text-2xl">Desktop, mobile, and search context</h2>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">Compact composition from collected metadata or a genuine screenshot when available. It never depends on website embedding.</p>
         </div>
-        <div className="flex flex-wrap gap-2 no-print">
-          <div className="inline-flex rounded-lg border border-border bg-card p-1">
-            <button type="button" onClick={() => setView('live')} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${view === 'live' ? 'bg-accent text-white' : 'text-muted-foreground hover:bg-muted'}`}>
-              <Eye className="mr-1 inline h-3.5 w-3.5" /> Live page
-            </button>
-            <button type="button" onClick={() => setView('metadata')} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${view === 'metadata' ? 'bg-accent text-white' : 'text-muted-foreground hover:bg-muted'}`}>
-              Metadata preview
-            </button>
-          </div>
-          {view === 'live' && (
-            <div className="inline-flex rounded-lg border border-border bg-card p-1">
-              <button type="button" onClick={() => setViewport('desktop')} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${viewport === 'desktop' ? 'bg-muted text-foreground' : 'text-muted-foreground'}`}><Monitor className="mr-1 inline h-3.5 w-3.5" /> Desktop</button>
-              <button type="button" onClick={() => setViewport('mobile')} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${viewport === 'mobile' ? 'bg-muted text-foreground' : 'text-muted-foreground'}`}><Smartphone className="mr-1 inline h-3.5 w-3.5" /> Mobile</button>
-            </div>
-          )}
+        <div className="no-print">
           <a href={frameUrl} target="_blank" rel="noreferrer noopener" className="quiet-button px-3 py-2 text-xs">
-            Open actual site <ExternalLink className="h-3.5 w-3.5" />
+            Open actual site
           </a>
         </div>
       </div>
-
-      {view === 'live' ? (
-        <SurfaceCard className="overflow-hidden bg-slate-100 p-3 dark:bg-slate-950/60 sm:p-5">
-          <div className={`mx-auto overflow-hidden border border-border bg-white shadow-md transition-[width] duration-500 ${viewport === 'mobile' ? 'w-full max-w-[390px] rounded-[1.6rem] border-[8px] border-slate-900' : 'w-full rounded-xl'}`}>
-            <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-slate-600">
-              <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
-              <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-              <span className="ml-2 min-w-0 flex-1 truncate rounded-md border border-slate-200 bg-white px-3 py-1 text-xs">{frameUrl}</span>
-            </div>
-            <div className={`relative bg-white ${viewport === 'mobile' ? 'h-[680px]' : 'h-[620px]'}`}>
-              {frameState === 'loading' && (
-                <div className="absolute inset-0 z-10 flex items-center justify-center bg-white text-slate-600">
-                  <div className="text-center"><Loader2 className="mx-auto h-6 w-6 animate-spin text-blue-600" /><div className="mt-2 text-sm font-semibold">Loading the public page...</div></div>
-                </div>
-              )}
-              {isSafeFrameUrl && frameState !== 'blocked' ? (
-                <iframe
-                  key={`${frameUrl}-${viewport}`}
-                  src={frameUrl}
-                  title={`${props.hostname || frameUrl} ${viewport} live preview`}
-                  className="h-full w-full bg-white"
-                  sandbox="allow-forms allow-popups allow-popups-to-escape-sandbox allow-scripts"
-                  referrerPolicy="no-referrer"
-                  loading="lazy"
-                  onLoad={() => setFrameState('live')}
-                  onError={() => setFrameState('blocked')}
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center p-6 text-center text-slate-700">
-                  <div className="max-w-md">
-                    <ShieldCheck className="mx-auto h-9 w-9 text-blue-600" />
-                    <h3 className="mt-3 text-lg font-bold text-slate-900">Embedded view is unavailable</h3>
-                    <p className="mt-2 text-sm leading-6">This site may block embedded previews. Use the metadata preview below or open the actual site in a new tab.</p>
-                    <button type="button" onClick={() => setView('metadata')} className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white">Show metadata preview</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-          <p className="mt-3 text-center text-xs text-muted-foreground">Some websites prevent iframe previews using browser security settings. That does not affect the audit itself.</p>
-        </SurfaceCard>
-      ) : (
-        <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
-          <RealisticDesktopPreviewCard {...props} />
-          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-1">
-            <RealisticMobilePreviewCard {...props} />
-            <RealisticSerpPreviewCard {...props} />
-          </div>
-        </div>
-      )}
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,620px)_minmax(300px,1fr)]">
+        <CompactWebsitePreview {...props} />
+        <RealisticSerpPreviewCard {...props} />
+      </div>
     </section>
   );
 }
@@ -1439,34 +1370,12 @@ export function SitePreviewSection({
   canonicalUrl,
   faviconUrl,
   openGraphImage,
-  livePreview,
+  screenshotUrl,
+  h1,
+  siteName,
+  themeColor,
 }: PreviewProps) {
-  if (livePreview) {
-    return <HybridSitePreview url={url} title={title} description={description} hostname={hostname} canonicalUrl={canonicalUrl} faviconUrl={faviconUrl} openGraphImage={openGraphImage} />;
-  }
-
-  return (
-    <section className="space-y-4">
-      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-        <div>
-          <div className="text-xs font-bold uppercase tracking-wider text-accent">Website preview</div>
-          <h2 className="text-2xl font-bold">Desktop, mobile, and Google-style previews</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Generated from public page details and scan results. No raw HTML is stored.</p>
-        </div>
-        <div className="flex gap-2 text-xs font-semibold text-muted-foreground">
-          <span className="inline-flex items-center gap-1 rounded-full border border-border px-3 py-1"><Monitor className="h-3.5 w-3.5" /> Desktop</span>
-          <span className="inline-flex items-center gap-1 rounded-full border border-border px-3 py-1"><Smartphone className="h-3.5 w-3.5" /> Mobile</span>
-        </div>
-      </div>
-      <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
-        <RealisticDesktopPreviewCard url={url} title={title} description={description} hostname={hostname} faviconUrl={faviconUrl} openGraphImage={openGraphImage} />
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-1">
-          <RealisticMobilePreviewCard url={url} title={title} description={description} hostname={hostname} faviconUrl={faviconUrl} openGraphImage={openGraphImage} />
-          <RealisticSerpPreviewCard url={url} title={title} description={description} hostname={hostname} canonicalUrl={canonicalUrl} faviconUrl={faviconUrl} openGraphImage={openGraphImage} />
-        </div>
-      </div>
-    </section>
-  );
+  return <HybridSitePreview url={url} title={title} description={description} hostname={hostname} canonicalUrl={canonicalUrl} faviconUrl={faviconUrl} openGraphImage={openGraphImage} screenshotUrl={screenshotUrl} h1={h1} siteName={siteName} themeColor={themeColor} />;
 }
 
 export function ThemeToggle({
