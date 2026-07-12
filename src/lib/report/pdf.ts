@@ -1,4 +1,3 @@
-import PDFDocument from 'pdfkit';
 import type { ResourceAuditIssue, ResourceAuditLiveData, ResourceAuditPage } from '../audit/resource-types';
 import { groupRecommendations, scoreToGrade } from '../audit/report-insights';
 
@@ -43,6 +42,7 @@ function formatBytes(bytes: number) {
 export async function renderAuditPdf(data: ResourceAuditLiveData): Promise<Buffer> {
   if (!data.audit) throw new Error('Audit data is required to build a PDF report.');
   const audit = data.audit;
+  const { default: PDFDocument } = await import('pdfkit');
 
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({

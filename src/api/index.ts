@@ -18,7 +18,6 @@ import {
 } from '../lib/billing/entitlements';
 import type { ResourceAuditDocument } from '../lib/audit/resource-types';
 import { getAuditProfileForDocument } from '../lib/audit/audit-profiles';
-import { renderAuditPdf } from '../lib/report/pdf';
 import { createRateLimiter } from '../lib/api/http-hardening';
 import { blogRepository } from '../lib/blog/repository';
 import { generateBlogWithGemini } from '../lib/blog/gemini';
@@ -444,6 +443,7 @@ apiRouter.get('/audit/export/:id/:format', asyncJsonRoute(async (req, res) => {
     if (!profile.pdfEnabled) {
       return res.status(403).json({ success: false, error: 'PDF reports require a Full, Agency, or Admin audit.', upgradeRequired: true });
     }
+    const { renderAuditPdf } = await import('../lib/report/pdf');
     const pdf = await renderAuditPdf(liveData);
     const safeHost = liveData.audit.hostname.replace(/[^a-z0-9.-]+/gi, '-').replace(/^-+|-+$/g, '') || 'website';
     res.setHeader('Content-Type', 'application/pdf');

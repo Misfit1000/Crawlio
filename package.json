@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "verify:seo": "node scripts/verify-seo-package.mjs",
     "smoke:seo": "node scripts/smoke-seo-audit.mjs",
@@ -10,14 +13,15 @@
     "smoke:security": "tsx scripts/smoke-security-audit.ts",
     "dev": "tsx server.ts",
     "start": "node dist/server.cjs",
-    "build": "vite build && npm run build:vercel-api && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "build:vercel-api": "node scripts/build-vercel-api.mjs",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build:vercel-api": "esbuild api/index.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/vercel-api-check.mjs",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "smoke:live-audit": "tsx scripts/smoke-live-audit.mts",
     "smoke:api-json": "node scripts/smoke-api-json.mjs",
     "smoke:api-hardening": "tsx scripts/smoke-api-hardening.mjs",
+    "smoke:vercel-entry": "tsx scripts/smoke-vercel-entry.mts",
     "smoke:resource-light-audit": "tsx scripts/smoke-resource-light-audit.mjs",
     "smoke:online-worker": "tsx scripts/smoke-online-worker.mts",
     "smoke:plans-admin": "tsx scripts/smoke-plans-admin.mts",

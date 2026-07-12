@@ -17,10 +17,13 @@ export async function safeJsonFetch<T>(
     }
 
     if (!contentType.includes("application/json")) {
+      const serviceUnavailable = response.status >= 500;
       return {
         success: false,
         status: response.status,
-        error: `Expected JSON but received ${contentType || "unknown content type"}. First characters: ${raw.slice(0, 120)}`,
+        error: serviceUnavailable
+          ? `The API service is temporarily unavailable (HTTP ${response.status}). Please try again shortly.`
+          : `The server returned an unexpected response (HTTP ${response.status}).`,
         raw,
       };
     }
