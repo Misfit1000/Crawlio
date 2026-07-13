@@ -5,12 +5,29 @@ type AuditTimingInput = Pick<
   'status' | 'createdAt' | 'startedAt' | 'completedAt' | 'cancelledAt' | 'updatedAt'
 >;
 
+export const TERMINAL_AUDIT_STATUSES: ReadonlySet<AuditStatus> = new Set([
+  'completed',
+  'completed_with_warnings',
+  'failed',
+  'cancelled',
+  'abandoned',
+]);
+
+export const USABLE_REPORT_AUDIT_STATUSES: ReadonlySet<AuditStatus> = new Set([
+  'completed',
+  'completed_with_warnings',
+]);
+
 export function isTerminalAuditStatus(status?: AuditStatus | null) {
-  return status === 'completed' || status === 'completed_with_warnings' || status === 'failed' || status === 'cancelled' || status === 'abandoned';
+  return Boolean(status && TERMINAL_AUDIT_STATUSES.has(status));
 }
 
 export function isCompletedAuditStatus(status?: AuditStatus | string | null) {
-  return status === 'completed' || status === 'completed_with_warnings';
+  return Boolean(status && USABLE_REPORT_AUDIT_STATUSES.has(status as AuditStatus));
+}
+
+export function hasUsableAuditReport(status?: AuditStatus | string | null) {
+  return isCompletedAuditStatus(status);
 }
 
 function parseTime(value?: string | null) {

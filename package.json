@@ -42,6 +42,7 @@
     "smoke:specific-audit-errors": "tsx scripts/smoke-specific-audit-errors.mts",
     "smoke:audit-resilience": "tsx scripts/smoke-audit-resilience.mts",
     "smoke:audit-terminal-state": "tsx scripts/smoke-audit-terminal-state.mts",
+    "smoke:post-audit-stability": "tsx scripts/smoke-post-audit-route-stability.mts",
     "smoke:worker-health-isolation": "tsx scripts/smoke-worker-health-isolation.mts",
     "smoke:activity-drawer": "tsx scripts/smoke-activity-drawer.mts",
     "smoke:workspace-sidebar": "tsx scripts/smoke-workspace-sidebar.mts",

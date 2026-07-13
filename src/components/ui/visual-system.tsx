@@ -24,13 +24,9 @@ export type PreviewProps = CompactPreviewProps & {
 export function SurfaceCard({
   children,
   className = '',
-  id,
-}: {
-  children: React.ReactNode;
-  className?: string;
-  id?: string;
-}) {
-  return <section id={id} className={`trust-card relative overflow-hidden ${className}`}>{children}</section>;
+  ...sectionProps
+}: React.ComponentPropsWithoutRef<'section'>) {
+  return <section {...sectionProps} className={`trust-card relative overflow-hidden ${className}`}>{children}</section>;
 }
 
 export function SectionHeader({

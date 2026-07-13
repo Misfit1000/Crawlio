@@ -45671,10 +45671,15 @@ var init_url_utils = __esm({
 
 // src/lib/audit/audit-time.ts
 function isCompletedAuditStatus(status) {
-  return status === "completed" || status === "completed_with_warnings";
+  return Boolean(status && USABLE_REPORT_AUDIT_STATUSES.has(status));
 }
+var USABLE_REPORT_AUDIT_STATUSES;
 var init_audit_time = __esm({
   "src/lib/audit/audit-time.ts"() {
+    USABLE_REPORT_AUDIT_STATUSES = /* @__PURE__ */ new Set([
+      "completed",
+      "completed_with_warnings"
+    ]);
   }
 });
 

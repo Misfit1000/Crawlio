@@ -6,6 +6,7 @@ import { API_ROUTES } from '../../lib/api/routes';
 import { getAuditAccessHeaders } from '../../lib/api/auth-headers';
 import { readChecklist, writeChecklist, type ChecklistStatus } from '../../lib/audit/client-insights';
 import { isCompletedAuditStatus } from '../../lib/audit/audit-time';
+import { customerSafeDiagnosticText } from '../../lib/audit/audit-failures';
 import { classifyReportSection, extractReportScores, observedPageMetrics } from '../../lib/audit/report-insights';
 import type { AuditComparison, AuditHistoryPage, AuditMode } from '../../lib/audit/resource-types';
 import { downloadAuditExport } from '../../lib/http/download';
@@ -16,6 +17,7 @@ import AuditActivityPanel from './AuditActivityPanel';
 import { AuditExecutiveSummary, PriorityRecommendations, type AuditCategoryScore } from './AuditExecutiveSummary';
 import { AuditWorkspaceProvider, useAuditWorkspace } from './AuditWorkspaceContext';
 import FindingWorkspace from './FindingWorkspace';
+import { AuditReportReadyNote, AuditTerminalState } from './AuditTerminalState';
 
 const sections: Array<{ id: AuditWorkspaceSection; label: string }> = [
   { id: 'overview', label: 'Overview' },
@@ -108,8 +110,9 @@ function ComparisonPanel() {
 }
 
 function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSection; onRerun?: (url: string, mode: AuditMode) => void | Promise<void> }) {
-  const { auditId, data, loading, error, connection } = useAuditWorkspace();
+  const { auditId, data, loading, error, connection, reportPending, reportRetrying, refresh, retryFinalReport } = useAuditWorkspace();
   const audit = data.audit;
+  const safeWorkspaceError = customerSafeDiagnosticText(error) || 'The stored audit could not be loaded.';
   const scores = extractReportScores(data.finalReport?.scores);
   const metrics = observedPageMetrics(data.latestPages);
   const firstPage = data.latestPages.find((page) => page.title || page.metaDescription) || data.latestPages[0];
@@ -155,8 +158,8 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
     window.setTimeout(() => setActionMessage(null), 3000);
   };
 
-  if (loading) return <SurfaceCard className="flex items-center gap-3 p-6"><Loader2 className="h-5 w-5 animate-spin text-accent" /> Loading stored audit evidence...</SurfaceCard>;
-  if (error) return <Notice tone="danger" title="Audit workspace could not load">{error}</Notice>;
+  if (loading && !audit) return <SurfaceCard className="flex items-center gap-3 p-6"><Loader2 className="h-5 w-5 animate-spin text-accent" /> Loading stored audit evidence...</SurfaceCard>;
+  if (error && !audit) return <SurfaceCard className="p-5 sm:p-6"><Notice tone="danger" title="Audit unavailable">{safeWorkspaceError} This audit may have expired, been deleted, or be unavailable to this account.</Notice><div className="mt-5 flex flex-wrap gap-2"><button type="button" className="trust-button" onClick={() => void refresh().catch(() => undefined)}><RefreshCw className="h-4 w-4" /> Try again</button><NavLink className="quiet-button" to="/app/audits/history">Audit history</NavLink><NavLink className="quiet-button" to="/app">Dashboard</NavLink></div></SurfaceCard>;
   if (!audit) return <EmptyState icon={FileDown} title="Audit not found" description="This audit is unavailable or your account does not have access." />;
 
   const categoryScoreCandidates: Array<Omit<AuditCategoryScore, 'value'> & { value: number | null }> = [
@@ -187,12 +190,21 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
             {onRerun && <button type="button" onClick={() => onRerun(audit.normalizedUrl, audit.effectiveMode)} className="trust-button min-h-10 px-3 py-2 text-sm"><RefreshCw className="h-4 w-4" /> Rerun</button>}
             <button type="button" onClick={openComparison} className="quiet-button min-h-10 px-3 py-2 text-sm"><BarChart3 className="h-4 w-4" /> Compare</button>
             <button type="button" onClick={copyReportLink} className="quiet-button min-h-10 px-3 py-2 text-sm"><Copy className="h-4 w-4" /> Copy link</button>
-            <button type="button" onClick={() => downloadAuditExport(auditId, 'pdf')} disabled={!isCompletedAuditStatus(audit.status)} className="quiet-button min-h-10 px-3 py-2 text-sm"><FileDown className="h-4 w-4" /> PDF</button>
-            <button type="button" onClick={() => downloadAuditExport(auditId, 'json')} className="quiet-button min-h-10 px-3 py-2 text-sm"><FileDown className="h-4 w-4" /> JSON</button>
+            <button type="button" onClick={() => downloadAuditExport(auditId, 'pdf')} disabled={!data.finalReport} className="quiet-button min-h-10 px-3 py-2 text-sm"><FileDown className="h-4 w-4" /> PDF</button>
+            <button type="button" onClick={() => downloadAuditExport(auditId, 'json')} disabled={!data.finalReport} className="quiet-button min-h-10 px-3 py-2 text-sm"><FileDown className="h-4 w-4" /> JSON</button>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-border bg-[var(--surface-inset)] px-5 py-3 text-xs text-muted-foreground lg:px-6"><span className="inline-flex items-center gap-2"><Clock3 className="h-3.5 w-3.5" /> {connection.message}</span><span className="inline-flex items-center gap-2"><Layers className="h-3.5 w-3.5" /> {audit.pagesCrawled} of {Math.max(audit.pagesDiscovered, audit.pagesCrawled)} discovered pages analysed</span><span className="inline-flex items-center gap-2"><Search className="h-3.5 w-3.5" /> {audit.checksCompleted} checks completed</span></div>
       </header>
+      <AuditTerminalState
+        audit={audit}
+        reportPending={reportPending}
+        reportRetrying={reportRetrying}
+        onRetryReport={retryFinalReport}
+        onRerun={onRerun ? () => onRerun(audit.normalizedUrl, audit.effectiveMode) : undefined}
+      />
+      <AuditReportReadyNote warning={audit.status === 'completed_with_warnings' && Boolean(data.finalReport)} />
+      {error && <Notice tone="danger" title="Some audit data could not refresh">{safeWorkspaceError}</Notice>}
       {actionMessage && <Notice tone={actionMessage.startsWith('Copy failed') ? 'danger' : 'success'}>{actionMessage}</Notice>}
 
       <nav className="no-scrollbar flex gap-1 overflow-x-auto border-y border-border py-2" aria-label="Audit sections">

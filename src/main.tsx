@@ -5,13 +5,16 @@ import './index.css';
 import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { BrowserRouter } from 'react-router';
+import AppErrorBoundary from './components/AppErrorBoundary';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthProvider>
       <ThemeProvider>
         <BrowserRouter>
-          <App />
+          <AppErrorBoundary>
+            <App />
+          </AppErrorBoundary>
         </BrowserRouter>
       </ThemeProvider>
     </AuthProvider>

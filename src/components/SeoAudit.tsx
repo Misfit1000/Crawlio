@@ -1,24 +1,20 @@
 import { API_ROUTES } from '../lib/api/routes';
-import { getAuditAccessHeaders, getAuditStartHeaders } from '../lib/api/auth-headers';
+import { getAuditStartHeaders } from '../lib/api/auth-headers';
 import { createAuditSubmitGuard } from '../lib/api/audit-submit-guard';
 import { safeJsonFetch } from '../lib/http/safe-json';
-import { LiveAuditProgress } from './audit/LiveAuditProgress';
 import React, { useState, useEffect, useRef } from 'react';
-import { Activity, Play, RefreshCw, AlertTriangle, CheckCircle2, Globe, Layers, ShieldAlert, Lock } from 'lucide-react';
-import { FullAuditResult, AuditIssue } from '../lib/audit/types';
+import { Activity, Play, RefreshCw, CheckCircle2, Globe, Lock } from 'lucide-react';
+import { useNavigate } from 'react-router';
 import { useAuth } from '../contexts/AuthContext';
 import { FormField, Notice, PageHeader, Panel, SegmentedControl } from './ui/page-system';
-import { FindingRow, MetricCard } from './ui/visual-system';
 import { AUDIT_TARGET_INPUT_PROPS, normalizeAuditTarget } from '../lib/url/normalize-audit-target';
 
 export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [url, setUrl] = useState(initialUrl || '');
   const [mode, setMode] = useState<'quick' | 'standard' | 'deep'>('quick');
   const [loading, setLoading] = useState(false);
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [status, setStatus] = useState<string>('');
-  const [auditResult, setAuditResult] = useState<FullAuditResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const auditStartGuardRef = useRef(createAuditSubmitGuard());
   const autoStartedRef = useRef(false);
@@ -27,7 +23,7 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
   const canUseDeep = plan === 'agency' || plan === 'admin';
 
   useEffect(() => {
-    if (initialUrl && !autoStartedRef.current && !loading && !jobId && !auditResult) {
+    if (initialUrl && !autoStartedRef.current && !loading) {
       autoStartedRef.current = true;
       void startAudit();
     }
@@ -48,13 +44,7 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
     if (!auditStartGuardRef.current.begin()) return;
     
     setLoading(true);
-    setAuditResult(null);
-    setJobId(null);
     setError(null);
-
-    setError(null);
-    setAuditResult(null);
-    setStatus('Starting audit...');
     
     try {
       const dataResp = await safeJsonFetch<any>(API_ROUTES.auditStart, {
@@ -65,9 +55,7 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
       const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
       if (!data.success) throw new Error(data.error);
       const auditId = data.data.auditId;
-      setJobId(auditId);
-      window.history.pushState(null, '', `/audit/live/${auditId}`);
-      window.dispatchEvent(new CustomEvent('navigate-live-audit', { detail: auditId }));
+      navigate(`/audit/live/${encodeURIComponent(auditId)}?section=seo`);
     } catch(err: any) {
       setError(err.message);
       setLoading(false);
@@ -129,101 +117,6 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
       </div>
       
       {error && <Notice tone="danger" title="Audit could not start">{error}</Notice>}
-      
-      {jobId && !auditResult && (
-  <LiveAuditProgress 
-    auditId={jobId} 
-     
-    onComplete={async () => {
-      try {
-        const dataResp = await safeJsonFetch<any>(API_ROUTES.auditResult(jobId), { headers: await getAuditAccessHeaders() });
-        const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
-        if (data.success) {
-          setAuditResult(data.data);
-          setJobId(null);
-        }
-      } catch(e) {}
-    }} 
-  />
-)}
-
-      {auditResult && auditResult.status === 'completed' && (
-        <div className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="Overall score" value={auditResult.overallScore} detail="Measured audit score" icon={<Activity className="h-5 w-5" />} tone={auditResult.overallScore >= 80 ? 'green' : auditResult.overallScore >= 50 ? 'yellow' : 'red'} />
-            <MetricCard label="Pages checked" value={auditResult.pagesCrawled} detail="Stored page summaries" icon={<Layers className="h-5 w-5" />} />
-            <MetricCard label="Fix now" value={auditResult.criticalIssues} detail="Critical findings" icon={<ShieldAlert className="h-5 w-5" />} tone={auditResult.criticalIssues ? 'red' : 'green'} />
-            <MetricCard label="Open fixes" value={auditResult.allIssues.length} detail="Across checked pages" icon={<AlertTriangle className="h-5 w-5" />} tone={auditResult.allIssues.length ? 'yellow' : 'green'} />
-          </div>
-          
-          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-            <div className="p-4 border-b border-border bg-muted/20 flex justify-between items-center">
-              <h3 className="font-semibold text-lg">Top SEO fixes first</h3>
-            </div>
-            <div className="divide-y divide-border max-h-[600px] overflow-y-auto">
-              {auditResult.allIssues.length === 0 ? (
-                <div className="p-8 text-center text-green-500 flex flex-col items-center gap-3">
-                  <CheckCircle2 className="w-10 h-10" />
-                  <p className="font-medium text-lg">No SEO fixes found on scanned pages.</p>
-                </div>
-              ) : (
-                auditResult.allIssues
-                  .sort((a, b) => {
-                    const weight = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
-                    return weight[b.severity] - weight[a.severity];
-                  })
-                  .slice(0, 50) // Show top 50 issues
-                  .map((issue, i) => (
-                  <div key={i} className="p-4 hover:bg-muted/30 transition-colors flex gap-4 items-start">
-                    <div className={`mt-1 flex-shrink-0 ${
-                      issue.severity === 'critical' ? 'text-red-500' : 
-                      issue.severity === 'high' ? 'text-orange-500' : 
-                      issue.severity === 'medium' ? 'text-yellow-500' : 'text-accent'
-                    }`}>
-                      <AlertTriangle className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex justify-between items-start mb-1">
-                        <h4 className="font-semibold text-[15px]">{issue.title}</h4>
-                        <div className="flex gap-2">
-                          <span className={`text-xs px-2 py-0.5 rounded-md font-medium border ${
-                            issue.severity === 'critical' ? 'bg-red-500/10 text-red-500 border-red-500/20' : 
-                            issue.severity === 'high' ? 'bg-orange-500/10 text-orange-500 border-orange-500/20' : 
-                            issue.severity === 'medium' ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' : 
-                            'bg-accent/10 text-accent border-accent/20'
-                          }`}>
-                            {priorityLabel(issue.severity)}
-                          </span>
-                          <span className="text-xs px-2 py-0.5 rounded-md bg-muted text-muted-foreground border border-border capitalize">
-                            {issue.category}
-                          </span>
-                        </div>
-                      </div>
-                      <p className="text-sm text-muted-foreground"><span className="font-medium text-foreground">Why it matters:</span> {issue.description}</p>
-                      {issue.affectedUrl && (
-                        <p className="text-xs mt-2 text-muted-foreground break-all bg-background p-1.5 rounded border border-border inline-block">
-                          Page: <a href={issue.affectedUrl} target="_blank" rel="noreferrer" className="text-accent hover:underline">{issue.affectedUrl}</a>
-                        </p>
-                      )}
-                      {issue.recommendation && (
-                        <p className="mt-2 text-sm"><span className="font-medium">How to fix:</span> {issue.recommendation}</p>
-                      )}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
-}
-
-function priorityLabel(severity: string) {
-  if (severity === 'critical') return 'FIX NOW';
-  if (severity === 'high') return 'HIGH PRIORITY';
-  if (severity === 'medium') return 'REVIEW SOON';
-  if (severity === 'low') return 'NICE TO FIX';
-  return severity.toUpperCase();
 }

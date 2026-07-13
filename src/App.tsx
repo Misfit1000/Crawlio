@@ -16,6 +16,7 @@ import {
   isKnownWorkspacePath,
   parseAuditWorkspacePath,
   tabForPath,
+  type AuditWorkspaceSection,
   type TabType,
 } from './app/routes';
 
@@ -55,7 +56,19 @@ export default function App() {
     if (window.location.pathname === '/register') return 'register';
     return null;
   });
-  const liveAuditId = pathname.match(/^\/audit\/live\/([^/]+)/)?.[1] || null;
+  const liveAuditId = (() => {
+    const encodedId = pathname.match(/^\/audit\/live\/([^/]+)\/?$/)?.[1];
+    if (!encodedId) return null;
+    try {
+      return decodeURIComponent(encodedId);
+    } catch {
+      return encodedId;
+    }
+  })();
+  const requestedLiveSection = new URLSearchParams(routerLocation.search).get('section');
+  const liveAuditSection: AuditWorkspaceSection = ['overview', 'seo', 'technical', 'crawlability', 'links', 'performance', 'security', 'pages'].includes(requestedLiveSection || '')
+    ? requestedLiveSection as AuditWorkspaceSection
+    : 'overview';
   const auditStartGuardRef = useRef(createAuditSubmitGuard());
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -261,7 +274,11 @@ export default function App() {
         </header>
         <main id="live-audit-content" className="mx-auto w-full max-w-[1600px] p-3 sm:p-5 md:p-8" tabIndex={-1}>
           <Suspense fallback={<div className="h-64 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-accent" /></div>}>
-            <LiveAuditProgress auditId={liveAuditId} onRerun={(url) => startLiveAudit(url, 'quick')} onOpenWorkspace={() => navigate(`/app/audits/${encodeURIComponent(liveAuditId)}/overview`)} />
+            <LiveAuditProgress
+              auditId={liveAuditId}
+              onRerun={(url) => startLiveAudit(url, 'quick')}
+              onOpenWorkspace={() => navigate(`/app/audits/${encodeURIComponent(liveAuditId)}/${liveAuditSection}`)}
+            />
           </Suspense>
         </main>
       </div>
@@ -313,7 +330,7 @@ export default function App() {
       case 'admin-dashboard':
         return <AdminDashboard />;
       default:
-        return null;
+        return <NotFoundPage onHome={() => navigate('/')} />;
     }
   };
 

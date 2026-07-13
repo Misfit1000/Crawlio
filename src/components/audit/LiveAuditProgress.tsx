@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Activity, AlertTriangle, BarChart3, CheckCircle2, Clipboard, FileDown, Loader2, RefreshCw, Radio, Share2, StopCircle, Wifi, WifiOff } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Activity, AlertTriangle, BarChart3, CheckCircle2, Clipboard, FileDown, History, LayoutDashboard, Loader2, RefreshCw, Radio, Share2, StopCircle, Wifi, WifiOff } from 'lucide-react';
+import { Link } from 'react-router';
 import type { ResourceAuditLiveData } from '../../lib/audit/resource-types';
 import type { LiveAuditConnectionState } from '../../lib/audit/live-supabase-client';
 import { getAuditModeLabel } from '../../lib/audit/audit-config';
@@ -8,6 +9,7 @@ import { API_ROUTES } from '../../lib/api/routes';
 import { getAuditAccessHeaders } from '../../lib/api/auth-headers';
 import { safeJsonFetch } from '../../lib/http/safe-json';
 import { formatAuditElapsed, isCompletedAuditStatus, isTerminalAuditStatus } from '../../lib/audit/audit-time';
+import { createEmptyAuditLiveData, isFinalReportPending, mergeAuditLiveData, waitForPersistedFinalReport } from '../../lib/audit/audit-lifecycle';
 import { customerSafeDiagnosticText } from '../../lib/audit/audit-failures';
 import { downloadAuditExport } from '../../lib/http/download';
 import { AuditStageTimeline, MetricBarChart, MetricCard, SitePreviewSection, SparklineChart, StatusBadge, SurfaceCard } from '../ui/visual-system';
@@ -30,12 +32,18 @@ import {
 import AuditActivityPanel from './AuditActivityPanel';
 import { AuditExecutiveSummary, PriorityRecommendations } from './AuditExecutiveSummary';
 import FindingWorkspace from './FindingWorkspace';
+import { AuditReportReadyNote, AuditTerminalState } from './AuditTerminalState';
 
 interface Props {
   auditId: string;
-  onComplete?: () => void;
   onRerun?: (url: string) => void | Promise<void>;
   onOpenWorkspace?: () => void;
+}
+
+async function loadStoredAuditSnapshot(auditId: string) {
+  const response = await safeJsonFetch<any>(API_ROUTES.auditResult(auditId), { headers: await getAuditAccessHeaders() });
+  if (!response.success) throw new Error((response as any).error || 'Audit result is unavailable.');
+  return (response.data.data || response.data) as ResourceAuditLiveData;
 }
 
 function formatBytes(bytes: number) {
@@ -91,8 +99,8 @@ function formatLastUpdate(lastUpdateAt: number | undefined, now: number) {
   return `updated ${Math.floor(seconds / 60)}m ago`;
 }
 
-export function LiveAuditProgress({ auditId, onComplete, onRerun, onOpenWorkspace }: Props) {
-  const [data, setData] = useState<ResourceAuditLiveData>({ audit: null, latestEvents: [], latestPages: [], latestIssues: [] });
+export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) {
+  const [data, setData] = useState<ResourceAuditLiveData>(() => createEmptyAuditLiveData());
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [connection, setConnection] = useState<LiveAuditConnectionState>({
@@ -107,32 +115,61 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun, onOpenWorkspac
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [isDownloadingJson, setIsDownloadingJson] = useState(false);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [loadRetryKey, setLoadRetryKey] = useState(0);
+  const [reportRetryKey, setReportRetryKey] = useState(0);
+  const [reportRetryExhausted, setReportRetryExhausted] = useState(false);
+  const dataRef = useRef(data);
+  const unsubscribeRef = useRef<() => void>(() => {});
   const audit = data.audit;
   const shouldRunClock = !audit || !isTerminalAuditStatus(audit.status);
+  const reportPending = isFinalReportPending(data);
 
   useEffect(() => {
     let isActive = true;
-    let unsubscribe = () => {};
+    dataRef.current = createEmptyAuditLiveData();
+    setData(dataRef.current);
+    setError(null);
     setWarning(null);
+    setReportRetryExhausted(false);
     setConnection({
       transport: 'websocket',
       status: 'connecting',
       message: 'Opening live audit connection.',
     });
 
-    import('../../lib/audit/live-supabase-client')
-      .then(({ subscribeToAuditLiveData }) => {
+    const closeUpdates = (message: string) => {
+      unsubscribeRef.current();
+      unsubscribeRef.current = () => {};
+      if (isActive) setConnection({ transport: 'polling', status: 'closed', message, lastUpdateAt: Date.now() });
+    };
+
+    loadStoredAuditSnapshot(auditId)
+      .then(async (snapshot) => {
         if (!isActive) return;
-        unsubscribe = subscribeToAuditLiveData(
+        dataRef.current = snapshot;
+        setData(snapshot);
+
+        if (isTerminalAuditStatus(snapshot.audit?.status)) {
+          closeUpdates(isFinalReportPending(snapshot) ? 'Checks finished. Loading the saved report.' : 'Stored audit result loaded.');
+          return;
+        }
+
+        const { subscribeToAuditLiveData } = await import('../../lib/audit/live-supabase-client');
+        if (!isActive) return;
+        unsubscribeRef.current = subscribeToAuditLiveData(
           auditId,
           (nextData) => {
-            setData(nextData);
-            if (isTerminalAuditStatus(nextData.audit?.status)) {
-              onComplete?.();
+            if (!isActive) return;
+            const merged = mergeAuditLiveData(dataRef.current, nextData);
+            dataRef.current = merged;
+            setData(merged);
+            if (isTerminalAuditStatus(merged.audit?.status)) {
+              closeUpdates(isFinalReportPending(merged) ? 'Checks finished. Loading the saved report.' : 'Audit updates finished.');
             }
           },
-          (err) => setWarning(err.message),
+          (err) => isActive && setWarning(err.message),
           (nextConnection) => {
+            if (!isActive) return;
             setConnection(nextConnection);
             if (nextConnection.status !== 'error') {
               setWarning(null);
@@ -140,13 +177,35 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun, onOpenWorkspac
           },
         );
       })
-      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load live audit client'));
+      .catch((err) => isActive && setError(err instanceof Error ? err.message : 'Failed to load this audit.'));
 
     return () => {
       isActive = false;
-      unsubscribe();
+      unsubscribeRef.current();
+      unsubscribeRef.current = () => {};
     };
-  }, [auditId, onComplete]);
+  }, [auditId, loadRetryKey]);
+
+  useEffect(() => {
+    if (!reportPending) return;
+    let active = true;
+    setReportRetryExhausted(false);
+
+    waitForPersistedFinalReport(dataRef.current, () => loadStoredAuditSnapshot(auditId), {
+      isActive: () => active,
+      onSnapshot: (snapshot) => {
+        if (!active) return;
+        dataRef.current = snapshot;
+        setData(snapshot);
+      },
+    }).then((result) => {
+      if (active) setReportRetryExhausted(result.exhausted);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [auditId, reportPending, reportRetryKey]);
 
   useEffect(() => {
     if (!shouldRunClock) return;
@@ -176,6 +235,14 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun, onOpenWorkspac
     }
 
     if (isCompletedAuditStatus(audit.status)) {
+      if (!data.finalReport) {
+        return {
+          phase: 'Preparing final report',
+          action: 'Saving the completed audit',
+          target: audit.finalUrl || audit.normalizedUrl,
+          message: 'The checks are complete. SEOIntel is loading the stored report.',
+        };
+      }
       return {
         phase: 'Report ready',
         action: 'Final report is ready',
@@ -208,7 +275,7 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun, onOpenWorkspac
       target: audit.currentUrl || latestEvent?.currentUrl || latestEvent?.affectedUrl || audit.normalizedUrl,
       message: humanizeAuditText(latestEvent?.message) || (audit.status === 'queued' ? 'Waiting for the audit engine to start.' : 'The audit engine is updating live progress.'),
     };
-  }, [audit, auditId, connection.message, latestEvent]);
+  }, [audit, auditId, connection.message, data.finalReport, latestEvent]);
 
   const queuedTooLong = useMemo(() => {
     return isAuditQueuedTooLong(audit, now);
@@ -291,8 +358,17 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun, onOpenWorkspac
     }
   };
 
-  if (error) {
-    return <Notice tone="danger" title="Live audit could not be loaded">{humanizeAuditText(error)}</Notice>;
+  if (error && !audit) {
+    return (
+      <SurfaceCard className="border-red-500/25 p-5 sm:p-6" role="alert">
+        <div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600 dark:text-red-300" /><div><h1 className="font-semibold">Audit unavailable</h1><p className="mt-1 text-sm leading-6 text-muted-foreground">{humanizeAuditText(error) || 'This audit was not found, has expired, was deleted, or is not available to this account.'}</p></div></div>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <button type="button" className="trust-button" onClick={() => setLoadRetryKey((value) => value + 1)}><RefreshCw className="h-4 w-4" /> Try again</button>
+          <Link className="quiet-button" to="/app/audits/history"><History className="h-4 w-4" /> Audit history</Link>
+          <Link className="quiet-button" to="/app"><LayoutDashboard className="h-4 w-4" /> Dashboard</Link>
+        </div>
+      </SurfaceCard>
+    );
   }
 
   if (!audit) {
@@ -349,7 +425,7 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun, onOpenWorkspac
   ];
   const statusTone = isCompletedAuditStatus(audit.status)
     ? 'success'
-    : audit.status === 'failed' || audit.status === 'cancelled'
+    : audit.status === 'failed' || audit.status === 'cancelled' || audit.status === 'abandoned'
       ? 'danger'
       : audit.status === 'queued'
         ? 'warning'
@@ -381,14 +457,23 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun, onOpenWorkspac
           </>
         }
         actions={<div className="flex flex-wrap gap-2">
-          {isCompletedAuditStatus(audit.status) && onOpenWorkspace && <button type="button" onClick={onOpenWorkspace} className="trust-button min-h-10 px-3 py-2 text-sm"><BarChart3 className="h-4 w-4" /> Open report</button>}
+          {data.finalReport && onOpenWorkspace && <button type="button" onClick={onOpenWorkspace} className="trust-button min-h-10 px-3 py-2 text-sm"><BarChart3 className="h-4 w-4" /> Open report</button>}
           {onRerun && isTerminalAuditStatus(audit.status) && <button type="button" onClick={rerunAudit} className="quiet-button min-h-10 px-3 py-2 text-sm"><RefreshCw className="h-4 w-4" /> Rerun</button>}
           <button type="button" onClick={copyReportLink} className="quiet-button min-h-10 px-3 py-2 text-sm"><Share2 className="h-4 w-4" /> Copy link</button>
           {data.finalReport && <button type="button" onClick={downloadJson} disabled={isDownloadingJson} className="quiet-button min-h-10 px-3 py-2 text-sm">{isDownloadingJson ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} JSON</button>}
-          {isCompletedAuditStatus(audit.status) && audit.processingTier !== 'free' && <button type="button" onClick={downloadPdf} disabled={isDownloadingPdf} className="quiet-button min-h-10 px-3 py-2 text-sm">{isDownloadingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} PDF</button>}
+          {data.finalReport && audit.processingTier !== 'free' && <button type="button" onClick={downloadPdf} disabled={isDownloadingPdf} className="quiet-button min-h-10 px-3 py-2 text-sm">{isDownloadingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} PDF</button>}
           {(audit.status === 'queued' || audit.status === 'running') && <button type="button" onClick={cancelAudit} disabled={isCancelling} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-red-500/30 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-500/10 dark:text-red-300">{isCancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : <StopCircle className="h-4 w-4" />} Stop</button>}
         </div>}
       />
+      <AuditTerminalState
+        audit={audit}
+        reportPending={reportPending}
+        reportRetrying={reportPending && !reportRetryExhausted}
+        onRetryReport={() => setReportRetryKey((value) => value + 1)}
+        onRerun={onRerun ? rerunAudit : undefined}
+      />
+      <AuditReportReadyNote warning={audit.status === 'completed_with_warnings' && Boolean(data.finalReport)} />
+      {error && <Notice tone="danger" title="Some audit data could not refresh">{humanizeAuditText(error)}</Notice>}
       {(shareMessage || exportMessage) && <div role="status" className={`rounded-lg border p-3 text-sm font-semibold ${(shareMessage || exportMessage)?.includes('failed') ? 'border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-300' : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'}`}>{shareMessage || exportMessage}</div>}
       <AuditExecutiveSummary audit={audit} score={data.finalReport ? finalOverallScore : null} scoreLabel="Final score" scoreDetail="Calculated from the stored deterministic report" categoryScores={categoryScores} progress={progress} unavailableChecks={unavailableChecks} />
       <PriorityRecommendations issues={data.latestIssues} statuses={checklist} onViewFindings={() => document.getElementById('finding-workspace-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
