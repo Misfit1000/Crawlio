@@ -1,5 +1,5 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
-import { ArrowRight, LogOut, Menu, Search, TrendingUp, User, X } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { ArrowRight, LogOut, Menu, User, X } from 'lucide-react';
 import { BrandMark, ThemeToggle } from '../ui/visual-system';
 
 type Theme = 'light' | 'dark';
@@ -30,7 +30,7 @@ export function MarketingShell({
   const [menuOpen, setMenuOpen] = useState(false);
   const links = [
     ['Features', `${navigationBase}#features`],
-    ['Free Tools', `${navigationBase}#free-tools`],
+    ['How it works', `${navigationBase}#how-it-works`],
     ['Pricing', `${navigationBase}#pricing`],
     ['Reports', `${navigationBase}#reports`],
     ['Blog', '/blog'],
@@ -80,10 +80,6 @@ export function WorkspaceShell({
   sidebarOpen,
   onToggleSidebar,
   onHome,
-  query,
-  onQueryChange,
-  onSearch,
-  onDeepSearch,
   userLabel,
   authLoading,
   onLogin,
@@ -98,10 +94,6 @@ export function WorkspaceShell({
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
   onHome: () => void;
-  query: string;
-  onQueryChange: (value: string) => void;
-  onSearch: (event: FormEvent) => void;
-  onDeepSearch: () => void;
   userLabel?: string | null;
   authLoading?: boolean;
   onLogin: () => void;
@@ -116,12 +108,6 @@ export function WorkspaceShell({
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <button type="button" onClick={onToggleSidebar} className="rounded-lg p-2.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={sidebarOpen ? 'Close navigation' : 'Open navigation'}><Menu className="h-5 w-5" /></button>
           <button type="button" onClick={onHome} className="rounded-lg" aria-label="SEOIntel home"><BrandMark /></button>
-          <form onSubmit={onSearch} className="ml-3 hidden max-w-2xl flex-1 items-center rounded-xl border border-border bg-background shadow-sm focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/15 md:flex">
-            <Search className="ml-3 h-4 w-4 shrink-0 text-muted-foreground" />
-            <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search audits, reports, or pages" className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm outline-none" />
-            <button type="submit" className="mr-1 rounded-lg px-3 py-2 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground">Search</button>
-            <button type="button" onClick={onDeepSearch} className="mr-1 inline-flex items-center gap-1 rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white hover:bg-[var(--accent-hover)]"><TrendingUp className="h-3.5 w-3.5" /> Deep</button>
-          </form>
         </div>
         <div className="ml-3 flex items-center gap-2">
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
@@ -146,7 +132,7 @@ function PublicFooter() {
       <div className="section-shell grid gap-8 py-10 sm:grid-cols-2 lg:grid-cols-[1.2fr_1fr_1fr]">
         <div>
           <BrandMark />
-          <p className="mt-3 max-w-md text-sm leading-6 text-muted-foreground">Resource-light website audits with transparent coverage, passive security boundaries, and no invented ranking data.</p>
+          <p className="mt-3 max-w-md text-sm leading-6 text-muted-foreground">Website audits with transparent coverage, passive security boundaries, and no invented ranking data.</p>
         </div>
         <nav aria-label="Product links">
           <h2 className="text-sm font-semibold">Product</h2>

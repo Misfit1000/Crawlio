@@ -101,7 +101,7 @@ export default function SecurityAudit() {
             <MetricCard label="Total findings" value={result.issues.length} detail="Measured public signals" icon={<Info className="h-5 w-5" />} />
           </div>
 
-          <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
+          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
             <div className="p-4 border-b border-border bg-muted/20">
               <h3 className="font-bold text-lg font-display">Passive security findings</h3>
             </div>

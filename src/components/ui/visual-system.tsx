@@ -216,15 +216,15 @@ export function FindingRow({
         <div className="grid gap-5 lg:grid-cols-3">
           <div>
             <div className="text-sm font-semibold">What happened</div>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{description || 'The audit recorded this finding in public page data.'}</p>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{description || `The audit recorded ${title.toLowerCase()} in the public page data.`}</p>
           </div>
           <div>
             <div className="text-sm font-semibold">Why it matters</div>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{whyItMatters || 'This may affect search engine access, page understanding, user experience, or browser-side protection.'}</p>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{whyItMatters || `This ${category.toLowerCase()} finding may affect how the affected page is accessed, understood, or protected.`}</p>
           </div>
           <div>
             <div className="text-sm font-semibold">How to fix it</div>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{recommendation || 'Review the affected page and apply the recommended website change.'}</p>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{recommendation || `Review the stored evidence for ${title.toLowerCase()}, then correct the affected page or server configuration.`}</p>
           </div>
         </div>
         {(evidence.length > 0 || affectedUrls.length > 0 || statusControl) && (
@@ -251,204 +251,6 @@ export function FindingRow({
         {statusControl && <div className="mt-5 border-t border-border pt-4">{statusControl}</div>}
       </div>
     </details>
-  );
-}
-
-export function FeatureSuiteCard({
-  icon: Icon,
-  eyebrow,
-  title,
-  description,
-  status = 'Available',
-  points = [],
-  cta,
-  muted = false,
-}: {
-  icon: VisualIcon;
-  eyebrow?: string;
-  title: string;
-  description: string;
-  status?: string;
-  points?: string[];
-  cta?: React.ReactNode;
-  muted?: boolean;
-}) {
-  return (
-    <SurfaceCard className={`group flex h-full flex-col p-6 transition-transform duration-300 hover:-translate-y-1 ${muted ? 'opacity-90' : ''}`}>
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/10 text-accent transition-colors duration-300 group-hover:bg-accent group-hover:text-accent-foreground">
-          <Icon className="h-6 w-6" />
-        </div>
-        <StatusBadge tone={muted ? 'warning' : 'accent'}>{status}</StatusBadge>
-      </div>
-      {eyebrow && <div className="mt-5 text-xs font-semibold text-accent">{eyebrow}</div>}
-      <h3 className="mt-2 text-xl font-bold tracking-tight">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
-      {points.length > 0 && (
-        <ul className="mt-5 space-y-2">
-          {points.map((point) => (
-            <li key={point} className="flex items-start gap-2 text-sm text-muted-foreground">
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-              <span>{point}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      {cta && <div className="mt-auto pt-5">{cta}</div>}
-    </SurfaceCard>
-  );
-}
-
-export function ToolCard({
-  icon: Icon,
-  title,
-  description,
-  label = 'Free tool',
-  cta = 'Open tool',
-  href,
-  onClick,
-  disabled = false,
-}: {
-  icon: VisualIcon;
-  title: string;
-  description: string;
-  label?: string;
-  cta?: string;
-  href?: string;
-  onClick?: () => void;
-  disabled?: boolean;
-}) {
-  const body = (
-    <>
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-accent/10 text-accent">
-          <Icon className="h-5 w-5" />
-        </div>
-        <span className="rounded-full border border-border bg-muted/50 px-2.5 py-1 text-xs font-semibold text-muted-foreground">{label}</span>
-      </div>
-      <h3 className="mt-5 text-lg font-bold">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
-      <span className="mt-5 inline-flex text-sm font-bold text-accent">{disabled ? 'Coming soon' : cta}</span>
-    </>
-  );
-
-  if (href && !disabled) {
-    return (
-      <a href={href} className="trust-card group flex h-full flex-col p-5 transition-transform duration-300 hover:-translate-y-1 hover:border-accent/30">
-        {body}
-      </a>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={disabled ? undefined : onClick}
-      disabled={disabled}
-      className="trust-card group flex h-full flex-col p-5 text-left transition-transform duration-300 hover:-translate-y-1 hover:border-accent/30 disabled:cursor-not-allowed disabled:opacity-70"
-    >
-      {body}
-    </button>
-  );
-}
-
-export function UseCaseCard({
-  icon: Icon,
-  title,
-  description,
-  outcomes = [],
-}: {
-  icon: VisualIcon;
-  title: string;
-  description: string;
-  outcomes?: string[];
-}) {
-  return (
-    <SurfaceCard className="flex h-full flex-col p-6">
-      <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
-        <Icon className="h-6 w-6" />
-      </div>
-      <h3 className="text-xl font-bold">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
-      {outcomes.length > 0 && (
-        <ul className="mt-5 space-y-2">
-          {outcomes.map((outcome) => (
-            <li key={outcome} className="flex items-start gap-2 text-sm text-muted-foreground">
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-              <span>{outcome}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </SurfaceCard>
-  );
-}
-
-export function PricingCard({
-  title,
-  price,
-  description,
-  features,
-  featured = false,
-  cta,
-  note,
-}: {
-  title: string;
-  price: string;
-  description: string;
-  features: string[];
-  featured?: boolean;
-  cta?: React.ReactNode;
-  note?: string;
-}) {
-  return (
-    <SurfaceCard className={`flex h-full flex-col p-6 ${featured ? 'border-accent bg-accent/10 shadow-blue-600/10' : ''}`}>
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h3 className="text-2xl font-bold">{title}</h3>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
-        </div>
-        {featured && <StatusBadge tone="accent">Popular</StatusBadge>}
-      </div>
-      <div className="mt-6 text-4xl font-bold tracking-tight">{price}</div>
-      <ul className="mt-6 space-y-3">
-        {features.map((feature) => (
-          <li key={feature} className="flex items-start gap-3 text-sm">
-            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
-            <span>{feature}</span>
-          </li>
-        ))}
-      </ul>
-      {cta && <div className="mt-auto pt-6">{cta}</div>}
-      {note && <p className="mt-4 text-xs leading-5 text-muted-foreground">{note}</p>}
-    </SurfaceCard>
-  );
-}
-
-export function MegaMenuPanel({
-  columns,
-}: {
-  columns: Array<{
-    title: string;
-    links: Array<{ label: string; href: string; description?: string }>;
-  }>;
-}) {
-  return (
-    <div className="grid gap-4 rounded-2xl border border-border bg-card/95 p-5 shadow-md shadow-slate-950/10 backdrop-blur-xl md:grid-cols-2 lg:grid-cols-3">
-      {columns.map((column) => (
-        <div key={column.title}>
-          <div className="mb-3 text-xs font-semibold text-accent">{column.title}</div>
-          <div className="space-y-2">
-            {column.links.map((link) => (
-              <a key={`${column.title}-${link.label}-${link.href}`} href={link.href} className="block rounded-2xl border border-transparent p-3 transition-colors hover:border-border hover:bg-muted/50">
-                <div className="font-semibold">{link.label}</div>
-                {link.description && <div className="mt-1 text-xs leading-5 text-muted-foreground">{link.description}</div>}
-              </a>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
   );
 }
 
@@ -702,7 +504,7 @@ export function CategoryScoreBar({
   const safeValue = safeScore(value);
   const resolvedTone = tone || scoreTone(safeValue);
   return (
-    <div className="space-y-2 rounded-2xl border border-border bg-background/70 p-3 shadow-sm">
+    <div className="space-y-2 rounded-lg border border-border bg-background/70 p-3">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-sm font-bold">{label}</div>
@@ -851,7 +653,7 @@ export function SeverityDistribution({
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {parts.map((part) => (
-          <div key={part.severity} className="rounded-2xl border border-border bg-background/70 p-3">
+          <div key={part.severity} className="rounded-lg border border-border bg-background/70 p-3">
             <div className="flex flex-col gap-2">
               <SeverityBadge severity={part.severity}>{part.label}</SeverityBadge>
               <span className="text-lg font-bold">{part.value}</span>
@@ -860,214 +662,6 @@ export function SeverityDistribution({
         ))}
       </div>
     </div>
-  );
-}
-
-export function FeatureProofCard({
-  icon: Icon,
-  title,
-  description,
-  checks,
-  cta,
-}: {
-  icon: VisualIcon;
-  title: string;
-  description: string;
-  checks: string[];
-  cta?: React.ReactNode;
-}) {
-  return (
-    <SurfaceCard className="group flex h-full flex-col p-6">
-      <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/10 text-accent transition-colors group-hover:bg-accent group-hover:text-accent-foreground">
-        <Icon className="h-6 w-6" />
-      </div>
-      <h3 className="text-xl font-bold">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
-      <ul className="mt-5 space-y-2">
-        {checks.map((check) => (
-          <li key={check} className="flex items-start gap-2 text-sm">
-            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-            <span>{check}</span>
-          </li>
-        ))}
-      </ul>
-      {cta && <div className="mt-auto pt-5">{cta}</div>}
-    </SurfaceCard>
-  );
-}
-
-export function ProductMockupPanel({
-  label = 'Product preview',
-  overallScore = 84,
-  seoScore = 86,
-  technicalScore = 78,
-  securityScore = 88,
-  severity = { critical: 3, high: 6, medium: 12, low: 8 },
-  issues = [
-    { title: 'Title tag is too generic', detail: 'Rewrite the page title around the primary service.', severity: 'high' as SeverityTone },
-    { title: 'Missing image descriptions', detail: 'Add useful alt text to key service images.', severity: 'medium' as SeverityTone },
-    { title: 'Browser protections incomplete', detail: 'Review CSP and frame protection settings.', severity: 'critical' as SeverityTone },
-  ],
-  url = 'https://example.com',
-  title = 'Example homepage audit preview',
-  description = 'Metadata-based visual preview generated from public page details. No raw HTML is stored.',
-}: {
-  label?: string;
-  overallScore?: number;
-  seoScore?: number;
-  technicalScore?: number;
-  securityScore?: number;
-  severity?: { critical: number; high: number; medium: number; low: number };
-  issues?: Array<{ title: string; detail?: string; severity: SeverityTone }>;
-  url?: string;
-  title?: string;
-  description?: string;
-}) {
-  const host = previewHost(url);
-  const brand = host.replace(/^www\./, '');
-  const pageTitle = title || `${brand} homepage`;
-  const desc = description || 'Metadata-based visual preview generated from public page details. No raw HTML is stored.';
-  return (
-    <SurfaceCard className="overflow-hidden border-accent/20 shadow-lg shadow-blue-950/10">
-      <div className="border-b border-border bg-card/95 px-4 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="h-3 w-3 rounded-full bg-red-400" />
-            <span className="h-3 w-3 rounded-full bg-amber-400" />
-            <span className="h-3 w-3 rounded-full bg-emerald-400" />
-          </div>
-          <span className="rounded-full border border-border bg-background px-3 py-1 text-xs font-semibold text-muted-foreground">{label}</span>
-        </div>
-      </div>
-      <div className="bg-gradient-to-br from-background via-muted/40 to-accent/10 p-4">
-        <div className="grid overflow-hidden rounded-xl border border-border bg-card shadow-sm lg:grid-cols-[72px_1fr]">
-          <aside className="hidden border-r border-border bg-slate-950 p-3 text-white lg:block">
-            <div className="mb-6 flex h-10 w-10 items-center justify-center rounded-2xl bg-accent font-bold">SI</div>
-            <div className="space-y-3">
-              {['Audit', 'Pages', 'Fixes', 'Report'].map((item, index) => (
-                <div key={item} className={`h-10 rounded-2xl ${index === 0 ? 'bg-white/16' : 'bg-white/7'}`} title={item} />
-              ))}
-            </div>
-          </aside>
-
-          <div className="min-w-0">
-            <div className="flex flex-col gap-3 border-b border-border bg-background/80 px-4 py-4 md:flex-row md:items-center md:justify-between">
-              <div className="min-w-0">
-                <div className="text-xs font-semibold text-accent">Live audit report</div>
-                <div className="truncate text-lg font-bold">{brand}</div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <StatusBadge tone="success">Realtime</StatusBadge>
-                <StatusBadge tone="accent">No raw HTML</StatusBadge>
-              </div>
-            </div>
-
-            <div className="grid gap-4 p-4 xl:grid-cols-[0.8fr_1fr]">
-              <div className="grid gap-4">
-                <div className="rounded-2xl border border-border bg-background p-5">
-                  <RadialScoreGauge value={overallScore} label="SEOIntel score" detail="Deterministic audit scoring" size="lg" />
-                </div>
-                <div className="grid gap-3">
-                  <CategoryScoreBar label="SEO" value={seoScore} detail="Metadata, headings, links" />
-                  <CategoryScoreBar label="Technical SEO" value={technicalScore} detail="Status, redirects, access" />
-                  <CategoryScoreBar label="Passive safety" value={securityScore} detail="HTTPS and browser protections" />
-                </div>
-              </div>
-
-              <div className="grid gap-4">
-                <div className="rounded-2xl border border-border bg-background p-5">
-                  <div className="mb-4 flex items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-lg font-bold">Top fixes first</h3>
-                      <p className="text-sm text-muted-foreground">Example data for the product preview only.</p>
-                    </div>
-                    <AlertTriangle className="h-5 w-5 text-amber-500" />
-                  </div>
-                  <div className="space-y-3">
-                    {issues.slice(0, 3).map((issue) => (
-                      <div key={issue.title} className="rounded-2xl border border-border bg-card p-3 shadow-sm">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="font-semibold">{issue.title}</div>
-                          <SeverityBadge severity={issue.severity} />
-                        </div>
-                        {issue.detail && <p className="mt-2 text-sm text-muted-foreground">{issue.detail}</p>}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-border bg-background p-5">
-                  <div className="mb-4 flex items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-lg font-semibold">Fix priority</h3>
-                      <p className="text-sm text-muted-foreground">Fix priority stays visible throughout the report.</p>
-                    </div>
-                    <ShieldCheck className="h-5 w-5 text-emerald-600" />
-                  </div>
-                  <SeverityDistribution {...severity} />
-                </div>
-              </div>
-            </div>
-
-            <div className="grid gap-4 border-t border-border bg-muted/25 p-4 xl:grid-cols-[1.1fr_0.9fr]">
-              <div className="overflow-hidden rounded-2xl border border-border bg-background shadow-sm">
-                <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-3">
-                  <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
-                  <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
-                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-                  <div className="ml-2 min-w-0 flex-1 truncate rounded-lg bg-muted px-3 py-1 text-xs text-muted-foreground">{url}</div>
-                </div>
-                <div className="p-5">
-                  <div className="mb-8 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <BrandInitialMark host={host} className="h-10 w-10 rounded-2xl text-lg" />
-                      <div>
-                        <div className="font-bold">{brand}</div>
-                        <div className="text-xs text-muted-foreground">Homepage preview</div>
-                      </div>
-                    </div>
-                    <span className="rounded-full bg-accent px-3 py-1 text-xs font-bold text-accent-foreground">CTA</span>
-                  </div>
-                  <h3 className="line-clamp-2 text-2xl font-bold">{pageTitle}</h3>
-                  <p className="mt-3 line-clamp-3 text-sm leading-6 text-muted-foreground">{desc}</p>
-                  <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                    {['Service page', 'Trust signals', 'Mobile ready'].map((item) => (
-                      <div key={item} className="rounded-2xl border border-border bg-card p-3 text-xs font-semibold text-muted-foreground">{item}</div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
-                <div className="rounded-2xl border border-border bg-background p-4 shadow-sm">
-                  <div className="mx-auto w-32 rounded-[1.7rem] border-4 border-slate-950 bg-slate-950 p-1">
-                    <div className="overflow-hidden rounded-[1.25rem] bg-card p-3">
-                      <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-muted-foreground/40" />
-                      <BrandInitialMark host={host} className="mb-3 h-8 w-8 rounded-xl text-sm" />
-                      <div className="line-clamp-3 text-sm font-bold">{pageTitle}</div>
-                      <div className="mt-2 line-clamp-3 text-[11px] leading-4 text-muted-foreground">{desc}</div>
-                      <div className="mt-3 h-7 rounded-xl bg-accent" />
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-border bg-white p-4 text-slate-900 shadow-sm">
-                  <div className="mb-3 text-sm font-bold text-blue-600">Google</div>
-                  <div className="flex items-center gap-2 text-xs text-slate-600">
-                    <BrandInitialMark host={host} className="h-7 w-7 rounded-full text-xs" />
-                    <div className="min-w-0">
-                      <div className="text-slate-900">{brand}</div>
-                      <div className="truncate">{url.replace(/^https?:\/\//, '')}</div>
-                    </div>
-                  </div>
-                  <div className="mt-3 line-clamp-2 text-lg text-blue-700">{pageTitle}</div>
-                  <p className="mt-1 line-clamp-3 text-sm leading-5 text-slate-600">{desc}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </SurfaceCard>
   );
 }
 
@@ -1088,7 +682,7 @@ export function SitePreviewCard({
     <SurfaceCard className="overflow-hidden">
       <div className="h-24 bg-gradient-to-br from-accent/20 via-sky-500/10 to-emerald-500/15" />
       <div className="p-5">
-        <div className="-mt-11 mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-card shadow-sm">
+        <div className="-mt-11 mb-4 flex h-14 w-14 items-center justify-center rounded-xl border border-border bg-card shadow-sm">
           <BrandInitialMark host={host} className="h-8 w-8 rounded" />
         </div>
         <div className="text-xs font-semibold text-accent">{host || 'Website preview'}</div>
@@ -1193,17 +787,17 @@ export function RealisticDesktopPreviewCard({
                 <span className="rounded-xl border border-border bg-card px-4 py-2 text-xs font-bold text-muted-foreground">Top fixes</span>
               </div>
             </div>
-            <div className="rounded-2xl border border-border bg-card p-4">
+            <div className="rounded-xl border border-border bg-card p-4">
               <div className="overflow-hidden rounded-xl border border-border bg-background">
                 {openGraphImage ? (
                   <img src={openGraphImage} alt="" className="h-32 w-full object-cover" loading="lazy" />
                 ) : (
                   <div className="bg-gradient-to-br from-accent/20 via-sky-500/10 to-emerald-500/20 p-5">
                     <div className="mb-10 flex items-center justify-between">
-                      <PreviewLogo host={host} faviconUrl={faviconUrl} className="h-12 w-12 rounded-2xl border border-white/50 bg-white text-lg shadow-sm" />
+                      <PreviewLogo host={host} faviconUrl={faviconUrl} className="h-12 w-12 rounded-xl border border-white/50 bg-white text-lg shadow-sm" />
                       <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-bold text-slate-700">Metadata preview</span>
                     </div>
-                    <div className="rounded-2xl bg-white/90 p-4 text-slate-900 shadow-sm">
+                    <div className="rounded-xl bg-white/90 p-4 text-slate-900 shadow-sm">
                       <div className="text-xs font-bold uppercase tracking-wide text-blue-700">{brand}</div>
                       <div className="mt-2 line-clamp-2 text-lg font-bold">{pageTitle}</div>
                       <div className="mt-3 line-clamp-2 text-xs leading-5 text-slate-600">{desc}</div>
@@ -1252,7 +846,7 @@ export function RealisticMobilePreviewCard({
   const desc = description || 'Live page preview from scan data.';
   return (
     <SurfaceCard className="p-5">
-      <div className="mx-auto w-full max-w-[250px] rounded-[2rem] border-[10px] border-slate-950 bg-slate-950 p-1 shadow-lg dark:border-slate-900 dark:bg-slate-900">
+      <div className="mx-auto w-full max-w-[250px] rounded-[2rem] border-[10px] border-slate-950 bg-slate-950 p-1 shadow-sm dark:border-slate-900 dark:bg-slate-900">
         <div className="overflow-hidden rounded-[1.35rem] bg-background">
           <div className="relative flex items-center justify-between border-b border-border bg-card px-3 py-3">
             <div className="absolute left-1/2 top-2 h-1.5 w-14 -translate-x-1/2 rounded-full bg-slate-900/80" />
@@ -1261,8 +855,8 @@ export function RealisticMobilePreviewCard({
             <div className="mt-2 h-8 w-8 rounded-xl border border-border bg-muted" />
           </div>
           <div className="bg-gradient-to-br from-accent/10 to-emerald-500/10 p-4">
-            <div className="mb-4 rounded-2xl border border-border bg-card p-3">
-              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/10 text-2xl font-bold text-accent shadow-sm">
+            <div className="mb-4 rounded-xl border border-border bg-card p-3">
+              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-accent/10 text-2xl font-bold text-accent shadow-sm">
                 {brandInitial(host)}
               </div>
               <h3 className="line-clamp-3 text-xl font-bold leading-tight">{pageTitle}</h3>

@@ -171,7 +171,7 @@ export default function WebsiteAnalyzer() {
             themeColor={result.data?.themeColor}
           />
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-card border border-border p-6 rounded-2xl flex items-center justify-between shadow-sm">
+            <div className="flex items-center justify-between rounded-xl border border-border bg-card p-6 shadow-sm">
               <div>
                 <p className="text-sm text-muted-foreground">Site health score</p>
                 <p className={`text-3xl font-bold ${result.fullAudit.overallScore >= 80 ? 'text-green-500' : result.fullAudit.overallScore >= 50 ? 'text-yellow-500' : 'text-red-500'}`}>
@@ -181,7 +181,7 @@ export default function WebsiteAnalyzer() {
               <ActivityIcon score={result.fullAudit.overallScore} />
             </div>
             
-            <div className="bg-card border border-border p-6 rounded-2xl flex items-center justify-between shadow-sm">
+            <div className="flex items-center justify-between rounded-xl border border-border bg-card p-6 shadow-sm">
               <div>
                 <p className="text-sm text-muted-foreground">Pages scanned</p>
                 <p className="text-3xl font-bold text-accent">{result.crawledPages}</p>
@@ -189,7 +189,7 @@ export default function WebsiteAnalyzer() {
               <Layers className="w-8 h-8 text-accent/20" />
             </div>
 
-            <div className="bg-card border border-border p-6 rounded-2xl flex items-center justify-between shadow-sm">
+            <div className="flex items-center justify-between rounded-xl border border-border bg-card p-6 shadow-sm">
               <div>
                 <p className="text-sm text-muted-foreground">Open fixes</p>
                 <p className="text-3xl font-bold text-orange-500">{result.fullAudit.allIssues.length}</p>
@@ -197,7 +197,7 @@ export default function WebsiteAnalyzer() {
               <AlertTriangle className="w-8 h-8 text-orange-500/20" />
             </div>
 
-            <div className="bg-card border border-border p-6 rounded-2xl flex items-center justify-between shadow-sm">
+            <div className="flex items-center justify-between rounded-xl border border-border bg-card p-6 shadow-sm">
               <div>
                 <p className="text-sm text-muted-foreground">Words on first page</p>
                 <p className="text-3xl font-bold text-accent">{result.data?.wordCount || 0}</p>
@@ -207,7 +207,7 @@ export default function WebsiteAnalyzer() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
+            <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
               <h2 className="text-xl font-bold mb-4 border-b border-border pb-2">Main words found on the homepage</h2>
               <div className="flex flex-wrap gap-2">
                 {result.data?.topKeywords.map((kw, i) => (
@@ -218,7 +218,7 @@ export default function WebsiteAnalyzer() {
               </div>
             </div>
             
-            <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
+            <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
               <h2 className="text-xl font-bold mb-4 border-b border-border pb-2">Main phrases found on the homepage</h2>
               <div className="flex flex-wrap gap-2">
                 {result.data?.topPhrases.map((kw, i) => (
@@ -230,7 +230,7 @@ export default function WebsiteAnalyzer() {
             </div>
           </div>
 
-          <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
+          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
             <div className="p-4 border-b border-border bg-muted/20">
               <h3 className="font-semibold">First page details</h3>
             </div>
@@ -244,7 +244,7 @@ export default function WebsiteAnalyzer() {
             </div>
           </div>
 
-          <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
+          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
             <div className="p-4 border-b border-border bg-muted/20">
               <h3 className="font-semibold">All SEO fixes found across the site</h3>
             </div>

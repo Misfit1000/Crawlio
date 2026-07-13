@@ -81,7 +81,7 @@ export function issueBucket(issue: Pick<ResourceAuditIssue, 'category' | 'title'
 export function buildIssueInsight(issue: ResourceAuditIssue): IssueInsight {
   const bucket = issueBucket(issue);
   const affected = issue.affectedUrl ? ` on ${issue.affectedUrl}` : '';
-  const recommendation = issue.recommendation || 'Review the page and apply the recommended SEOIntel fix.';
+  const recommendation = issue.recommendation || `Review the evidence for ${issue.title.toLowerCase()} and correct the affected page or server configuration.`;
 
   let why = {
     seo: 'This can make the page harder to understand in search results and can reduce click quality.',
@@ -95,13 +95,39 @@ export function buildIssueInsight(issue: ResourceAuditIssue): IssueInsight {
     why = 'Broken destinations create a poor visitor experience, waste internal crawl paths, prevent access to content, and can weaken the value passed through internal links. Sitemap entries and source links should be cleaned up.';
   } else if (failureCode === 'NOINDEX_DETECTED' || /\bnoindex\b/.test(issueText)) {
     why = 'The page is excluded from search indexing. That may be intentional, so review whether it appears in a sitemap, how prominently it is linked internally, and whether the page is meant to rank before changing the directive.';
+  } else if (/\b5\d\d\b|server error/.test(issueText)) {
+    why = 'Search engines and visitors cannot reliably reach content while the server returns an error. Repeated failures can reduce crawl coverage and leave important pages unavailable.';
+  } else if (/missing title|title too (short|long)|multiple title/.test(issueText)) {
+    why = 'The page title helps search engines identify the topic and often supplies the main search-result link. A missing, duplicated, or poorly sized title makes that result less clear.';
+  } else if (/meta description/.test(issueText)) {
+    why = 'Search engines may use the description in the result snippet. Clear, page-specific copy helps people understand the page before they click, although a search engine may choose different text.';
+  } else if (/missing h1|multiple h1|heading/.test(issueText)) {
+    why = 'A clear heading structure helps visitors scan the page and gives search engines useful context about the main topic and supporting sections.';
+  } else if (/canonical|preferred (page )?url/.test(issueText)) {
+    why = 'Preferred URL signals help search engines consolidate duplicate addresses. Conflicting or invalid signals can split indexing attention across several versions of the same content.';
+  } else if (/robots|crawl blocked|disallow/.test(issueText)) {
+    why = 'Search access rules can prevent crawlers from retrieving the page or its supporting resources. A block may be intentional, but important public content should remain reachable.';
+  } else if (/sitemap/.test(issueText)) {
+    why = 'A sitemap helps search engines discover canonical public pages. Missing, invalid, redirected, or inaccessible entries can slow discovery and waste crawl requests.';
+  } else if (/broken link|link.*(404|unavailable)|destination/.test(issueText)) {
+    why = 'Links that lead to unavailable destinations interrupt navigation and prevent visitors and crawlers from reaching the intended content.';
+  } else if (/alt text|image description|missing alt/.test(issueText)) {
+    why = 'Useful image text gives assistive technology and search engines context when an image carries meaning. Decorative images should use an empty alt attribute instead.';
+  } else if (/redirect/.test(issueText)) {
+    why = 'Unnecessary or conflicting redirects slow navigation and make the final preferred address less clear to visitors and crawlers.';
+  } else if (/schema|structured data/.test(issueText)) {
+    why = 'Valid structured data helps search engines interpret supported page entities and features. Invalid markup may be ignored and does not guarantee a rich result.';
+  } else if (/response time|page size|resource|performance/.test(issueText)) {
+    why = 'Large pages and slow server responses can delay navigation and crawling. These audit observations are useful diagnostics, but they are not browser-measured Core Web Vitals.';
+  } else if (bucket === 'security') {
+    why = 'This public configuration affects browser-side protection or the amount of implementation detail exposed to visitors. The audit reports the signal passively and does not attempt exploitation.';
   }
 
   return {
     whatHappened: issue.description || `${issue.title}${affected}.`,
     whyItMatters: why,
     howToFix: recommendation,
-    technicalDetails: issue.evidence || `${issue.category} issue detected${affected}.`,
+    technicalDetails: issue.evidence || `No additional evidence was stored for this finding${affected}.`,
   };
 }
 

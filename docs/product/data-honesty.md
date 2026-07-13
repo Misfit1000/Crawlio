@@ -1,9 +1,10 @@
 # Data Honesty
 
-Authenticated pages display measured worker results or user-imported data only. SEOIntel does not fabricate rankings, keyword positions, search volume, CPC, backlinks, authority, traffic, Google Search Console rows, Lighthouse scores, or Core Web Vitals field data.
-
-Provider-dependent areas must use labels such as `Provider required`, `Import data`, or `Not collected by this audit`. Missing provider data is never scored. Marketing mockups must be labelled as a product preview or example report.
-
-Desktop, mobile, and search-preview visuals are metadata-based context unless a real captured asset is explicitly available. They are not presented as screenshots or Google ranking results. Audited sites are not embedded in iframes; preview source labels distinguish genuine screenshots, Open Graph imagery, metadata compositions, and unavailable states.
-
-Passive Security Review covers public response and markup observations only and is not penetration testing.
+- Demonstration values must be labeled `Example report`, `Product preview`, or `Demonstration data` in the same visual context.
+- Ranking, traffic, backlink, search-volume, and advertising values require a real import or provider.
+- Unavailable checks are excluded from pass counts and remain visible as coverage limitations.
+- Audit scores describe collected checks; they do not predict rankings.
+- Metadata previews are not live screenshots.
+- Response-time observations are not browser-measured Core Web Vitals.
+- Passive security findings are not evidence of exploitation or a penetration test.
+- Complete raw page HTML is not retained.

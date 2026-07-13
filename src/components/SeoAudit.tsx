@@ -156,7 +156,7 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
             <MetricCard label="Open fixes" value={auditResult.allIssues.length} detail="Across checked pages" icon={<AlertTriangle className="h-5 w-5" />} tone={auditResult.allIssues.length ? 'yellow' : 'green'} />
           </div>
           
-          <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
+          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
             <div className="p-4 border-b border-border bg-muted/20 flex justify-between items-center">
               <h3 className="font-semibold text-lg">Top SEO fixes first</h3>
             </div>

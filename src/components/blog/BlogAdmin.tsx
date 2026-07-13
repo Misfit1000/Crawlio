@@ -48,6 +48,7 @@ export default function BlogAdmin() {
   const [topic, setTopic] = useState('');
   const [audience, setAudience] = useState('website owners, marketers, developers, and SEO practitioners');
   const [topicIdeas, setTopicIdeas] = useState<Array<{ title: string; angle: string }>>([]);
+  const [editorialReviewed, setEditorialReviewed] = useState(false);
 
   const loadPosts = async () => {
     setLoading(true);
@@ -67,13 +68,17 @@ export default function BlogAdmin() {
   const filteredPosts = posts.filter((post) => `${post.title} ${post.slug} ${post.status}`.toLowerCase().includes(search.toLowerCase()));
   const checklist = useMemo(() => blogSeoChecklist(draft), [draft]);
 
-  const update = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((current) => ({ ...current, [key]: value }));
+  const update = <K extends keyof Draft>(key: K, value: Draft[K]) => {
+    setDraft((current) => ({ ...current, [key]: value }));
+    setEditorialReviewed(false);
+  };
 
   const startNew = () => {
     setSelectedId(null);
     setDraft({ ...EMPTY_DRAFT });
     setError(null);
     setMessage('');
+    setEditorialReviewed(false);
   };
 
   const selectPost = (post: BlogPost) => {
@@ -81,20 +86,26 @@ export default function BlogAdmin() {
     setDraft(draftFromPost(post));
     setError(null);
     setMessage('');
+    setEditorialReviewed(false);
   };
 
   const autoFillSeo = () => {
     const text = draft.contentHtml.replace(/<[^>]+>/g, ' ');
     const seo = buildBlogSeoFields({ title: draft.title, excerpt: draft.excerpt, contentText: text, focusKeyword: draft.focusKeyword });
     setDraft((current) => ({ ...current, slug: current.slug || seo.slug, excerpt: current.excerpt || seo.excerpt, seoTitle: seo.seoTitle, metaDescription: seo.metaDescription }));
+    setEditorialReviewed(false);
     setMessage('SEO fields refreshed from the article.');
   };
 
   const persist = async (status?: BlogPostStatus, publishNow = false) => {
+    const nextStatus = status || draft.status;
+    if (nextStatus === 'published' && !editorialReviewed) {
+      setError('Confirm the editorial review before scheduling or publishing this article.');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
-      const nextStatus = status || draft.status;
       const publishedAt = nextStatus === 'published' ? (publishNow ? new Date().toISOString() : draft.publishedAt || new Date().toISOString()) : null;
       const data = await saveAdminBlogPost({ ...draft, status: nextStatus, publishedAt }, selectedId || undefined);
       setSelectedId(data.post.id);
@@ -115,6 +126,7 @@ export default function BlogAdmin() {
       await archiveAdminBlogPost(selectedId);
       setSelectedId(null);
       setDraft({ ...EMPTY_DRAFT });
+      setEditorialReviewed(false);
       setError(null);
       await loadPosts();
       setMessage('Article archived.');
@@ -155,6 +167,7 @@ export default function BlogAdmin() {
         metaDescription: data.metaDescription,
         status: 'draft',
       }));
+      setEditorialReviewed(false);
       setMessage('Gemini draft loaded. Review facts, links, claims, and wording before publishing.');
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Gemini draft generation failed.');
@@ -193,13 +206,18 @@ export default function BlogAdmin() {
               <div className="flex flex-wrap gap-2">
                 {selectedId && <button type="button" onClick={archive} disabled={saving} className="quiet-button text-red-600"><Archive className="h-4 w-4" /> Archive</button>}
                 <button type="button" onClick={() => persist('draft')} disabled={saving} className="quiet-button"><Save className="h-4 w-4" /> Save draft</button>
-                <button type="button" onClick={() => persist('published')} disabled={saving || !draft.publishedAt} className="quiet-button"><CalendarDays className="h-4 w-4" /> Schedule</button>
-                <button type="button" onClick={() => persist('published', true)} disabled={saving} className="trust-button">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe2 className="h-4 w-4" />} Publish now</button>
+                <button type="button" onClick={() => persist('published')} disabled={saving || !draft.publishedAt || !editorialReviewed} className="quiet-button"><CalendarDays className="h-4 w-4" /> Schedule</button>
+                <button type="button" onClick={() => persist('published', true)} disabled={saving || !editorialReviewed} className="trust-button">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe2 className="h-4 w-4" />} Publish now</button>
               </div>
             </div>
 
+            <label className="mt-5 flex items-start gap-3 rounded-lg border border-border bg-muted/25 p-3 text-sm leading-6">
+              <input type="checkbox" checked={editorialReviewed} onChange={(event) => setEditorialReviewed(event.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-[var(--accent)]" />
+              <span><span className="font-semibold text-foreground">Editorial review complete.</span> <span className="text-muted-foreground">Facts, links, claims, originality, and source attribution have been checked by an administrator.</span></span>
+            </label>
+
             <div className="mt-6 grid gap-5 lg:grid-cols-2">
-              <FormField label="Article title" htmlFor="blog-title"><input id="blog-title" value={draft.title} onChange={(event) => { const title = event.target.value; setDraft((current) => ({ ...current, title, slug: selectedId ? current.slug : createBlogSlug(title) })); }} className="suite-input" maxLength={140} /></FormField>
+              <FormField label="Article title" htmlFor="blog-title"><input id="blog-title" value={draft.title} onChange={(event) => { const title = event.target.value; setDraft((current) => ({ ...current, title, slug: selectedId ? current.slug : createBlogSlug(title) })); setEditorialReviewed(false); }} className="suite-input" maxLength={140} /></FormField>
               <FormField label="URL slug" htmlFor="blog-slug" hint="The server adds a numeric suffix if another article already uses this slug."><div className="flex rounded-lg border border-border bg-card focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/15"><span className="flex items-center border-r border-border px-3 text-sm text-muted-foreground">/blog/</span><input id="blog-slug" value={draft.slug} onChange={(event) => update('slug', createBlogSlug(event.target.value))} className="min-w-0 flex-1 bg-transparent px-3 py-3 text-sm outline-none" maxLength={120} /></div></FormField>
               <FormField label="Focus phrase" htmlFor="blog-keyword"><input id="blog-keyword" value={draft.focusKeyword} onChange={(event) => update('focusKeyword', event.target.value)} className="suite-input" maxLength={100} /></FormField>
               <FormField label="Tags" htmlFor="blog-tags" hint="Comma-separated; up to 12 tags."><input id="blog-tags" value={draft.tags.join(', ')} onChange={(event) => update('tags', event.target.value.split(',').map((tag) => tag.trim()).filter(Boolean))} className="suite-input" /></FormField>

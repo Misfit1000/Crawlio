@@ -96,7 +96,7 @@ export default function Login({
           className="trust-button w-full"
         >
           {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
-          {loading ? 'Signing in...' : 'Sign In'}
+          {loading ? 'Signing in...' : 'Sign in'}
         </button>
       </form>
 

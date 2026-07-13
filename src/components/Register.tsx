@@ -108,7 +108,7 @@ export default function Register({
           className="trust-button w-full"
         >
           {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
-          {loading ? 'Creating account...' : 'Create Account'}
+          {loading ? 'Creating account...' : 'Create account'}
         </button>
       </form>
 

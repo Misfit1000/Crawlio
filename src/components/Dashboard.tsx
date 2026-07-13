@@ -35,12 +35,10 @@ import {
 import { PageHeader } from './ui/page-system';
 
 interface DashboardProps {
-  keyword?: string;
   onOpenSeoAudit?: () => void;
   onOpenSecurityAudit?: () => void;
   onOpenReports?: () => void;
   onOpenImports?: () => void;
-  [key: string]: unknown;
 }
 
 function selectReport(entry: AuditHistoryEntry, onOpenReports?: () => void) {
@@ -218,7 +216,7 @@ export default function Dashboard(props: DashboardProps) {
 
         <SurfaceCard className="p-5 md:p-6">
           <h2 className="text-xl font-semibold">Quick actions</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Each action opens a working product area.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Choose what you want to do next.</p>
           <div className="mt-5 grid gap-2">
             {[
               { label: 'Run website audit', detail: 'SEO, technical, crawl, and page checks', icon: Search, action: props.onOpenSeoAudit },
@@ -290,7 +288,7 @@ export default function Dashboard(props: DashboardProps) {
           <div className="flex items-center justify-between gap-4 border-b border-border p-5 md:p-6">
             <div>
               <h2 className="text-xl font-semibold">Recent audits</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Reports saved in this browser from real audit runs.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Reports saved in this browser.</p>
             </div>
             <button type="button" onClick={props.onOpenReports} className="quiet-button">All reports</button>
           </div>

@@ -1,14 +1,10 @@
-export type TabType = 'dashboard' | 'keyword-research' | 'website-analyzer' | 'keyword-clusters' | 'competitor-gap' | 'content-briefs' | 'seo-audit' | 'seo-findings' | 'technical-seo' | 'crawlability' | 'performance' | 'pages' | 'audit-history' | 'security-audit' | 'rank-tracker' | 'imports' | 'reports' | 'settings' | 'admin-dashboard' | 'public-discovery' | 'search-data';
+export type TabType = 'dashboard' | 'website-analyzer' | 'seo-audit' | 'seo-findings' | 'technical-seo' | 'crawlability' | 'performance' | 'pages' | 'audit-history' | 'security-audit' | 'rank-tracker' | 'imports' | 'reports' | 'settings' | 'admin-dashboard' | 'search-data';
 
 export type AuditWorkspaceSection = 'overview' | 'seo' | 'technical' | 'crawlability' | 'links' | 'performance' | 'security' | 'pages';
 
 export const TAB_PATHS: Record<TabType, string> = {
   dashboard: '/app',
-  'keyword-research': '/app/keywords',
   'website-analyzer': '/app/website-scan',
-  'keyword-clusters': '/app/keyword-clusters',
-  'competitor-gap': '/app/competitors',
-  'content-briefs': '/app/content-briefs',
   'seo-audit': '/app/audits/new',
   'audit-history': '/app/audits/history',
   'seo-findings': '/app/reports/seo',
@@ -22,7 +18,6 @@ export const TAB_PATHS: Record<TabType, string> = {
   reports: '/app/reports',
   settings: '/app/settings',
   'admin-dashboard': '/admin',
-  'public-discovery': '/app/discovery',
   'search-data': '/app/search-data',
 };
 

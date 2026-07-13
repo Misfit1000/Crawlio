@@ -583,8 +583,8 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun, onOpenWorkspac
 
       {isCompletedAuditStatus(audit.status) && audit.processingTier === 'free' && (
         <div className="bg-accent/10 border border-accent/20 rounded-xl p-4 text-sm">
-          <div className="font-semibold text-foreground">Unlock a full 25-page audit, deeper checks, faster starts, and PDF reports.</div>
-          <div className="text-muted-foreground mt-1">Free reports show quick SEO and passive security observations. Paid reports unlock the full audit categories.</div>
+          <div className="font-semibold text-foreground">Need broader coverage?</div>
+          <div className="text-muted-foreground mt-1">Accounts with full audit access can check up to 25 pages and use the extended report and export options.</div>
         </div>
       )}
 
@@ -780,7 +780,7 @@ function AuditWorkflowPanel({
       </div>
 
       {shareMessage && (
-        <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+        <div className="mt-4 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
           <Clipboard className="mr-2 inline h-4 w-4" />
           {shareMessage}
         </div>
@@ -816,7 +816,7 @@ function InsightChart({
   maxValue: number;
 }) {
   return (
-    <div className="rounded-2xl border border-border bg-background/70 p-4">
+    <div className="rounded-lg border border-border bg-background/70 p-4">
       <h3 className="font-bold">{title}</h3>
       <div className="mt-4 grid gap-3">
         {items.length === 0 ? (

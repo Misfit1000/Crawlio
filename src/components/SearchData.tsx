@@ -109,13 +109,13 @@ export default function SearchData() {
               <StatusBadge tone="success">Real imported data</StatusBadge>
             </div>
             {ctrOpportunities.length === 0 ? (
-              <div className="rounded-2xl border border-border bg-muted/30 p-5 text-sm text-muted-foreground">
+              <div className="rounded-lg border border-border bg-muted/30 p-5 text-sm text-muted-foreground">
                 No imported rows match the current opportunity rule. Import rows with clicks, impressions, CTR, and position for deeper analysis.
               </div>
             ) : (
               <div className="grid gap-3">
                 {ctrOpportunities.map((row, index) => (
-                  <div key={`${row.query}-${index}`} className="rounded-2xl border border-border bg-background/70 p-4">
+                  <div key={`${row.query}-${index}`} className="rounded-lg border border-border bg-background/70 p-4">
                     <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                       <div>
                         <h4 className="font-bold">{row.query}</h4>
@@ -174,7 +174,7 @@ export default function SearchData() {
         </>
       )}
 
-      <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm leading-6 text-amber-800 dark:text-amber-200">
+      <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-4 text-sm leading-6 text-amber-800 dark:text-amber-200">
         <AlertCircle className="mr-2 inline h-4 w-4" />
         Search data requires files exported from accounts you control. SEOIntel does not bypass search engines or scrape private data.
       </div>

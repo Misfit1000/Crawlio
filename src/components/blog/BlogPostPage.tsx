@@ -77,7 +77,7 @@ export default function BlogPostPage({ slug }: { slug: string }) {
                 <button type="button" onClick={copyLink} className="inline-flex items-center gap-2 font-semibold text-accent hover:underline"><Share2 className="h-4 w-4" />{shareMessage || 'Share'}</button>
               </div>
             </header>
-            {post.ogImageUrl && <img src={post.ogImageUrl} alt={`Featured image for ${post.title}`} className="mt-8 aspect-[16/9] w-full rounded-2xl border border-border object-cover" />}
+            {post.ogImageUrl && <img src={post.ogImageUrl} alt={`Featured image for ${post.title}`} className="mt-8 aspect-[16/9] w-full rounded-xl border border-border object-cover" />}
             <div className="blog-prose mt-10" dangerouslySetInnerHTML={{ __html: post.contentHtml }} />
             <Panel className="mt-12 p-6 sm:p-8">
               <div className="flex items-start gap-4"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent"><BookOpen className="h-5 w-5" /></div><div><h2 className="text-xl font-semibold">Apply the guidance with measured evidence</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Run an SEOIntel audit to connect these recommendations to real page findings, crawl evidence, and fix priorities.</p><a href="/#start-audit" className="trust-button mt-4">Start a free audit</a></div></div>

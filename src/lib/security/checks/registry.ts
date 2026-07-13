@@ -1,4 +1,5 @@
 import { SecurityIssue, SecuritySeverity } from '../types';
+import { securityCheckCopy } from './copy';
 
 export interface SecurityCheckDef {
   id: string;
@@ -13,5 +14,6 @@ export interface SecurityCheckDef {
 export const SECURITY_CHECK_REGISTRY: Record<string, SecurityCheckDef> = {};
 
 export function registerSecurityCheck(def: SecurityCheckDef) {
-  SECURITY_CHECK_REGISTRY[def.id] = def;
+  const copy = securityCheckCopy(def.id);
+  SECURITY_CHECK_REGISTRY[def.id] = { ...def, ...copy };
 }
