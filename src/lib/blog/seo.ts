@@ -1,4 +1,5 @@
 import { createBlogSlug } from './slug';
+import { resolveBlogLengthRange } from './length-policy';
 
 function cleanText(value: string) {
   return String(value || '').replace(/\s+/g, ' ').trim();
@@ -40,14 +41,16 @@ export function buildBlogSeoFields(input: {
   };
 }
 
-export function blogSeoChecklist(post: Pick<import('./types').BlogPostInput, 'title' | 'slug' | 'excerpt' | 'contentHtml' | 'focusKeyword' | 'seoTitle' | 'metaDescription'>) {
+export function blogSeoChecklist(post: Pick<import('./types').BlogPostInput, 'title' | 'slug' | 'excerpt' | 'contentHtml' | 'focusKeyword' | 'seoTitle' | 'metaDescription' | 'articleType'>) {
   const text = cleanText(post.contentHtml.replace(/<[^>]+>/g, ' '));
   const keyword = cleanText(post.focusKeyword || '').toLowerCase();
+  const words = text.split(' ').filter(Boolean).length;
+  const length = resolveBlogLengthRange({ articleType: post.articleType });
   return [
     { label: 'SEO title is 30-60 characters', pass: Boolean(post.seoTitle && post.seoTitle.length >= 30 && post.seoTitle.length <= 60) },
     { label: 'Meta description is 120-160 characters', pass: Boolean(post.metaDescription && post.metaDescription.length >= 120 && post.metaDescription.length <= 160) },
     { label: 'Slug is readable and concise', pass: Boolean(post.slug && post.slug.length <= 75 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(post.slug)) },
-    { label: 'Article has at least 1,500 useful words', pass: text.split(' ').filter(Boolean).length >= 1500 },
+    { label: `${length.label} targets ${length.minimum.toLocaleString()}-${length.maximum.toLocaleString()} useful words`, pass: words >= length.minimum && words <= length.maximum },
     { label: 'Focus phrase appears in title and introduction', pass: Boolean(keyword && post.title.toLowerCase().includes(keyword) && text.slice(0, 700).toLowerCase().includes(keyword)) },
     { label: 'Excerpt clearly summarizes the article', pass: Boolean(post.excerpt && post.excerpt.length >= 90) },
   ];

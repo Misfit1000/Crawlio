@@ -1,6 +1,6 @@
 # Blog Automation Setup
 
-SEOIntel includes a public blog, an administrator content workspace, deterministic publication gates, and an optional worker-backed Gemini drafting pipeline. Published articles are public. Drafts, previews, failed jobs, and scheduled articles before their release time remain private and `noindex`.
+SEOIntel includes a public blog, an administrator content workspace, deterministic publication gates, and an optional worker-backed NVIDIA NIM drafting pipeline. Published articles are public. Drafts, previews, failed jobs, and scheduled articles before their release time remain private and `noindex`.
 
 ## Apply The Database Migration
 
@@ -15,7 +15,7 @@ Never edit or rerun an earlier migration to add these fields. Migration 012 pres
 
 ## Configure Vercel
 
-Vercel serves the Vite application, lightweight authenticated queue endpoints, complete article HTML, sitemap XML, news sitemap XML, and RSS. It does not call Gemini or run discovery loops.
+Vercel serves the Vite application, lightweight authenticated queue endpoints, complete article HTML, sitemap XML, news sitemap XML, and RSS. It does not call NVIDIA or run discovery loops.
 
 Set:
 
@@ -25,7 +25,7 @@ Set:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `BLOG_SCHEDULER_SECRET` only when an external scheduler will call the fallback scheduler endpoint
 
-Do not set `GEMINI_API_KEY` or any `VITE_GEMINI_*` variable on Vercel. The Supabase service-role key remains server-only and must never use a `VITE_` prefix.
+Do not set `NVIDIA_API_KEY` or any `VITE_NVIDIA_*` variable on Vercel. The Supabase service-role key remains server-only and must never use a `VITE_` prefix.
 
 ## Configure The Existing Render Worker
 
@@ -36,8 +36,10 @@ Set on the Render worker:
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `BLOG_AUTOMATION_ENABLED=true`
-- `GEMINI_API_KEY`
-- `GEMINI_MODEL=gemini-2.5-flash` or another explicitly tested model
+- `NVIDIA_API_KEY`
+- `NVIDIA_API_BASE_URL=https://integrate.api.nvidia.com/v1`
+- `NVIDIA_BLOG_MODEL=qwen/qwen3.5-122b-a10b`
+- `NVIDIA_BLOG_ENABLED=false` until connectivity is verified
 
 Keep the existing start command:
 
@@ -61,7 +63,7 @@ The worker checks for a discovery bucket once per minute and creates at most one
 
 An article cannot be scheduled or published until all critical checks pass:
 
-- at least 1,500 useful words
+- an article-type-aware editorial range without filler or a universal 1,500-word minimum
 - one renderer-supplied H1 and logical H2/H3 structure
 - a non-repetitive tagline and complete metadata
 - recorded, verified sources represented by crawlable hyperlinks
@@ -87,4 +89,4 @@ Only public, canonical, indexable articles appear in discovery files. Sitemap in
 
 ## Safe Images
 
-Use the admin image URL importer rather than pasting an arbitrary image URL into a published post. The importer applies DNS and redirect checks, blocks private networks, rejects SVG, limits files to 5 MB, verifies raster signatures, checks minimum dimensions, records licence and attribution fields, and stores accepted files in the controlled `blog-images` bucket.
+Use the admin image URL importer rather than pasting an arbitrary image URL into a published post. The importer applies DNS and redirect checks, blocks private networks, rejects SVG, limits files to 5 MB, verifies raster signatures, checks dimensions, records licence and attribution, stores the original, and creates bounded WebP and AVIF variants without upscaling.

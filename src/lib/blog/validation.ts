@@ -69,6 +69,22 @@ function normalizeRelatedArticles(value: unknown) {
   })).filter((article) => article.postId && article.slug && article.title);
 }
 
+function normalizeImageVariants(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 24).map((variant: any) => ({
+    id: cleanField(variant?.id, 80) || undefined,
+    imageId: cleanField(variant?.image_id || variant?.imageId, 80) || undefined,
+    width: Math.max(1, Math.floor(Number(variant?.width) || 0)),
+    height: Math.max(1, Math.floor(Number(variant?.height) || 0)),
+    format: ['webp', 'avif', 'jpeg', 'png'].includes(variant?.format) ? variant.format : 'webp',
+    mimeType: cleanField(variant?.mime_type || variant?.mimeType, 80),
+    fileSize: Math.max(0, Math.floor(Number(variant?.file_size ?? variant?.fileSize) || 0)),
+    storagePath: cleanField(variant?.storage_path || variant?.storagePath, 500),
+    storageUrl: optionalHttpUrl(variant?.storage_url || variant?.storageUrl, 'Responsive image URL'),
+    status: ['ready', 'failed', 'deleted'].includes(variant?.processing_status || variant?.status) ? (variant.processing_status || variant.status) : 'ready',
+  })).filter((variant) => variant.width && variant.height && variant.storageUrl && variant.mimeType.startsWith('image/'));
+}
+
 export function prepareBlogPost(input: BlogPostInput, options: { publishing?: boolean } = {}) {
   const title = String(input.title || '').replace(/\s+/g, ' ').trim().slice(0, 140);
   if (title.length < 3) throw new BlogValidationError('Title must be at least 3 characters.');
@@ -90,7 +106,7 @@ export function prepareBlogPost(input: BlogPostInput, options: { publishing?: bo
   const articleType = cleanField(input.articleType || 'evergreen guide', 80);
   const topicCluster = cleanField(input.topicCluster, 120);
   const origin = input.origin || 'admin_manual';
-  const qualityReport = evaluateBlogQuality({ ...input, title, tagline, excerpt, contentHtml, sources, relatedArticles }, { requireSources: publishing });
+  const qualityReport = evaluateBlogQuality({ ...input, title, tagline, excerpt, contentHtml, sources, relatedArticles, articleType }, { requireSources: publishing });
   const originalityStatus = input.originalityStatus || 'pending';
   const sourceStatus = input.sourceStatus || (sources.length > 0 && sources.every((source) => source.citationStatus === 'verified') ? 'passed' : 'pending');
   const prerenderStatus = input.prerenderStatus || 'pending';
@@ -136,6 +152,7 @@ export function prepareBlogPost(input: BlogPostInput, options: { publishing?: bo
     og_description: cleanField(input.ogDescription || metaDescription, 240),
     og_image_alt: cleanField(input.ogImageAlt, 240),
     og_image_attribution: cleanField(input.ogImageAttribution, 300),
+    responsive_images: normalizeImageVariants(input.imageVariants),
     status,
     origin,
     article_type: articleType,
@@ -148,6 +165,10 @@ export function prepareBlogPost(input: BlogPostInput, options: { publishing?: bo
     discovered_at: optionalDate(input.discoveredAt, 'Discovery date'),
     continuing_development: Boolean(input.continuingDevelopment),
     scheduled_at: scheduledAt,
+    recommended_publication_at: optionalDate(input.recommendedPublicationAt, 'Recommended publication date'),
+    publication_rule: cleanField(input.publicationRule, 120),
+    publication_urgency: cleanField(input.publicationUrgency || 'normal', 40),
+    schedule_version: Math.max(0, Math.floor(Number(input.scheduleVersion) || 0)),
     publication_reason: cleanField(input.publicationReason, 500),
     quality_status: qualityReport.status,
     quality_results: qualityReport,

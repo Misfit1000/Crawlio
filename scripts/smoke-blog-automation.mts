@@ -84,9 +84,9 @@ assert.equal(custom.headline, 'How to Review Canonical URLs');
 assert.equal(custom.status, 'passed');
 assert.equal(assessCustomHeadline('How to Review Canonical URLs', ['How to Review Canonical URLs']).duplicate, true);
 assert.equal(assessCustomHeadline('Guaranteed rank #1 instantly', []).misleading, true);
-const geminiSource = readFileSync(new URL('../src/lib/blog/gemini.ts', import.meta.url), 'utf8');
-assert.match(geminiSource, /Preserve this exact administrator headline/);
-assert.match(geminiSource, /1,500-2,200 meaningful words/);
+const nvidiaSource = readFileSync(new URL('../src/lib/blog/nvidia.ts', import.meta.url), 'utf8');
+assert.match(nvidiaSource, /The title must be exactly/);
+assert.match(nvidiaSource, /Target \$\{range\.minimum\}-\$\{range\.maximum\}/);
 
 const copied = evaluateBlogOriginality('<p>This exact source sentence contains enough individual words to trigger the copied phrase detector immediately today.</p>', ['This exact source sentence contains enough individual words to trigger the copied phrase detector immediately today.']);
 assert.equal(copied.passed, false);
@@ -95,7 +95,7 @@ assert.equal(paraphrase.closeParaphraseRisk, true);
 assert.equal(evaluateBlogOriginality(contentHtml, ['A wholly unrelated short source note.']).passed, true);
 const gapBrief = buildCompetitorGapBrief([{ url: 'https://competitor.example/guide', title: 'Reference guide', publisher: 'competitor.example', headings: ['Basic checks'], observedTopics: ['basic checks'], publishedAt: null }], ['basic checks', 'verification workflow']);
 assert.deepEqual(gapBrief.contentGaps, ['verification workflow']);
-assert.equal(gapBrief.trafficLabel, 'traffic data unavailable');
+assert.equal(gapBrief.trafficLabel, 'Traffic data unavailable');
 assert.match(gapBrief.copyingRule, /Do not copy/);
 
 const prepared = prepareBlogPost({ ...input, status: 'published', origin: 'admin_manual', originalityStatus: 'passed', sourceStatus: 'passed', prerenderStatus: 'passed', imageStatus: 'not_required', publishedAt: now.toISOString() });
@@ -112,7 +112,9 @@ assert.equal(dated.source_published_at, source.publishedAt);
 
 const scheduleSettings = { automaticTiming: true, timezone: 'UTC', preferredStartHour: 9, preferredEndHour: 17, minimumSpacingMinutes: 180, delayAfterDiscoveryMinutes: 0, maximumPostsPerDay: 2, blackoutWeekdays: [] };
 const firstTime = selectAutomaticPublicationTime({ opportunity: opportunity(), now: new Date('2026-07-13T08:00:00Z'), settings: scheduleSettings });
+assert.ok(firstTime.scheduledAt);
 const secondTime = selectAutomaticPublicationTime({ opportunity: opportunity({ sourceUrl: 'https://example.org/two' }), now: new Date('2026-07-13T08:00:00Z'), existingPublicationTimes: [firstTime.scheduledAt], settings: scheduleSettings });
+assert.ok(secondTime.scheduledAt);
 assert.ok(new Date(secondTime.scheduledAt).getTime() - new Date(firstTime.scheduledAt).getTime() >= 180 * 60_000);
 assert.equal(blogJobIdempotencyKey({ origin: 'autopilot', topic: 'same', dateBucket: 'bucket' }), blogJobIdempotencyKey({ origin: 'autopilot', topic: 'same', dateBucket: 'bucket' }));
 assert.ok(publicationBlockers({ qualityReport: quality, originalityStatus: 'blocked', sourceStatus: 'passed', imageStatus: 'not_required', prerenderStatus: 'passed' }).some((item) => /Originality/.test(item)));
@@ -137,7 +139,7 @@ const vercelConfig = readFileSync(new URL('../vercel.json', import.meta.url), 'u
 assert.match(vercelConfig, /news-sitemap\.xml/);
 assert.match(vercelConfig, /blog\/html\/:slug/);
 const workerSource = readFileSync(new URL('../src/workers/blog-worker.ts', import.meta.url), 'utf8');
-assert.ok(workerSource.indexOf('generateBlogWithGemini') < workerSource.indexOf('blogRepository.create'), 'provider generation must finish before article creation');
+assert.ok(workerSource.indexOf('generateBlogWithNvidia') < workerSource.indexOf('blogRepository.create'), 'provider generation must finish before article creation');
 assert.match(workerSource, /Freshness window expires before the next valid publication time/);
 
 console.log(`blog automation smoke (${mode}): passed`);

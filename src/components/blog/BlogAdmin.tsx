@@ -8,6 +8,7 @@ import { EmptyState, StatusBadge } from '../ui/visual-system';
 import { FormField, Notice, Panel } from '../ui/page-system';
 import RichTextEditor from './RichTextEditor';
 import BlogAutomationPanel from './BlogAutomationPanel';
+import BlogSectionRevisionPanel from './BlogSectionRevisionPanel';
 
 type Draft = BlogPostInput & {
   title: string;
@@ -44,6 +45,7 @@ function draftFromPost(post: BlogPost): Draft {
     ogImageUrl: post.ogImageUrl,
     ogImageAlt: post.ogImageAlt,
     ogImageAttribution: post.ogImageAttribution,
+    imageVariants: post.imageVariants,
     status: post.status,
     origin: post.origin,
     articleType: post.articleType,
@@ -175,8 +177,8 @@ export default function BlogAdmin() {
     setSaving(true); setError(null);
     try {
       const { image } = await importAdminBlogImage({ ...imageImport, articleId: selectedId });
-      setDraft((current) => ({ ...current, ogImageUrl: String(image.storage_url || image.source_url || ''), ogImageAlt: String(image.alt_text || imageImport.altText), ogImageAttribution: String(image.attribution || ''), imageStatus: 'passed' }));
-      setMessage('Image verified and imported. Attribution details were retained.');
+      setDraft((current) => ({ ...current, ogImageUrl: String(image.storage_url || image.source_url || ''), ogImageAlt: String(image.alt_text || imageImport.altText), ogImageAttribution: String(image.attribution || ''), imageVariants: Array.isArray(image.variants) ? image.variants : [], imageStatus: 'passed' }));
+      setMessage(`Image verified with ${Array.isArray(image.variants) ? image.variants.length : 0} responsive variants. Attribution details were retained.`);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Image could not be imported.');
     } finally { setSaving(false); }
@@ -185,7 +187,7 @@ export default function BlogAdmin() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div><h2 className="text-2xl font-semibold">Blog publishing</h2><p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Write, optimize, schedule, publish, and archive public SEOIntel articles. Gemini creates drafts only; administrators remain responsible for review.</p></div>
+        <div><h2 className="text-2xl font-semibold">Blog publishing</h2><p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Write, optimize, schedule, publish, and archive public SEOIntel articles. NVIDIA NIM drafts remain subject to administrator review and deterministic publication gates.</p></div>
         <button type="button" onClick={startNew} className="trust-button"><FilePlus2 className="h-4 w-4" /> New article</button>
       </div>
 
@@ -234,6 +236,7 @@ export default function BlogAdmin() {
             <div className="mt-5 grid gap-5 lg:grid-cols-2"><FormField label="Article tagline" htmlFor="blog-tagline" hint="Adds context without repeating the headline."><input id="blog-tagline" value={draft.tagline || ''} onChange={(event) => update('tagline', event.target.value)} className="suite-input" maxLength={240} /></FormField><FormField label="Executive summary" htmlFor="blog-summary"><textarea id="blog-summary" value={draft.summary || ''} onChange={(event) => update('summary', event.target.value)} className="suite-input min-h-24 resize-y" maxLength={600} /></FormField></div>
             <div className="mt-5 rounded-lg border border-border bg-muted/20 p-4"><h4 className="text-sm font-semibold text-foreground">Primary research source</h4><p className="mt-1 text-xs leading-5 text-muted-foreground">The exact source URL must also appear as a descriptive hyperlink in the article body.</p><div className="mt-4 grid gap-4 lg:grid-cols-3"><FormField label="Source URL" htmlFor="blog-source-url"><input id="blog-source-url" type="url" value={draft.sources?.[0]?.url || ''} onChange={(event) => update('sources', [{ ...(draft.sources?.[0] || { title: '', publisher: '' }), url: event.target.value, citationStatus: 'verified', reliability: 'high' }])} className="suite-input" /></FormField><FormField label="Source title" htmlFor="blog-source-title"><input id="blog-source-title" value={draft.sources?.[0]?.title || ''} onChange={(event) => update('sources', [{ ...(draft.sources?.[0] || { url: '', publisher: '' }), title: event.target.value, citationStatus: 'verified', reliability: 'high' }])} className="suite-input" /></FormField><FormField label="Publisher" htmlFor="blog-source-publisher"><input id="blog-source-publisher" value={draft.sources?.[0]?.publisher || ''} onChange={(event) => update('sources', [{ ...(draft.sources?.[0] || { url: '', title: '' }), publisher: event.target.value, citationStatus: 'verified', reliability: 'high' }])} className="suite-input" /></FormField></div></div>
             <div className="mt-5"><FormField label="Article content"><RichTextEditor value={draft.contentHtml} onChange={(contentHtml) => update('contentHtml', contentHtml)} /></FormField></div>
+            {selectedId && posts.find((post) => post.id === selectedId) && <BlogSectionRevisionPanel post={posts.find((post) => post.id === selectedId)!} onChanged={() => void loadPosts()} />}
           </Panel>
 
           <Panel className="p-5 sm:p-6">

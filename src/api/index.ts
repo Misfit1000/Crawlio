@@ -28,6 +28,9 @@ import { renderBlogArticleHtml } from '../lib/blog/render';
 import { blogAutomationRepository } from '../lib/blog/automation-repository';
 import { blogJobIdempotencyKey, validateManualBatch } from '../lib/blog/automation';
 import { importBlogImage } from '../lib/blog/images';
+import { NVIDIA_DEFAULT_BLOG_MODEL } from '../lib/blog/nvidia';
+import { normalizeBlogArticleType } from '../lib/blog/length-policy';
+import { validateCalendarMove } from '../lib/blog/freshness';
 import { ApiError } from '../lib/api/errors';
 import {
   admitAuditSubmission,
@@ -58,6 +61,8 @@ apiRouter.use('/admin', durableRateLimit({ namespace: 'admin-api', limit: 120, w
 apiRouter.use('/admin/blog/jobs', durableRateLimit({ namespace: 'blog-jobs', limit: 20, windowSeconds: 3600 }));
 apiRouter.use('/admin/blog/batches', durableRateLimit({ namespace: 'blog-batches', limit: 5, windowSeconds: 3600 }));
 apiRouter.use('/admin/blog/images/import', durableRateLimit({ namespace: 'blog-images', limit: 10, windowSeconds: 3600 }));
+apiRouter.use('/admin/blog/provider/test', durableRateLimit({ namespace: 'blog-provider-test', limit: 5, windowSeconds: 3600 }));
+apiRouter.use('/admin/blog/sections', durableRateLimit({ namespace: 'blog-section-regeneration', limit: 10, windowSeconds: 3600 }));
 apiRouter.use('/blog/scheduler', durableRateLimit({ namespace: 'blog-scheduler', limit: 10, windowSeconds: 300 }));
 apiRouter.use('/audit/export', durableRateLimit({ namespace: 'report-export', limit: 10, windowSeconds: 300 }));
 apiRouter.use('/audit/cancel', durableRateLimit({ namespace: 'audit-cancel', limit: 10, windowSeconds: 300 }));
@@ -519,13 +524,23 @@ apiRouter.get('/admin/blog/posts', asyncJsonRoute(async (req, res) => {
 
 apiRouter.get('/admin/blog/overview', asyncJsonRoute(async (req, res) => {
   if (!(await requireAdminRequester(req, res))) return;
-  const [overview, jobs, discoveries] = await Promise.all([
+  const [overview, jobs, discoveries, settings] = await Promise.all([
     blogAutomationRepository.overview(),
     blogAutomationRepository.listJobs(40),
     blogAutomationRepository.listDiscoveries(40),
+    blogAutomationRepository.getSettings(),
   ]);
   res.setHeader('Cache-Control', 'private, no-store');
-  res.json({ success: true, data: { overview, jobs, discoveries } });
+  res.json({ success: true, data: { overview, jobs, discoveries, provider: { provider: 'NVIDIA NIM', enabled: Boolean(settings.provider_enabled), configured: Boolean(settings.provider_last_success_at), model: NVIDIA_DEFAULT_BLOG_MODEL, baseUrlHost: 'integrate.api.nvidia.com', health: settings.provider_last_error_code ? 'attention required' : settings.provider_last_success_at ? 'connected' : 'not tested', lastSuccessAt: settings.provider_last_success_at || null, lastErrorCode: settings.provider_last_error_code || '', lastDurationMs: settings.provider_last_duration_ms ?? null, liveVerificationStatus: settings.provider_live_verification_status || 'not_run' } } });
+}));
+
+apiRouter.post('/admin/blog/provider/test', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const job = await blogAutomationRepository.createJob({ origin: 'admin_manual', topic: 'NVIDIA provider connectivity test', requestedBy: requester.userId, payload: { jobType: 'provider_test' }, idempotencyKey: blogJobIdempotencyKey({ origin: 'admin_manual', topic: 'nvidia-provider-test', dateBucket: new Date().toISOString().slice(0, 16) }) });
+  await logBlogAction(requester.userId, 'queue_blog_provider_test', 'nvidia_nim', { jobId: job.id });
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.status(202).json({ success: true, data: { result: { status: 'queued', model: NVIDIA_DEFAULT_BLOG_MODEL, host: 'integrate.api.nvidia.com', durationMs: null, errorCode: null }, job } });
 }));
 
 apiRouter.get('/admin/blog/settings', asyncJsonRoute(async (req, res) => {
@@ -576,10 +591,23 @@ apiRouter.post('/admin/blog/jobs', asyncJsonRoute(async (req, res) => {
       sources: Array.isArray(req.body?.sources) ? req.body.sources.slice(0, 12) : undefined,
       sourceUrls: Array.isArray(req.body?.sourceUrls) ? req.body.sourceUrls.slice(0, 12).map(String) : undefined,
       competitorUrls: Array.isArray(req.body?.competitorUrls) ? req.body.competitorUrls.slice(0, 5).map(String) : undefined,
+      articleType: normalizeBlogArticleType(req.body?.articleType, mode === 'discover' ? 'news_analysis' : 'evergreen_guide'),
+      lengthMode: ['automatic', 'brief', 'standard', 'detailed', 'custom'].includes(String(req.body?.lengthMode)) ? String(req.body.lengthMode) : 'automatic',
+      customMinimum: Math.max(500, Math.min(3500, Number(req.body?.customMinimum) || 0)),
+      customMaximum: Math.max(500, Math.min(4000, Number(req.body?.customMaximum) || 0)),
     },
     idempotencyKey: blogJobIdempotencyKey({ origin, topic, customHeadline: headline, dateBucket }),
   });
   await logBlogAction(requester.userId, 'queue_blog_job', job.id, { origin, mode, batchId: null });
+  res.status(202).json({ success: true, data: { job } });
+}));
+
+apiRouter.post('/admin/blog/jobs/:id/retry', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const job = await blogAutomationRepository.retryJob(req.params.id);
+  if (!job) throw new ApiError('BLOG_JOB_NOT_RETRYABLE', 'This job is not in a retryable state.', 409);
+  await logBlogAction(requester.userId, 'retry_blog_job', job.id, { provider: job.provider, model: job.model });
   res.status(202).json({ success: true, data: { job } });
 }));
 
@@ -597,7 +625,7 @@ apiRouter.post('/admin/blog/batches', asyncJsonRoute(async (req, res) => {
   for (const headline of batchInput.headlines) {
     jobs.push(await blogAutomationRepository.createJob({
       origin: 'admin_batch', customHeadline: headline, requestedBy: requester.userId, batchId: batch.id,
-      payload: { jobType: 'generate_article', audience: String(req.body?.audience || '').slice(0, 240), keywords: String(req.body?.keywords || '').slice(0, 300), sourceUrls: Array.isArray(req.body?.sourceUrls) ? req.body.sourceUrls.slice(0, 12).map(String) : [], competitorUrls: Array.isArray(req.body?.competitorUrls) ? req.body.competitorUrls.slice(0, 5).map(String) : [] },
+      payload: { jobType: 'generate_article', audience: String(req.body?.audience || '').slice(0, 240), keywords: String(req.body?.keywords || '').slice(0, 300), sourceUrls: Array.isArray(req.body?.sourceUrls) ? req.body.sourceUrls.slice(0, 12).map(String) : [], competitorUrls: Array.isArray(req.body?.competitorUrls) ? req.body.competitorUrls.slice(0, 5).map(String) : [], articleType: normalizeBlogArticleType(req.body?.articleType), lengthMode: ['automatic', 'brief', 'standard', 'detailed', 'custom'].includes(String(req.body?.lengthMode)) ? String(req.body.lengthMode) : 'automatic', customMinimum: Number(req.body?.customMinimum || 0), customMaximum: Number(req.body?.customMaximum || 0) },
       idempotencyKey: blogJobIdempotencyKey({ origin: 'admin_batch', customHeadline: headline, batchId: batch.id }),
     }));
   }
@@ -660,17 +688,61 @@ apiRouter.post('/admin/blog/posts/:id/workflow', asyncJsonRoute(async (req, res)
     post = await blogRepository.update(existing.id, { status: action === 'hold' ? 'needs_review' : 'draft', scheduled_at: null, published_at: null, robots_directive: 'noindex,nofollow', publication_reason: reason, reviewer_id: requester.userId, updated_by: requester.userId });
   } else if (action === 'convert_manual') {
     post = await blogRepository.update(existing.id, { origin: 'scheduled_manual', publication_reason: reason, updated_by: requester.userId });
-  } else if (action === 'publish_now' || action === 'reschedule') {
-    const scheduledAt = action === 'reschedule' ? String(req.body?.scheduledAt || '') : null;
-    const row = prepareBlogPostForStorage({ ...existing, status: action === 'publish_now' ? 'published' : 'scheduled', publishedAt: action === 'publish_now' ? new Date().toISOString() : null, scheduledAt, publicationReason: reason });
-    post = await blogRepository.update(existing.id, { ...row, reviewer_id: requester.userId, updated_by: requester.userId });
+  } else if (action === 'publish_now' || action === 'reschedule' || action === 'unschedule' || action === 'reset_recommended_time') {
+    const settings = await blogAutomationRepository.getSettings();
+    const posts = await blogRepository.listAdmin(200);
+    const requestedTime = action === 'reset_recommended_time' ? existing.recommendedPublicationAt : action === 'reschedule' ? String(req.body?.scheduledAt || '') : null;
+    if ((action === 'reschedule' || action === 'reset_recommended_time') && !requestedTime) throw new ApiError('BLOG_SCHEDULE_REQUIRED', 'Choose a publication time.', 400);
+    if (action === 'reschedule' || action === 'reset_recommended_time') {
+      if (req.body?.scheduleVersion != null && Number(req.body.scheduleVersion) !== existing.scheduleVersion) throw new ApiError('BLOG_SCHEDULE_CONFLICT', 'This article schedule changed in another session. Refresh before moving it.', 409);
+      const validation = validateCalendarMove({ scheduledAt: requestedTime, timezone: String(settings.timezone || 'UTC'), existingPublicationTimes: posts.filter((item) => item.id !== existing.id).map((item) => item.scheduledAt || item.publishedAt).filter(Boolean) as string[], minimumSpacingMinutes: Number(settings.minimum_spacing_minutes || 180), maximumPostsPerDay: Number(settings.maximum_posts_per_day || 2), blackoutWeekdays: settings.blackout_weekdays || [], blackoutDates: settings.blackout_dates || [] });
+      if (!validation.valid) throw new ApiError('BLOG_SCHEDULE_CONFLICT', validation.conflicts.join(' '), 409);
+    }
+    if (action === 'unschedule') {
+      post = await blogRepository.update(existing.id, { status: 'draft', scheduled_at: null, robots_directive: 'noindex,nofollow', publication_reason: reason, schedule_version: existing.scheduleVersion + 1, reviewer_id: requester.userId, updated_by: requester.userId });
+    } else {
+      const row = prepareBlogPostForStorage({ ...existing, status: action === 'publish_now' ? 'published' : 'scheduled', publishedAt: action === 'publish_now' ? new Date().toISOString() : null, scheduledAt: requestedTime, publicationReason: reason, publicationRule: action === 'reset_recommended_time' ? 'administrator_reset_to_recommendation' : action === 'reschedule' ? 'administrator_calendar_move' : 'administrator_publish_now', scheduleVersion: existing.scheduleVersion + 1 });
+      post = await blogRepository.update(existing.id, { ...row, reviewer_id: requester.userId, updated_by: requester.userId });
+    }
   } else {
     throw new ApiError('UNSUPPORTED_BLOG_WORKFLOW_ACTION', 'This content workflow action is not supported.', 400);
   }
   if (!post) return res.status(404).json({ success: false, error: 'Article not found.' });
   await blogRepository.syncEditorialRecords(post, requester.userId, existing.status);
+  if ((existing.origin === 'autopilot' || existing.origin === 'trend_autopilot') && existing.status === 'needs_review' && (action === 'publish_now' || action === 'cancel')) await blogAutomationRepository.recordAutomaticReview(action === 'publish_now');
   await logBlogAction(requester.userId, `blog_workflow_${action}`, post.id, { previousState: existing.status, newState: post.status, reason });
   res.json({ success: true, data: { post } });
+}));
+
+apiRouter.get('/admin/blog/posts/:id/section-revisions', asyncJsonRoute(async (req, res) => {
+  if (!(await requireAdminRequester(req, res))) return;
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: { revisions: await blogRepository.listSectionRevisions(req.params.id) } });
+}));
+
+apiRouter.post('/admin/blog/posts/:id/section-regeneration', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const existing = await blogRepository.getAdminById(req.params.id);
+  if (!existing) throw new ApiError('BLOG_POST_NOT_FOUND', 'Article not found.', 404);
+  const sectionKey = String(req.body?.sectionKey || '').slice(0, 120);
+  const sectionAction = String(req.body?.action || 'regenerate');
+  if (!sectionKey || !['regenerate', 'shorten', 'make_practical', 'add_example', 'improve_clarity', 'remove_repetition', 'rewrite_from_sources'].includes(sectionAction)) throw new ApiError('BLOG_SECTION_INPUT_INVALID', 'Choose a valid section and editing action.', 400);
+  const idempotencyKey = blogJobIdempotencyKey({ origin: 'editor_update', topic: `${existing.id}:${sectionKey}:${sectionAction}`, dateBucket: String(existing.updatedAt) });
+  const job = await blogAutomationRepository.createJob({ origin: 'editor_update', topic: existing.title, requestedBy: requester.userId, payload: { jobType: 'regenerate_section', articleId: existing.id, sectionKey, sectionAction }, idempotencyKey });
+  await logBlogAction(requester.userId, 'queue_blog_section_regeneration', existing.id, { jobId: job.id, sectionKey, sectionAction });
+  res.status(202).json({ success: true, data: { job } });
+}));
+
+apiRouter.post('/admin/blog/section-revisions/:id/decision', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const decision = String(req.body?.decision || '');
+  if (decision !== 'accepted' && decision !== 'rejected') throw new ApiError('BLOG_REVISION_DECISION_INVALID', 'Choose Accept or Reject.', 400);
+  const revision = await blogRepository.decideSectionRevision(req.params.id, decision, requester.userId);
+  if (!revision) throw new ApiError('BLOG_REVISION_NOT_FOUND', 'Pending section revision not found.', 404);
+  await logBlogAction(requester.userId, `blog_section_revision_${decision}`, revision.article_id, { revisionId: revision.id });
+  res.json({ success: true, data: { revision } });
 }));
 
 apiRouter.delete('/admin/blog/posts/:id', asyncJsonRoute(async (req, res) => {

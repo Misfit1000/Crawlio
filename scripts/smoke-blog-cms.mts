@@ -47,8 +47,9 @@ const automationMigration = readFileSync(resolve('supabase/migrations/012_blog_a
 for (const requirement of [/blog_generation_jobs/i, /blog_trend_discoveries/i, /blog_sources/i, /blog_quality_results/i, /claim_blog_generation_job/i, /enable row level security/i]) assert.match(automationMigration, requirement);
 
 const envExample = readFileSync(resolve('.env.example'), 'utf8');
-assert.match(envExample, /^GEMINI_API_KEY=$/m);
-assert.equal(/VITE_GEMINI/i.test(envExample), false, 'Gemini key must never use a VITE_ prefix');
+assert.match(envExample, /^NVIDIA_API_KEY=$/m);
+assert.match(envExample, /^NVIDIA_BLOG_MODEL=qwen\/qwen3\.5-122b-a10b$/m);
+assert.equal(/VITE_NVIDIA/i.test(envExample), false, 'NVIDIA key must never use a VITE_ prefix');
 
 const browserSources = [
   resolve('src/App.tsx'),
@@ -56,6 +57,6 @@ const browserSources = [
   resolve('src/components/blog/BlogIndex.tsx'),
   resolve('src/components/blog/BlogPostPage.tsx'),
 ].map((file) => readFileSync(file, 'utf8')).join('\n');
-assert.equal(/GEMINI_API_KEY|SUPABASE_SERVICE_ROLE_KEY/.test(browserSources), false, 'server-only keys are referenced by browser code');
+assert.equal(/NVIDIA_API_KEY|GEMINI_API_KEY|SUPABASE_SERVICE_ROLE_KEY/.test(browserSources), false, 'server-only keys are referenced by browser code');
 
 console.log('Blog CMS smoke test passed: slugs, sanitization, SEO defaults, RLS migration, and key boundaries verified.');

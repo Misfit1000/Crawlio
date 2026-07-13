@@ -5,7 +5,7 @@
 1. Create a Supabase project.
 2. Copy the project URL and anon key for the frontend.
 3. Copy the service role key for the API and worker only.
-4. Apply every SQL file in `supabase/migrations/` in numeric order through `012_blog_automation_platform.sql`. Existing projects must apply migration 011 before the append-only blog automation migration 012.
+4. Apply every SQL file in `supabase/migrations/` in numeric order through `013_blog_provider_and_editor_completion.sql`. Existing projects must apply migrations 012 and 013 in order without rewriting either file.
 
 ## Frontend Environment
 

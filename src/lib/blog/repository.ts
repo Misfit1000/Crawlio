@@ -4,10 +4,13 @@ import { estimateReadingTime } from './seo';
 import type { BlogListResult, BlogPost, BlogPostStatus } from './types';
 import { inspectBlogLinks } from './quality';
 import type { CompetitorReferenceSnapshot } from './research';
+import type { BlogSectionRevision } from './types';
+import { replaceSelectedBlogSection, selectBlogSection } from './section-regeneration';
 
 type BlogPostRow = Record<string, any>;
 
 const memoryPosts = new Map<string, BlogPostRow>();
+const memorySectionRevisions = new Map<string, Record<string, any>>();
 
 function toPost(row: BlogPostRow): BlogPost {
   const contentText = String(row.content_text ?? row.contentText ?? '');
@@ -30,6 +33,7 @@ function toPost(row: BlogPostRow): BlogPost {
     ogDescription: String(row.og_description ?? row.ogDescription ?? row.meta_description ?? row.excerpt ?? ''),
     ogImageAlt: String(row.og_image_alt ?? row.ogImageAlt ?? ''),
     ogImageAttribution: String(row.og_image_attribution ?? row.ogImageAttribution ?? ''),
+    imageVariants: Array.isArray(row.responsive_images ?? row.imageVariants) ? (row.responsive_images ?? row.imageVariants) : [],
     status: String(row.status || 'draft') as BlogPostStatus,
     origin: row.origin || 'admin_manual',
     articleType: String(row.article_type ?? row.articleType ?? 'evergreen guide'),
@@ -42,6 +46,10 @@ function toPost(row: BlogPostRow): BlogPost {
     discoveredAt: row.discovered_at ?? row.discoveredAt ?? null,
     continuingDevelopment: Boolean(row.continuing_development ?? row.continuingDevelopment),
     scheduledAt: row.scheduled_at ?? row.scheduledAt ?? null,
+    recommendedPublicationAt: row.recommended_publication_at ?? row.recommendedPublicationAt ?? null,
+    publicationRule: String(row.publication_rule ?? row.publicationRule ?? ''),
+    publicationUrgency: String(row.publication_urgency ?? row.publicationUrgency ?? 'normal'),
+    scheduleVersion: Number(row.schedule_version ?? row.scheduleVersion ?? 0),
     publicationReason: String(row.publication_reason ?? row.publicationReason ?? ''),
     qualityStatus: row.quality_status ?? row.qualityStatus ?? 'pending',
     qualityResults: row.quality_results ?? row.qualityResults ?? null,
@@ -176,6 +184,64 @@ export const blogRepository = {
     return data ? toPost(data) : null;
   },
 
+  async createSectionRevision(input: { articleId: string; generationJobId?: string | null; actorId?: string | null; sectionKey: string; action: string; beforeHtml: string; afterHtml: string; sourceSnapshot: unknown; validationResults: unknown }) {
+    const row = { article_id: input.articleId, generation_job_id: input.generationJobId || null, actor_id: input.actorId || null, section_key: input.sectionKey, action: input.action, before_html: input.beforeHtml, after_html: input.afterHtml, source_snapshot: input.sourceSnapshot, validation_results: input.validationResults, status: 'pending' };
+    const client = getSupabaseAdminClient();
+    if (!client) {
+      const existing = [...memorySectionRevisions.values()].find((item) => item.article_id === input.articleId && item.section_key === input.sectionKey && item.status === 'pending');
+      if (existing) return existing;
+      const stored = { ...row, id: randomUUID(), created_at: new Date().toISOString(), decided_at: null };
+      memorySectionRevisions.set(stored.id, stored);
+      return stored;
+    }
+    const { data, error } = await client.from('blog_section_revisions').insert(row).select('*').single();
+    if (error?.code === '23505') {
+      const { data: existing, error: readError } = await client.from('blog_section_revisions').select('*').eq('article_id', input.articleId).eq('section_key', input.sectionKey).eq('status', 'pending').single();
+      if (readError) throw readError;
+      return existing;
+    }
+    if (error) throw error;
+    return data;
+  },
+
+  async listSectionRevisions(articleId: string) {
+    const client = getSupabaseAdminClient();
+    const rows = client
+      ? await client.from('blog_section_revisions').select('*').eq('article_id', articleId).order('created_at', { ascending: false }).limit(30)
+      : { data: [...memorySectionRevisions.values()].filter((item) => item.article_id === articleId).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))), error: null };
+    if (rows.error) throw rows.error;
+    return (rows.data || []).map((row: any): BlogSectionRevision => ({ id: String(row.id), articleId: String(row.article_id), sectionKey: String(row.section_key), action: String(row.action), beforeHtml: String(row.before_html), afterHtml: String(row.after_html), status: row.status, createdAt: String(row.created_at) }));
+  },
+
+  async decideSectionRevision(id: string, decision: 'accepted' | 'rejected', actorId: string) {
+    const client = getSupabaseAdminClient();
+    const read = client
+      ? await client.from('blog_section_revisions').select('*').eq('id', id).eq('status', 'pending').maybeSingle()
+      : { data: memorySectionRevisions.get(id) || null, error: null };
+    if (read.error) throw read.error;
+    const revision = read.data as any;
+    if (!revision) return null;
+    const post = await blogRepository.getAdminById(revision.article_id);
+    if (!post) return null;
+    if (decision === 'accepted') {
+      const selection = selectBlogSection(post, revision.section_key);
+      if (selection.beforeHtml !== revision.before_html) throw new Error('The article changed after this revision was created. Regenerate the section against the current draft.');
+      const replacement = replaceSelectedBlogSection(post, selection, revision.after_html);
+      const row = 'tagline' in replacement ? { tagline: replacement.tagline } : 'summary' in replacement ? { summary: replacement.summary } : 'metaDescription' in replacement ? { meta_description: replacement.metaDescription } : { content_html: replacement.contentHtml };
+      const updated = await blogRepository.update(post.id, { ...row, updated_by: actorId });
+      if (!updated) return null;
+      await blogRepository.syncEditorialRecords(updated, actorId, post.status);
+    }
+    const decidedAt = new Date().toISOString();
+    if (!client) {
+      memorySectionRevisions.set(id, { ...revision, status: decision, decided_at: decidedAt });
+    } else {
+      const { error } = await client.from('blog_section_revisions').update({ status: decision, decided_at: decidedAt }).eq('id', id).eq('status', 'pending');
+      if (error) throw error;
+    }
+    return { ...revision, status: decision, decided_at: decidedAt };
+  },
+
   async sitemapRows() {
     const client = getSupabaseAdminClient();
     if (!client) return publicMemoryRows().filter((row) => String(row.robots_directive || 'index').startsWith('index')).map((row) => ({ slug: String(row.slug), updatedAt: String(row.updated_at), imageUrl: String(row.og_image_url || '') }));
@@ -229,17 +295,28 @@ export const blogRepository = {
   async publishDueScheduled(limit = 10) {
     const client = getSupabaseAdminClient();
     if (!client) return [] as string[];
+    const { data: settings, error: settingsError } = await client.from('blog_autopilot_settings').select('strict_autopilot_enabled,required_reviewed_articles_before_autopublish,automatic_articles_approved,emergency_pause,pause_all_publication,maintenance_mode').eq('id', 'default').single();
+    if (settingsError) throw settingsError;
+    if (settings.pause_all_publication || settings.maintenance_mode) return [] as string[];
     const { data, error } = await client.from('blog_posts').select('id,scheduled_at,origin,freshness_status,source_published_at,source_updated_at,quality_status').eq('status', 'scheduled').in('quality_status', ['passed', 'needs_review']).eq('originality_status', 'passed').eq('source_status', 'passed').eq('prerender_status', 'passed').in('image_status', ['passed', 'not_required']).lte('scheduled_at', new Date().toISOString()).order('scheduled_at', { ascending: true }).limit(Math.max(1, Math.min(20, limit)));
     if (error) throw error;
     const published: string[] = [];
     for (const row of data || []) {
+      const automatic = row.origin === 'autopilot' || row.origin === 'trend_autopilot';
+      const automaticUnlocked = settings.strict_autopilot_enabled === true
+        && settings.emergency_pause !== true
+        && Number(settings.automatic_articles_approved || 0) >= Number(settings.required_reviewed_articles_before_autopublish || 30);
+      if (automatic && !automaticUnlocked) {
+        const { error: reviewError } = await client.from('blog_posts').update({ status: 'needs_review', robots_directive: 'noindex,nofollow', publication_reason: 'Review-first rollout prevents automatic publication.' }).eq('id', row.id).eq('status', 'scheduled');
+        if (reviewError) throw reviewError;
+        continue;
+      }
       const timestamp = new Date().toISOString();
-      const sourceTime = Math.max(new Date(row.source_updated_at || 0).getTime(), new Date(row.source_published_at || 0).getTime());
-      const staleAutomaticStory = row.origin === 'trend_autopilot' && (!Number.isFinite(sourceTime) || Date.now() - sourceTime > 48 * 60 * 60 * 1000);
+      const staleAutomaticStory = row.origin === 'trend_autopilot' && row.freshness_status === 'expired';
       if (staleAutomaticStory) {
-        const { error: holdError } = await client.from('blog_posts').update({ status: 'needs_review', robots_directive: 'noindex,nofollow', publication_reason: 'Automatic publication held because the verified 48-hour freshness window expired.' }).eq('id', row.id).eq('status', 'scheduled');
+        const { error: holdError } = await client.from('blog_posts').update({ status: 'needs_review', robots_directive: 'noindex,nofollow', publication_reason: 'Automatic publication held because editorial freshness is marked expired.' }).eq('id', row.id).eq('status', 'scheduled');
         if (holdError) throw holdError;
-        const { error: holdEventError } = await client.from('blog_publication_events').insert({ article_id: row.id, event_type: 'freshness_hold', previous_state: 'scheduled', new_state: 'needs_review', scheduled_for: row.scheduled_at, reason: 'Verified source freshness expired before publication.' });
+        const { error: holdEventError } = await client.from('blog_publication_events').insert({ article_id: row.id, event_type: 'freshness_hold', previous_state: 'scheduled', new_state: 'needs_review', scheduled_for: row.scheduled_at, reason: 'Editorial freshness is explicitly marked expired.' });
         if (holdEventError) throw holdEventError;
         continue;
       }
@@ -259,7 +336,7 @@ export const blogRepository = {
     const rows = references.map((reference) => ({
       article_id: articleId, reference_url: reference.url, covered_subtopics: reference.observedTopics,
       format_observations: brief.formatObservations, content_gaps: brief.contentGaps, outdated_information: [],
-      proposed_original_angle: brief.proposedOriginalAngle, traffic_label: brief.trafficLabel,
+      proposed_original_angle: brief.proposedOriginalAngle, traffic_label: brief.trafficLabel, traffic_data_source: '', traffic_observed_at: null,
       similarity_risk: 'needs_review', plagiarism_status: 'pending',
     }));
     const { error } = await client.from('blog_competitor_research').insert(rows);

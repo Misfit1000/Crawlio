@@ -3,6 +3,7 @@ import { getSupabaseAdminClient } from '../supabase/server';
 import { countBlogOrigins } from './automation';
 import type { BlogAdminOverview, BlogArticleOrigin, BlogGenerationJob, BlogJobState, BlogTrendOpportunity } from './types';
 import { blogRepository } from './repository';
+import { getNvidiaBlogConfiguration } from './nvidia';
 
 type Row = Record<string, any>;
 const memoryJobs = new Map<string, Row>();
@@ -13,6 +14,13 @@ let memorySettings: Row = {
   automatic_timing: true, timezone: 'UTC', preferred_start_hour: 9, preferred_end_hour: 17,
   minimum_spacing_minutes: 180, delay_after_discovery_minutes: 60, maximum_posts_per_day: 2,
   blackout_weekdays: [], approved_feed_urls: [], require_review_for_urgent: true,
+  blackout_dates: [], required_reviewed_articles_before_autopublish: 30,
+  automatic_articles_reviewed: 0, automatic_articles_approved: 0, automatic_articles_rejected: 0,
+  strict_autopilot_enabled: false, emergency_pause: false, pause_all_publication: false,
+  urgent_news_hold: true, fixed_publication_minute: null, maintenance_mode: false,
+  provider_last_success_at: null, provider_last_error_code: '', provider_last_duration_ms: null,
+  provider_live_verification_status: 'not_run',
+  provider_enabled: false,
 };
 
 function toJob(row: Row): BlogGenerationJob {
@@ -55,8 +63,12 @@ export const blogAutomationRepository = {
   },
 
   async updateSettings(input: Row, updatedBy: string) {
-    const allowed = ['enabled', 'daily_automatic_limit', 'weekly_automatic_limit', 'automatic_timing', 'timezone', 'preferred_start_hour', 'preferred_end_hour', 'minimum_spacing_minutes', 'delay_after_discovery_minutes', 'maximum_posts_per_day', 'blackout_weekdays', 'approved_feed_urls', 'require_review_for_urgent'];
+    const allowed = ['enabled', 'daily_automatic_limit', 'weekly_automatic_limit', 'automatic_timing', 'timezone', 'preferred_start_hour', 'preferred_end_hour', 'minimum_spacing_minutes', 'delay_after_discovery_minutes', 'maximum_posts_per_day', 'blackout_weekdays', 'blackout_dates', 'approved_feed_urls', 'require_review_for_urgent', 'required_reviewed_articles_before_autopublish', 'strict_autopilot_enabled', 'emergency_pause', 'pause_all_publication', 'urgent_news_hold', 'fixed_publication_minute', 'maintenance_mode', 'provider_enabled'];
     const row = Object.fromEntries(Object.entries(input).filter(([key]) => allowed.includes(key)));
+    const current = await blogAutomationRepository.getSettings();
+    if (row.strict_autopilot_enabled === true && Number(current.automatic_articles_approved || 0) < Number(row.required_reviewed_articles_before_autopublish || current.required_reviewed_articles_before_autopublish || 30)) {
+      throw new Error('Strict Autopilot remains locked until the required number of automatic articles has been reviewed and approved.');
+    }
     const client = getSupabaseAdminClient();
     if (!client) {
       memorySettings = { ...memorySettings, ...row, updated_by: updatedBy, updated_at: nowIso() };
@@ -85,8 +97,9 @@ export const blogAutomationRepository = {
       custom_headline: input.customHeadline || '',
       batch_id: input.batchId || null,
       requested_by: input.requestedBy || null,
-      provider: input.provider || 'gemini',
-      model: input.model || process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+      provider: input.provider || 'nvidia_nim',
+      model: input.model || process.env.NVIDIA_BLOG_MODEL || 'qwen/qwen3.5-122b-a10b',
+      prompt_version: 'qwen-blog-v3',
       payload: input.payload || {},
       idempotency_key: input.idempotencyKey,
       scheduled_for: input.scheduledFor || null,
@@ -134,7 +147,22 @@ export const blogAutomationRepository = {
     return (data || []).map(toJob);
   },
 
-  async updateJob(id: string, patch: { state?: BlogJobState; articleId?: string | null; result?: Record<string, unknown>; error?: string; completedAt?: string | null; inputTokens?: number | null; outputTokens?: number | null; actualCost?: number | null }) {
+  async retryJob(id: string) {
+    const client = getSupabaseAdminClient();
+    const patch = { state: 'queued', attempt_count: 0, locked_by: null, locked_at: null, lease_expires_at: null, error: '', completed_at: null, scheduled_for: null, updated_at: nowIso() };
+    if (!client) {
+      const existing = memoryJobs.get(id);
+      if (!existing || !['failed', 'ready_for_review'].includes(existing.state)) return null;
+      const stored = { ...existing, ...patch };
+      memoryJobs.set(id, stored);
+      return toJob(stored);
+    }
+    const { data, error } = await client.from('blog_generation_jobs').update(patch).eq('id', id).in('state', ['failed', 'ready_for_review']).select('*').maybeSingle();
+    if (error) throw error;
+    return data ? toJob(data) : null;
+  },
+
+  async updateJob(id: string, patch: { state?: BlogJobState; articleId?: string | null; result?: Record<string, unknown>; error?: string; completedAt?: string | null; inputTokens?: number | null; outputTokens?: number | null; actualCost?: number | null; generationStages?: string[] }) {
     const row: Row = {};
     if (patch.state) row.state = patch.state;
     if ('articleId' in patch) row.article_id = patch.articleId;
@@ -144,6 +172,7 @@ export const blogAutomationRepository = {
     if ('inputTokens' in patch) row.input_tokens = patch.inputTokens;
     if ('outputTokens' in patch) row.output_tokens = patch.outputTokens;
     if ('actualCost' in patch) row.actual_cost = patch.actualCost;
+    if (patch.generationStages) row.generation_stages = patch.generationStages;
     const client = getSupabaseAdminClient();
     if (!client) {
       const existing = memoryJobs.get(id);
@@ -221,8 +250,44 @@ export const blogAutomationRepository = {
     return data || [];
   },
 
+  async recordProviderHealth(input: { status: string; errorCode?: string | null; durationMs?: number | null; actorId?: string | null; testKind?: string }) {
+    const config = getNvidiaBlogConfiguration();
+    const patch = {
+      provider_last_success_at: input.status === 'connected' ? nowIso() : memorySettings.provider_last_success_at,
+      provider_last_error_code: input.errorCode || '',
+      provider_last_duration_ms: input.durationMs ?? null,
+      provider_live_verification_status: input.testKind === 'live' ? input.status : memorySettings.provider_live_verification_status,
+    };
+    const client = getSupabaseAdminClient();
+    if (!client) { memorySettings = { ...memorySettings, ...patch }; return; }
+    const [settingsResult, healthResult] = await Promise.all([
+      client.from('blog_autopilot_settings').update(patch).eq('id', 'default'),
+      client.from('blog_provider_health').insert({ provider: 'nvidia_nim', model: config.model, status: input.status, safe_error_code: input.errorCode || '', duration_ms: input.durationMs ?? null, test_kind: input.testKind || 'admin_test', actor_id: input.actorId || null }),
+    ]);
+    if (settingsResult.error) throw settingsResult.error;
+    if (healthResult.error) throw healthResult.error;
+  },
+
+  async recordAutomaticReview(approved: boolean) {
+    const client = getSupabaseAdminClient();
+    if (!client) {
+      memorySettings.automatic_articles_reviewed = Number(memorySettings.automatic_articles_reviewed || 0) + 1;
+      memorySettings[approved ? 'automatic_articles_approved' : 'automatic_articles_rejected'] = Number(memorySettings[approved ? 'automatic_articles_approved' : 'automatic_articles_rejected'] || 0) + 1;
+      return { ...memorySettings };
+    }
+    const settings = await blogAutomationRepository.getSettings();
+    const patch = {
+      automatic_articles_reviewed: Number(settings.automatic_articles_reviewed || 0) + 1,
+      automatic_articles_approved: Number(settings.automatic_articles_approved || 0) + (approved ? 1 : 0),
+      automatic_articles_rejected: Number(settings.automatic_articles_rejected || 0) + (approved ? 0 : 1),
+    };
+    const { data, error } = await client.from('blog_autopilot_settings').update(patch).eq('id', 'default').select('*').single();
+    if (error) throw error;
+    return data;
+  },
+
   async overview(now = new Date()): Promise<BlogAdminOverview> {
-    const [posts, jobs, discoveries] = await Promise.all([blogRepository.listAdmin(200), blogAutomationRepository.listJobs(200), blogAutomationRepository.listDiscoveries(200)]);
+    const [posts, jobs, discoveries, settings] = await Promise.all([blogRepository.listAdmin(200), blogAutomationRepository.listJobs(200), blogAutomationRepository.listDiscoveries(200), blogAutomationRepository.getSettings()]);
     const counts = countBlogOrigins(posts, jobs, now);
     const topicCounts = posts.reduce((result, post) => {
       const key = (post.topicCluster || post.title).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -249,6 +314,10 @@ export const blogAutomationRepository = {
       rssReady: posts.filter((post) => post.status === 'published' && post.robotsDirective.startsWith('index')).length,
       providerInputTokens: jobs.reduce((total, job) => total + Number(job.inputTokens || 0), 0),
       providerOutputTokens: jobs.reduce((total, job) => total + Number(job.outputTokens || 0), 0),
+      automaticReviewed: Number(settings.automatic_articles_reviewed || 0),
+      automaticApproved: Number(settings.automatic_articles_approved || 0),
+      automaticRejected: Number(settings.automatic_articles_rejected || 0),
+      strictAutopilotUnlocked: Number(settings.automatic_articles_approved || 0) >= Number(settings.required_reviewed_articles_before_autopublish || 30),
     };
   },
 };

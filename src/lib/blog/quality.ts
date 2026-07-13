@@ -1,5 +1,6 @@
 import { blogTextFromHtml } from './sanitize';
 import type { BlogPostInput, BlogQualityCheck, BlogQualityReport, BlogSource } from './types';
+import { resolveBlogLengthRange, type BlogLengthRange } from './length-policy';
 
 const PROHIBITED_PHRASES = [
   "in today's digital landscape",
@@ -83,6 +84,7 @@ export function evaluateBlogQuality(input: BlogPostInput, options: {
   requireImage?: boolean;
   requireSources?: boolean;
   now?: Date;
+  lengthRange?: BlogLengthRange;
 } = {}): BlogQualityReport {
   const contentHtml = String(input.contentHtml || '');
   const text = blogTextFromHtml(contentHtml);
@@ -114,10 +116,12 @@ export function evaluateBlogQuality(input: BlogPostInput, options: {
     return Number(tag.slice(1)) <= previousLevel + 1;
   });
   const bodyH1Count = [...contentHtml.matchAll(/<h1\b/gi)].length;
+  const lengthRange = options.lengthRange || resolveBlogLengthRange({ articleType: input.articleType });
   const normalizedTitle = words(input.title).join(' ');
   const normalizedTagline = words(input.tagline || '').join(' ');
   const checks = [
-    check('minimum-length', 'At least 1,500 useful words', wordCount >= 1500, `${wordCount} words found.`),
+    check('article-length', `${lengthRange.label} length is appropriate`, wordCount >= lengthRange.minimum && wordCount <= lengthRange.maximum, `${wordCount} words found; ${lengthRange.minimum}-${lengthRange.maximum} is the editorial target.`, false),
+    check('useful-substance', 'Article contains enough useful substance', wordCount >= 500, `${wordCount} words found.`),
     check('single-h1', 'The page renderer supplies exactly one H1', bodyH1Count === 0, bodyH1Count ? 'Remove H1 elements from the article body.' : 'No duplicate body H1 found.'),
     check('tagline', 'Tagline adds context', String(input.tagline || '').trim().length >= 25 && normalizedTagline !== normalizedTitle && !normalizedTagline.startsWith(normalizedTitle), 'Use a concise subtitle that does not repeat the title.'),
     check('headings', 'Article has useful H2 structure', headingCount >= 3, `${headingCount} H2 headings found.`),

@@ -1,5 +1,7 @@
 # Deployment Checklist
 
+Apply `supabase/migrations/013_blog_provider_and_editor_completion.sql` after migration 012. Verify its RLS policies, review threshold, section revisions, image variants, and provider-health objects before deploying application code.
+
 ## Pre-Deploy
 
 ```bash
@@ -23,8 +25,8 @@ git diff --check
 
 - Set `VITE_SUPABASE_URL`.
 - Set `VITE_SUPABASE_ANON_KEY`.
-- Do not set `GEMINI_API_KEY` on Vercel; blog provider calls run in the worker.
-- Confirm no `VITE_GEMINI_*` environment variable exists.
+- Do not set `NVIDIA_API_KEY` on Vercel; blog provider calls run in the worker.
+- Confirm no `VITE_NVIDIA_*` environment variable exists.
 - Do not set the Supabase service role key in public `VITE_*` variables.
 - Deploy frontend and lightweight API routes only.
 - Do not run audit workers or multi-page crawlers in Vercel serverless functions.
@@ -39,7 +41,7 @@ git diff --check
 
 - Set `SUPABASE_URL`.
 - Set `SUPABASE_SERVICE_ROLE_KEY`.
-- Optionally set `BLOG_AUTOMATION_ENABLED=true`, `GEMINI_API_KEY`, and `GEMINI_MODEL` on the worker.
+- Keep `NVIDIA_BLOG_ENABLED=false` initially. Set `NVIDIA_API_KEY`, `NVIDIA_API_BASE_URL`, and `NVIDIA_BLOG_MODEL` on the worker, test the provider, then enable it deliberately.
 - Run `npm run worker:audit`.
 - Verify worker logs show the worker started and can claim queued audits.
 

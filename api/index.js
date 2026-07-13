@@ -48013,6 +48013,52 @@ var init_slug = __esm({
   }
 });
 
+// src/lib/blog/length-policy.ts
+function normalizeBlogArticleType(value, fallback = "evergreen_guide") {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[-\s]+/g, "_");
+  if (normalized in BLOG_ARTICLE_LENGTHS) return normalized;
+  return LEGACY_TYPES[String(value || "").trim().toLowerCase()] || fallback;
+}
+function resolveBlogLengthRange(input) {
+  const automatic = BLOG_ARTICLE_LENGTHS[normalizeBlogArticleType(input.articleType)];
+  if (input.mode === "brief") return { minimum: 700, maximum: 1200, label: "Brief" };
+  if (input.mode === "standard") return { minimum: 1200, maximum: 2e3, label: "Standard" };
+  if (input.mode === "detailed") return { minimum: 1800, maximum: 3e3, label: "Detailed" };
+  if (input.mode === "custom") {
+    const minimum = Math.max(500, Math.min(3500, Math.floor(Number(input.customMinimum) || automatic.minimum)));
+    const maximum = Math.max(minimum, Math.min(4e3, Math.floor(Number(input.customMaximum) || automatic.maximum)));
+    return { minimum, maximum, label: "Custom range" };
+  }
+  return automatic;
+}
+var BLOG_ARTICLE_LENGTHS, LEGACY_TYPES;
+var init_length_policy = __esm({
+  "src/lib/blog/length-policy.ts"() {
+    BLOG_ARTICLE_LENGTHS = {
+      urgent_news: { minimum: 700, maximum: 1200, label: "Brief urgent news update" },
+      news_analysis: { minimum: 1200, maximum: 2e3, label: "Detailed news analysis" },
+      glossary: { minimum: 700, maximum: 1200, label: "Focused glossary or explainer" },
+      checklist: { minimum: 1e3, maximum: 1800, label: "Checklist article" },
+      evergreen_guide: { minimum: 1500, maximum: 2500, label: "Standard evergreen SEO guide" },
+      troubleshooting_guide: { minimum: 1500, maximum: 2500, label: "Troubleshooting guide" },
+      technical_guide: { minimum: 2e3, maximum: 3500, label: "Deep technical guide" },
+      comparison: { minimum: 1200, maximum: 2400, label: "Comparison" }
+    };
+    LEGACY_TYPES = {
+      "urgent news": "urgent_news",
+      "news update": "urgent_news",
+      "news analysis": "news_analysis",
+      glossary: "glossary",
+      explainer: "glossary",
+      checklist: "checklist",
+      "evergreen guide": "evergreen_guide",
+      "technical tutorial": "technical_guide",
+      "troubleshooting guide": "troubleshooting_guide",
+      comparison: "comparison"
+    };
+  }
+});
+
 // src/lib/blog/seo.ts
 function cleanText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
@@ -48045,6 +48091,7 @@ function buildBlogSeoFields(input) {
 var init_seo = __esm({
   "src/lib/blog/seo.ts"() {
     init_slug();
+    init_length_policy();
   }
 });
 
@@ -59356,10 +59403,12 @@ function evaluateBlogQuality(input, options = {}) {
     return Number(tag.slice(1)) <= previousLevel + 1;
   });
   const bodyH1Count = [...contentHtml.matchAll(/<h1\b/gi)].length;
+  const lengthRange = options.lengthRange || resolveBlogLengthRange({ articleType: input.articleType });
   const normalizedTitle = words(input.title).join(" ");
   const normalizedTagline = words(input.tagline || "").join(" ");
   const checks = [
-    check("minimum-length", "At least 1,500 useful words", wordCount >= 1500, `${wordCount} words found.`),
+    check("article-length", `${lengthRange.label} length is appropriate`, wordCount >= lengthRange.minimum && wordCount <= lengthRange.maximum, `${wordCount} words found; ${lengthRange.minimum}-${lengthRange.maximum} is the editorial target.`, false),
+    check("useful-substance", "Article contains enough useful substance", wordCount >= 500, `${wordCount} words found.`),
     check("single-h1", "The page renderer supplies exactly one H1", bodyH1Count === 0, bodyH1Count ? "Remove H1 elements from the article body." : "No duplicate body H1 found."),
     check("tagline", "Tagline adds context", String(input.tagline || "").trim().length >= 25 && normalizedTagline !== normalizedTitle && !normalizedTagline.startsWith(normalizedTitle), "Use a concise subtitle that does not repeat the title."),
     check("headings", "Article has useful H2 structure", headingCount >= 3, `${headingCount} H2 headings found.`),
@@ -59391,6 +59440,7 @@ var PROHIBITED_PHRASES;
 var init_quality = __esm({
   "src/lib/blog/quality.ts"() {
     init_sanitize();
+    init_length_policy();
     PROHIBITED_PHRASES = [
       "in today's digital landscape",
       "take your seo to the next level",
@@ -59403,6 +59453,99 @@ var init_quality = __esm({
       "seamlessly",
       "powerful insights"
     ];
+  }
+});
+
+// src/lib/blog/nvidia.ts
+function getNvidiaBlogConfiguration(env = process.env) {
+  const enabled = String(env.NVIDIA_BLOG_ENABLED || "false").toLowerCase() === "true";
+  const model = String(env.NVIDIA_BLOG_MODEL || NVIDIA_DEFAULT_BLOG_MODEL).trim();
+  const rawBaseUrl = String(env.NVIDIA_API_BASE_URL || NVIDIA_DEFAULT_BASE_URL).trim();
+  let baseUrl = NVIDIA_DEFAULT_BASE_URL;
+  try {
+    const parsed = new URL(rawBaseUrl);
+    if (parsed.protocol !== "https:") throw new Error("HTTPS is required");
+    parsed.username = "";
+    parsed.password = "";
+    parsed.search = "";
+    parsed.hash = "";
+    baseUrl = parsed.toString().replace(/\/$/, "");
+  } catch {
+    throw new NvidiaBlogProviderError("NVIDIA_NOT_CONFIGURED", "NVIDIA API base URL is invalid.");
+  }
+  return {
+    provider: "nvidia_nim",
+    enabled,
+    configured: enabled && Boolean(env.NVIDIA_API_KEY),
+    apiKey: String(env.NVIDIA_API_KEY || ""),
+    baseUrl,
+    baseUrlHost: new URL(baseUrl).host,
+    model: /^[a-z0-9._/-]+$/i.test(model) ? model : NVIDIA_DEFAULT_BLOG_MODEL
+  };
+}
+var NVIDIA_DEFAULT_BASE_URL, NVIDIA_DEFAULT_BLOG_MODEL, MAX_PROVIDER_OUTPUT_BYTES, NvidiaBlogProviderError;
+var init_nvidia = __esm({
+  "src/lib/blog/nvidia.ts"() {
+    init_seo();
+    init_sanitize();
+    init_slug();
+    init_quality();
+    init_length_policy();
+    NVIDIA_DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
+    NVIDIA_DEFAULT_BLOG_MODEL = "qwen/qwen3.5-122b-a10b";
+    MAX_PROVIDER_OUTPUT_BYTES = 2 * 1024 * 1024;
+    NvidiaBlogProviderError = class extends Error {
+      constructor(code, message, options = {}) {
+        super(message);
+        this.name = "NvidiaBlogProviderError";
+        this.code = code;
+        this.retryable = Boolean(options.retryable);
+        this.status = options.status ?? null;
+      }
+    };
+  }
+});
+
+// src/lib/blog/section-regeneration.ts
+function headingBlocks(html) {
+  const matches = [...html.matchAll(/<h([23])\b[^>]*>([\s\S]*?)<\/h\1>/gi)];
+  return matches.map((match, index) => ({
+    level: Number(match[1]),
+    heading: String(match[2] || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(),
+    start: match.index || 0,
+    end: index + 1 < matches.length ? matches[index + 1].index || html.length : html.length
+  }));
+}
+function selectBlogSection(post2, sectionKey) {
+  if (sectionKey === "tagline" || sectionKey === "summary" || sectionKey === "meta_description") {
+    const field = sectionKey === "meta_description" ? "metaDescription" : sectionKey;
+    return { key: sectionKey, label: sectionKey.replaceAll("_", " "), beforeHtml: String(post2[field] || ""), start: 0, end: 0, adjacentHeadings: [], field };
+  }
+  const html = post2.contentHtml;
+  const blocks = headingBlocks(html);
+  if (sectionKey === "introduction") {
+    const end = blocks[0]?.start ?? html.length;
+    return { key: sectionKey, label: "Introduction", beforeHtml: html.slice(0, end), start: 0, end, adjacentHeadings: blocks.slice(0, 2).map((item) => item.heading) };
+  }
+  if (sectionKey === "conclusion") {
+    const preferred = [...blocks].reverse().find((item) => /conclusion|next steps|final/i.test(item.heading)) || blocks.at(-1);
+    if (!preferred) throw new Error("The article has no selectable conclusion section.");
+    return { key: sectionKey, label: preferred.heading, beforeHtml: html.slice(preferred.start, preferred.end), start: preferred.start, end: preferred.end, adjacentHeadings: blocks.slice(-2).map((item) => item.heading) };
+  }
+  const match = /^heading:(\d+)$/.exec(sectionKey);
+  const index = match ? Number(match[1]) : -1;
+  const selected = blocks[index];
+  if (!selected) throw new Error("The selected article section no longer exists. Refresh and try again.");
+  return { key: sectionKey, label: selected.heading, beforeHtml: html.slice(selected.start, selected.end), start: selected.start, end: selected.end, adjacentHeadings: blocks.slice(Math.max(0, index - 1), index + 2).map((item) => item.heading) };
+}
+function replaceSelectedBlogSection(post2, selection, afterHtml) {
+  if (selection.field) return { contentHtml: post2.contentHtml, [selection.field]: afterHtml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() };
+  return { contentHtml: `${post2.contentHtml.slice(0, selection.start)}${sanitizeBlogHtml(afterHtml)}${post2.contentHtml.slice(selection.end)}` };
+}
+var init_section_regeneration = __esm({
+  "src/lib/blog/section-regeneration.ts"() {
+    init_nvidia();
+    init_sanitize();
   }
 });
 
@@ -59429,6 +59572,7 @@ function toPost(row) {
     ogDescription: String(row.og_description ?? row.ogDescription ?? row.meta_description ?? row.excerpt ?? ""),
     ogImageAlt: String(row.og_image_alt ?? row.ogImageAlt ?? ""),
     ogImageAttribution: String(row.og_image_attribution ?? row.ogImageAttribution ?? ""),
+    imageVariants: Array.isArray(row.responsive_images ?? row.imageVariants) ? row.responsive_images ?? row.imageVariants : [],
     status: String(row.status || "draft"),
     origin: row.origin || "admin_manual",
     articleType: String(row.article_type ?? row.articleType ?? "evergreen guide"),
@@ -59441,6 +59585,10 @@ function toPost(row) {
     discoveredAt: row.discovered_at ?? row.discoveredAt ?? null,
     continuingDevelopment: Boolean(row.continuing_development ?? row.continuingDevelopment),
     scheduledAt: row.scheduled_at ?? row.scheduledAt ?? null,
+    recommendedPublicationAt: row.recommended_publication_at ?? row.recommendedPublicationAt ?? null,
+    publicationRule: String(row.publication_rule ?? row.publicationRule ?? ""),
+    publicationUrgency: String(row.publication_urgency ?? row.publicationUrgency ?? "normal"),
+    scheduleVersion: Number(row.schedule_version ?? row.scheduleVersion ?? 0),
     publicationReason: String(row.publication_reason ?? row.publicationReason ?? ""),
     qualityStatus: row.quality_status ?? row.qualityStatus ?? "pending",
     qualityResults: row.quality_results ?? row.qualityResults ?? null,
@@ -59467,13 +59615,15 @@ function isPublic(row) {
 function publicMemoryRows() {
   return [...memoryPosts.values()].filter(isPublic).sort((a, b) => String(b.published_at).localeCompare(String(a.published_at)));
 }
-var memoryPosts, blogRepository;
+var memoryPosts, memorySectionRevisions, blogRepository;
 var init_repository = __esm({
   "src/lib/blog/repository.ts"() {
     init_server();
     init_seo();
     init_quality();
+    init_section_regeneration();
     memoryPosts = /* @__PURE__ */ new Map();
+    memorySectionRevisions = /* @__PURE__ */ new Map();
     blogRepository = {
       async listPublished({ query = "", limit = 12, offset = 0 } = {}) {
         const safeLimit = Math.max(1, Math.min(30, Number(limit) || 12));
@@ -59562,6 +59712,57 @@ var init_repository = __esm({
         if (error) throw error;
         return data ? toPost(data) : null;
       },
+      async createSectionRevision(input) {
+        const row = { article_id: input.articleId, generation_job_id: input.generationJobId || null, actor_id: input.actorId || null, section_key: input.sectionKey, action: input.action, before_html: input.beforeHtml, after_html: input.afterHtml, source_snapshot: input.sourceSnapshot, validation_results: input.validationResults, status: "pending" };
+        const client = getSupabaseAdminClient();
+        if (!client) {
+          const existing = [...memorySectionRevisions.values()].find((item) => item.article_id === input.articleId && item.section_key === input.sectionKey && item.status === "pending");
+          if (existing) return existing;
+          const stored = { ...row, id: randomUUID3(), created_at: (/* @__PURE__ */ new Date()).toISOString(), decided_at: null };
+          memorySectionRevisions.set(stored.id, stored);
+          return stored;
+        }
+        const { data, error } = await client.from("blog_section_revisions").insert(row).select("*").single();
+        if (error?.code === "23505") {
+          const { data: existing, error: readError } = await client.from("blog_section_revisions").select("*").eq("article_id", input.articleId).eq("section_key", input.sectionKey).eq("status", "pending").single();
+          if (readError) throw readError;
+          return existing;
+        }
+        if (error) throw error;
+        return data;
+      },
+      async listSectionRevisions(articleId) {
+        const client = getSupabaseAdminClient();
+        const rows = client ? await client.from("blog_section_revisions").select("*").eq("article_id", articleId).order("created_at", { ascending: false }).limit(30) : { data: [...memorySectionRevisions.values()].filter((item) => item.article_id === articleId).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))), error: null };
+        if (rows.error) throw rows.error;
+        return (rows.data || []).map((row) => ({ id: String(row.id), articleId: String(row.article_id), sectionKey: String(row.section_key), action: String(row.action), beforeHtml: String(row.before_html), afterHtml: String(row.after_html), status: row.status, createdAt: String(row.created_at) }));
+      },
+      async decideSectionRevision(id, decision, actorId) {
+        const client = getSupabaseAdminClient();
+        const read = client ? await client.from("blog_section_revisions").select("*").eq("id", id).eq("status", "pending").maybeSingle() : { data: memorySectionRevisions.get(id) || null, error: null };
+        if (read.error) throw read.error;
+        const revision = read.data;
+        if (!revision) return null;
+        const post2 = await blogRepository.getAdminById(revision.article_id);
+        if (!post2) return null;
+        if (decision === "accepted") {
+          const selection = selectBlogSection(post2, revision.section_key);
+          if (selection.beforeHtml !== revision.before_html) throw new Error("The article changed after this revision was created. Regenerate the section against the current draft.");
+          const replacement = replaceSelectedBlogSection(post2, selection, revision.after_html);
+          const row = "tagline" in replacement ? { tagline: replacement.tagline } : "summary" in replacement ? { summary: replacement.summary } : "metaDescription" in replacement ? { meta_description: replacement.metaDescription } : { content_html: replacement.contentHtml };
+          const updated = await blogRepository.update(post2.id, { ...row, updated_by: actorId });
+          if (!updated) return null;
+          await blogRepository.syncEditorialRecords(updated, actorId, post2.status);
+        }
+        const decidedAt = (/* @__PURE__ */ new Date()).toISOString();
+        if (!client) {
+          memorySectionRevisions.set(id, { ...revision, status: decision, decided_at: decidedAt });
+        } else {
+          const { error } = await client.from("blog_section_revisions").update({ status: decision, decided_at: decidedAt }).eq("id", id).eq("status", "pending");
+          if (error) throw error;
+        }
+        return { ...revision, status: decision, decided_at: decidedAt };
+      },
       async sitemapRows() {
         const client = getSupabaseAdminClient();
         if (!client) return publicMemoryRows().filter((row) => String(row.robots_directive || "index").startsWith("index")).map((row) => ({ slug: String(row.slug), updatedAt: String(row.updated_at), imageUrl: String(row.og_image_url || "") }));
@@ -59627,17 +59828,26 @@ var init_repository = __esm({
       async publishDueScheduled(limit = 10) {
         const client = getSupabaseAdminClient();
         if (!client) return [];
+        const { data: settings, error: settingsError } = await client.from("blog_autopilot_settings").select("strict_autopilot_enabled,required_reviewed_articles_before_autopublish,automatic_articles_approved,emergency_pause,pause_all_publication,maintenance_mode").eq("id", "default").single();
+        if (settingsError) throw settingsError;
+        if (settings.pause_all_publication || settings.maintenance_mode) return [];
         const { data, error } = await client.from("blog_posts").select("id,scheduled_at,origin,freshness_status,source_published_at,source_updated_at,quality_status").eq("status", "scheduled").in("quality_status", ["passed", "needs_review"]).eq("originality_status", "passed").eq("source_status", "passed").eq("prerender_status", "passed").in("image_status", ["passed", "not_required"]).lte("scheduled_at", (/* @__PURE__ */ new Date()).toISOString()).order("scheduled_at", { ascending: true }).limit(Math.max(1, Math.min(20, limit)));
         if (error) throw error;
         const published = [];
         for (const row of data || []) {
+          const automatic = row.origin === "autopilot" || row.origin === "trend_autopilot";
+          const automaticUnlocked = settings.strict_autopilot_enabled === true && settings.emergency_pause !== true && Number(settings.automatic_articles_approved || 0) >= Number(settings.required_reviewed_articles_before_autopublish || 30);
+          if (automatic && !automaticUnlocked) {
+            const { error: reviewError } = await client.from("blog_posts").update({ status: "needs_review", robots_directive: "noindex,nofollow", publication_reason: "Review-first rollout prevents automatic publication." }).eq("id", row.id).eq("status", "scheduled");
+            if (reviewError) throw reviewError;
+            continue;
+          }
           const timestamp = (/* @__PURE__ */ new Date()).toISOString();
-          const sourceTime = Math.max(new Date(row.source_updated_at || 0).getTime(), new Date(row.source_published_at || 0).getTime());
-          const staleAutomaticStory = row.origin === "trend_autopilot" && (!Number.isFinite(sourceTime) || Date.now() - sourceTime > 48 * 60 * 60 * 1e3);
+          const staleAutomaticStory = row.origin === "trend_autopilot" && row.freshness_status === "expired";
           if (staleAutomaticStory) {
-            const { error: holdError } = await client.from("blog_posts").update({ status: "needs_review", robots_directive: "noindex,nofollow", publication_reason: "Automatic publication held because the verified 48-hour freshness window expired." }).eq("id", row.id).eq("status", "scheduled");
+            const { error: holdError } = await client.from("blog_posts").update({ status: "needs_review", robots_directive: "noindex,nofollow", publication_reason: "Automatic publication held because editorial freshness is marked expired." }).eq("id", row.id).eq("status", "scheduled");
             if (holdError) throw holdError;
-            const { error: holdEventError } = await client.from("blog_publication_events").insert({ article_id: row.id, event_type: "freshness_hold", previous_state: "scheduled", new_state: "needs_review", scheduled_for: row.scheduled_at, reason: "Verified source freshness expired before publication." });
+            const { error: holdEventError } = await client.from("blog_publication_events").insert({ article_id: row.id, event_type: "freshness_hold", previous_state: "scheduled", new_state: "needs_review", scheduled_for: row.scheduled_at, reason: "Editorial freshness is explicitly marked expired." });
             if (holdEventError) throw holdEventError;
             continue;
           }
@@ -59662,6 +59872,8 @@ var init_repository = __esm({
           outdated_information: [],
           proposed_original_angle: brief.proposedOriginalAngle,
           traffic_label: brief.trafficLabel,
+          traffic_data_source: "",
+          traffic_observed_at: null,
           similarity_risk: "needs_review",
           plagiarism_status: "pending"
         }));
@@ -59791,6 +60003,21 @@ function normalizeRelatedArticles(value) {
     reason: cleanField(article?.reason, 240)
   })).filter((article) => article.postId && article.slug && article.title);
 }
+function normalizeImageVariants(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 24).map((variant) => ({
+    id: cleanField(variant?.id, 80) || void 0,
+    imageId: cleanField(variant?.image_id || variant?.imageId, 80) || void 0,
+    width: Math.max(1, Math.floor(Number(variant?.width) || 0)),
+    height: Math.max(1, Math.floor(Number(variant?.height) || 0)),
+    format: ["webp", "avif", "jpeg", "png"].includes(variant?.format) ? variant.format : "webp",
+    mimeType: cleanField(variant?.mime_type || variant?.mimeType, 80),
+    fileSize: Math.max(0, Math.floor(Number(variant?.file_size ?? variant?.fileSize) || 0)),
+    storagePath: cleanField(variant?.storage_path || variant?.storagePath, 500),
+    storageUrl: optionalHttpUrl(variant?.storage_url || variant?.storageUrl, "Responsive image URL"),
+    status: ["ready", "failed", "deleted"].includes(variant?.processing_status || variant?.status) ? variant.processing_status || variant.status : "ready"
+  })).filter((variant) => variant.width && variant.height && variant.storageUrl && variant.mimeType.startsWith("image/"));
+}
 function prepareBlogPost(input, options = {}) {
   const title = String(input.title || "").replace(/\s+/g, " ").trim().slice(0, 140);
   if (title.length < 3) throw new BlogValidationError("Title must be at least 3 characters.");
@@ -59811,7 +60038,7 @@ function prepareBlogPost(input, options = {}) {
   const articleType = cleanField(input.articleType || "evergreen guide", 80);
   const topicCluster = cleanField(input.topicCluster, 120);
   const origin = input.origin || "admin_manual";
-  const qualityReport = evaluateBlogQuality({ ...input, title, tagline, excerpt, contentHtml, sources, relatedArticles }, { requireSources: publishing });
+  const qualityReport = evaluateBlogQuality({ ...input, title, tagline, excerpt, contentHtml, sources, relatedArticles, articleType }, { requireSources: publishing });
   const originalityStatus = input.originalityStatus || "pending";
   const sourceStatus = input.sourceStatus || (sources.length > 0 && sources.every((source) => source.citationStatus === "verified") ? "passed" : "pending");
   const prerenderStatus = input.prerenderStatus || "pending";
@@ -59853,6 +60080,7 @@ function prepareBlogPost(input, options = {}) {
     og_description: cleanField(input.ogDescription || metaDescription, 240),
     og_image_alt: cleanField(input.ogImageAlt, 240),
     og_image_attribution: cleanField(input.ogImageAttribution, 300),
+    responsive_images: normalizeImageVariants(input.imageVariants),
     status,
     origin,
     article_type: articleType,
@@ -59865,6 +60093,10 @@ function prepareBlogPost(input, options = {}) {
     discovered_at: optionalDate(input.discoveredAt, "Discovery date"),
     continuing_development: Boolean(input.continuingDevelopment),
     scheduled_at: scheduledAt,
+    recommended_publication_at: optionalDate(input.recommendedPublicationAt, "Recommended publication date"),
+    publication_rule: cleanField(input.publicationRule, 120),
+    publication_urgency: cleanField(input.publicationUrgency || "normal", 40),
+    schedule_version: Math.max(0, Math.floor(Number(input.scheduleVersion) || 0)),
     publication_reason: cleanField(input.publicationReason, 500),
     quality_status: qualityReport.status,
     quality_results: qualityReport,
@@ -60001,6 +60233,11 @@ function renderBlogArticleHtml(post2, origin) {
   };
   const sources = post2.sources.length ? `<section class="references" aria-labelledby="sources-title"><h2 id="sources-title">Sources and references</h2><ul>${post2.sources.map((source) => `<li><a href="${escapeHtml(source.url)}" rel="noopener noreferrer">${escapeHtml(source.title)}</a><span>${escapeHtml(source.publisher)}</span></li>`).join("")}</ul></section>` : "";
   const related = post2.relatedArticles.length ? `<section class="related" aria-labelledby="related-title"><h2 id="related-title">Related articles</h2><ul>${post2.relatedArticles.map((article) => `<li><a href="/blog/${encodeURIComponent(article.slug)}">${escapeHtml(article.title)}</a>${article.reason ? `<p>${escapeHtml(article.reason)}</p>` : ""}</li>`).join("")}</ul></section>` : "";
+  const readyVariants = post2.imageVariants.filter((variant) => variant.status === "ready");
+  const webpSrcset = readyVariants.filter((variant) => variant.format === "webp").sort((left, right) => left.width - right.width).map((variant) => `${variant.storageUrl} ${variant.width}w`).join(", ");
+  const avifSrcset = readyVariants.filter((variant) => variant.format === "avif").sort((left, right) => left.width - right.width).map((variant) => `${variant.storageUrl} ${variant.width}w`).join(", ");
+  const dimensions2 = readyVariants[0];
+  const heroImage = post2.ogImageUrl ? `<figure><picture>${avifSrcset ? `<source type="image/avif" srcset="${escapeHtml(avifSrcset)}" sizes="(max-width: 820px) 100vw, 820px">` : ""}${webpSrcset ? `<source type="image/webp" srcset="${escapeHtml(webpSrcset)}" sizes="(max-width: 820px) 100vw, 820px">` : ""}<img class="hero-image" src="${escapeHtml(post2.ogImageUrl)}" alt="${escapeHtml(post2.ogImageAlt || post2.title)}" sizes="(max-width: 820px) 100vw, 820px"${dimensions2 ? ` width="${dimensions2.width}" height="${dimensions2.height}"` : ""} loading="eager" decoding="async"></picture>${post2.ogImageAttribution ? `<figcaption>${escapeHtml(post2.ogImageAttribution)}</figcaption>` : ""}</figure>` : "";
   return `<!doctype html>
 <html lang="${escapeHtml(post2.language || "en")}">
 <head>
@@ -60013,7 +60250,7 @@ ${post2.ogImageUrl ? `<meta property="og:image" content="${escapeHtml(post2.ogIm
 <script type="application/ld+json">${safeJson(articleSchema)}</script><script type="application/ld+json">${safeJson(breadcrumbSchema)}</script>
 <style>:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;background:#f7f9fc;color:#12203d;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.72}a{color:#185bd8;text-underline-offset:3px}header{border-bottom:1px solid #dce4f0;background:#fff}.nav{max-width:1120px;margin:auto;padding:18px 24px;display:flex;justify-content:space-between;align-items:center}.brand{font-weight:700;text-decoration:none;color:#102149}.nav a:last-child{font-size:14px}main{max-width:820px;margin:auto;padding:56px 24px 80px}.meta{font-size:14px;color:#5b6b86}.tagline{font-size:20px;line-height:1.5;color:#455571}.hero-image{width:100%;height:auto;margin:28px 0;border-radius:10px}h1{font-size:clamp(2.2rem,6vw,4rem);line-height:1.08;letter-spacing:0;margin:14px 0 18px}h2{font-size:1.65rem;line-height:1.25;margin:48px 0 14px}h3{font-size:1.25rem;line-height:1.35;margin:32px 0 10px}p,li{font-size:17px}pre{overflow:auto;padding:18px;border:1px solid #dce4f0;border-radius:8px;background:#eef3fa}.references,.related{margin-top:52px;padding-top:28px;border-top:1px solid #dce4f0}.references li,.related li{margin:10px 0}.references span{display:block;font-size:13px;color:#6b7890}@media(max-width:640px){main{padding-top:36px}h1{font-size:2.35rem}.nav{padding:14px 18px}p,li{font-size:16px}}</style>
 </head>
-<body><header><nav class="nav" aria-label="Primary"><a class="brand" href="/">SEOIntel</a><a href="/blog">All articles</a></nav></header><main><article><p class="meta">${escapeHtml(post2.topicCluster || "SEO guidance")} \xB7 ${post2.readingTimeMinutes} min read${post2.publishedAt ? ` \xB7 <time datetime="${escapeHtml(post2.publishedAt)}">${escapeHtml(new Date(post2.publishedAt).toLocaleDateString("en", { dateStyle: "long" }))}</time>` : ""}</p><h1>${escapeHtml(post2.title)}</h1>${post2.tagline ? `<p class="tagline">${escapeHtml(post2.tagline)}</p>` : ""}${post2.ogImageUrl ? `<figure><img class="hero-image" src="${escapeHtml(post2.ogImageUrl)}" alt="${escapeHtml(post2.ogImageAlt || post2.title)}" sizes="(max-width: 820px) 100vw, 820px" loading="eager" decoding="async">${post2.ogImageAttribution ? `<figcaption>${escapeHtml(post2.ogImageAttribution)}</figcaption>` : ""}</figure>` : ""}<div class="article-body">${post2.contentHtml}</div>${sources}${related}</article></main></body></html>`;
+<body><header><nav class="nav" aria-label="Primary"><a class="brand" href="/">SEOIntel</a><a href="/blog">All articles</a></nav></header><main><article><p class="meta">${escapeHtml(post2.topicCluster || "SEO guidance")} \xB7 ${post2.readingTimeMinutes} min read${post2.publishedAt ? ` \xB7 <time datetime="${escapeHtml(post2.publishedAt)}">${escapeHtml(new Date(post2.publishedAt).toLocaleDateString("en", { dateStyle: "long" }))}</time>` : ""}</p><h1>${escapeHtml(post2.title)}</h1>${post2.tagline ? `<p class="tagline">${escapeHtml(post2.tagline)}</p>` : ""}${heroImage}<div class="article-body">${post2.contentHtml}</div>${sources}${related}</article></main></body></html>`;
 }
 var init_render = __esm({
   "src/lib/blog/render.ts"() {
@@ -60056,6 +60293,7 @@ var init_automation_repository = __esm({
     init_server();
     init_automation();
     init_repository();
+    init_nvidia();
     memoryJobs = /* @__PURE__ */ new Map();
     memoryBatches = /* @__PURE__ */ new Map();
     memoryDiscoveries = /* @__PURE__ */ new Map();
@@ -60073,7 +60311,23 @@ var init_automation_repository = __esm({
       maximum_posts_per_day: 2,
       blackout_weekdays: [],
       approved_feed_urls: [],
-      require_review_for_urgent: true
+      require_review_for_urgent: true,
+      blackout_dates: [],
+      required_reviewed_articles_before_autopublish: 30,
+      automatic_articles_reviewed: 0,
+      automatic_articles_approved: 0,
+      automatic_articles_rejected: 0,
+      strict_autopilot_enabled: false,
+      emergency_pause: false,
+      pause_all_publication: false,
+      urgent_news_hold: true,
+      fixed_publication_minute: null,
+      maintenance_mode: false,
+      provider_last_success_at: null,
+      provider_last_error_code: "",
+      provider_last_duration_ms: null,
+      provider_live_verification_status: "not_run",
+      provider_enabled: false
     };
     blogAutomationRepository = {
       async getSettings() {
@@ -60084,8 +60338,12 @@ var init_automation_repository = __esm({
         return data;
       },
       async updateSettings(input, updatedBy) {
-        const allowed = ["enabled", "daily_automatic_limit", "weekly_automatic_limit", "automatic_timing", "timezone", "preferred_start_hour", "preferred_end_hour", "minimum_spacing_minutes", "delay_after_discovery_minutes", "maximum_posts_per_day", "blackout_weekdays", "approved_feed_urls", "require_review_for_urgent"];
+        const allowed = ["enabled", "daily_automatic_limit", "weekly_automatic_limit", "automatic_timing", "timezone", "preferred_start_hour", "preferred_end_hour", "minimum_spacing_minutes", "delay_after_discovery_minutes", "maximum_posts_per_day", "blackout_weekdays", "blackout_dates", "approved_feed_urls", "require_review_for_urgent", "required_reviewed_articles_before_autopublish", "strict_autopilot_enabled", "emergency_pause", "pause_all_publication", "urgent_news_hold", "fixed_publication_minute", "maintenance_mode", "provider_enabled"];
         const row = Object.fromEntries(Object.entries(input).filter(([key]) => allowed.includes(key)));
+        const current = await blogAutomationRepository.getSettings();
+        if (row.strict_autopilot_enabled === true && Number(current.automatic_articles_approved || 0) < Number(row.required_reviewed_articles_before_autopublish || current.required_reviewed_articles_before_autopublish || 30)) {
+          throw new Error("Strict Autopilot remains locked until the required number of automatic articles has been reviewed and approved.");
+        }
         const client = getSupabaseAdminClient();
         if (!client) {
           memorySettings = { ...memorySettings, ...row, updated_by: updatedBy, updated_at: nowIso2() };
@@ -60103,8 +60361,9 @@ var init_automation_repository = __esm({
           custom_headline: input.customHeadline || "",
           batch_id: input.batchId || null,
           requested_by: input.requestedBy || null,
-          provider: input.provider || "gemini",
-          model: input.model || process.env.GEMINI_MODEL || "gemini-2.5-flash",
+          provider: input.provider || "nvidia_nim",
+          model: input.model || process.env.NVIDIA_BLOG_MODEL || "qwen/qwen3.5-122b-a10b",
+          prompt_version: "qwen-blog-v3",
           payload: input.payload || {},
           idempotency_key: input.idempotencyKey,
           scheduled_for: input.scheduledFor || null
@@ -60149,6 +60408,20 @@ var init_automation_repository = __esm({
         if (error) throw error;
         return (data || []).map(toJob);
       },
+      async retryJob(id) {
+        const client = getSupabaseAdminClient();
+        const patch = { state: "queued", attempt_count: 0, locked_by: null, locked_at: null, lease_expires_at: null, error: "", completed_at: null, scheduled_for: null, updated_at: nowIso2() };
+        if (!client) {
+          const existing = memoryJobs.get(id);
+          if (!existing || !["failed", "ready_for_review"].includes(existing.state)) return null;
+          const stored = { ...existing, ...patch };
+          memoryJobs.set(id, stored);
+          return toJob(stored);
+        }
+        const { data, error } = await client.from("blog_generation_jobs").update(patch).eq("id", id).in("state", ["failed", "ready_for_review"]).select("*").maybeSingle();
+        if (error) throw error;
+        return data ? toJob(data) : null;
+      },
       async updateJob(id, patch) {
         const row = {};
         if (patch.state) row.state = patch.state;
@@ -60159,6 +60432,7 @@ var init_automation_repository = __esm({
         if ("inputTokens" in patch) row.input_tokens = patch.inputTokens;
         if ("outputTokens" in patch) row.output_tokens = patch.outputTokens;
         if ("actualCost" in patch) row.actual_cost = patch.actualCost;
+        if (patch.generationStages) row.generation_stages = patch.generationStages;
         const client = getSupabaseAdminClient();
         if (!client) {
           const existing = memoryJobs.get(id);
@@ -60232,8 +60506,45 @@ var init_automation_repository = __esm({
         if (error) throw error;
         return data || [];
       },
+      async recordProviderHealth(input) {
+        const config = getNvidiaBlogConfiguration();
+        const patch = {
+          provider_last_success_at: input.status === "connected" ? nowIso2() : memorySettings.provider_last_success_at,
+          provider_last_error_code: input.errorCode || "",
+          provider_last_duration_ms: input.durationMs ?? null,
+          provider_live_verification_status: input.testKind === "live" ? input.status : memorySettings.provider_live_verification_status
+        };
+        const client = getSupabaseAdminClient();
+        if (!client) {
+          memorySettings = { ...memorySettings, ...patch };
+          return;
+        }
+        const [settingsResult, healthResult] = await Promise.all([
+          client.from("blog_autopilot_settings").update(patch).eq("id", "default"),
+          client.from("blog_provider_health").insert({ provider: "nvidia_nim", model: config.model, status: input.status, safe_error_code: input.errorCode || "", duration_ms: input.durationMs ?? null, test_kind: input.testKind || "admin_test", actor_id: input.actorId || null })
+        ]);
+        if (settingsResult.error) throw settingsResult.error;
+        if (healthResult.error) throw healthResult.error;
+      },
+      async recordAutomaticReview(approved) {
+        const client = getSupabaseAdminClient();
+        if (!client) {
+          memorySettings.automatic_articles_reviewed = Number(memorySettings.automatic_articles_reviewed || 0) + 1;
+          memorySettings[approved ? "automatic_articles_approved" : "automatic_articles_rejected"] = Number(memorySettings[approved ? "automatic_articles_approved" : "automatic_articles_rejected"] || 0) + 1;
+          return { ...memorySettings };
+        }
+        const settings = await blogAutomationRepository.getSettings();
+        const patch = {
+          automatic_articles_reviewed: Number(settings.automatic_articles_reviewed || 0) + 1,
+          automatic_articles_approved: Number(settings.automatic_articles_approved || 0) + (approved ? 1 : 0),
+          automatic_articles_rejected: Number(settings.automatic_articles_rejected || 0) + (approved ? 0 : 1)
+        };
+        const { data, error } = await client.from("blog_autopilot_settings").update(patch).eq("id", "default").select("*").single();
+        if (error) throw error;
+        return data;
+      },
       async overview(now = /* @__PURE__ */ new Date()) {
-        const [posts, jobs2, discoveries] = await Promise.all([blogRepository.listAdmin(200), blogAutomationRepository.listJobs(200), blogAutomationRepository.listDiscoveries(200)]);
+        const [posts, jobs2, discoveries, settings] = await Promise.all([blogRepository.listAdmin(200), blogAutomationRepository.listJobs(200), blogAutomationRepository.listDiscoveries(200), blogAutomationRepository.getSettings()]);
         const counts = countBlogOrigins(posts, jobs2, now);
         const topicCounts = posts.reduce((result, post2) => {
           const key = (post2.topicCluster || post2.title).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -60259,7 +60570,11 @@ var init_automation_repository = __esm({
           sitemapReady: posts.filter((post2) => post2.status === "published" && post2.robotsDirective.startsWith("index")).length,
           rssReady: posts.filter((post2) => post2.status === "published" && post2.robotsDirective.startsWith("index")).length,
           providerInputTokens: jobs2.reduce((total, job) => total + Number(job.inputTokens || 0), 0),
-          providerOutputTokens: jobs2.reduce((total, job) => total + Number(job.outputTokens || 0), 0)
+          providerOutputTokens: jobs2.reduce((total, job) => total + Number(job.outputTokens || 0), 0),
+          automaticReviewed: Number(settings.automatic_articles_reviewed || 0),
+          automaticApproved: Number(settings.automatic_articles_approved || 0),
+          automaticRejected: Number(settings.automatic_articles_rejected || 0),
+          strictAutopilotUnlocked: Number(settings.automatic_articles_approved || 0) >= Number(settings.required_reviewed_articles_before_autopublish || 30)
         };
       }
     };
@@ -60539,6 +60854,7 @@ var init_safe_public_fetch = __esm({
 
 // src/lib/blog/images.ts
 import { createHash as createHash3, randomUUID as randomUUID5 } from "node:crypto";
+import sharp from "sharp";
 function clean(value, maximum) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, maximum);
 }
@@ -60587,6 +60903,24 @@ function validateBlogImageBuffer(buffer, contentTypeValue) {
   if (measured.width != null && measured.height != null && (measured.width < 320 || measured.height < 180)) throw new Error("Image is too small for an article image. Use at least 320 by 180 pixels.");
   return { contentType, ...measured, fileSize: buffer.length };
 }
+async function generateResponsiveImageVariants(buffer, contentType) {
+  const image = sharp(buffer, { animated: false, failOn: "warning", limitInputPixels: MAX_INPUT_PIXELS });
+  const metadata = await image.metadata();
+  if (!metadata.width || !metadata.height) throw new Error("Image dimensions could not be verified.");
+  if (metadata.width * metadata.height > MAX_INPUT_PIXELS) throw new Error("Image dimensions exceed the safe processing limit.");
+  const widths = RESPONSIVE_WIDTHS.filter((width) => width <= metadata.width);
+  const uniqueWidths = [...new Set(widths)].sort((left, right) => left - right);
+  const variants = [];
+  for (const width of uniqueWidths) {
+    const height = Math.max(1, Math.round(metadata.height * (width / metadata.width)));
+    const resized = sharp(buffer, { animated: false, failOn: "warning", limitInputPixels: MAX_INPUT_PIXELS }).rotate().resize({ width, height, fit: "inside", withoutEnlargement: true });
+    const webp = await resized.clone().webp({ quality: 82, effort: 4 }).toBuffer();
+    variants.push({ width, height, format: "webp", mimeType: "image/webp", buffer: webp, fileSize: webp.length });
+    const avif = await resized.clone().avif({ quality: 50, effort: 4 }).toBuffer();
+    variants.push({ width, height, format: "avif", mimeType: "image/avif", buffer: avif, fileSize: avif.length });
+  }
+  return { width: metadata.width, height: metadata.height, sourceContentType: contentType, variants };
+}
 async function importBlogImage(input) {
   const publisher = clean(input.publisher, 160);
   const licence = clean(input.licence, 120);
@@ -60613,10 +60947,11 @@ async function importBlogImage(input) {
   const client = getSupabaseAdminClient();
   const extension = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif", "image/avif": "avif" }[contentType];
   const digest = createHash3("sha256").update(buffer).digest("hex").slice(0, 20);
-  const storagePath = `${(/* @__PURE__ */ new Date()).getUTCFullYear()}/${digest}-${randomUUID5().slice(0, 8)}.${extension}`;
+  const storagePath = `${(/* @__PURE__ */ new Date()).getUTCFullYear()}/${digest}/original.${extension}`;
+  const generated = await generateResponsiveImageVariants(buffer, contentType);
   let storageUrl = response.finalUrl;
   if (client) {
-    const { error: uploadError } = await client.storage.from("blog-images").upload(storagePath, buffer, { contentType, cacheControl: "31536000", upsert: false });
+    const { error: uploadError } = await client.storage.from("blog-images").upload(storagePath, buffer, { contentType, cacheControl: "31536000", upsert: true });
     if (uploadError) throw uploadError;
     storageUrl = client.storage.from("blog-images").getPublicUrl(storagePath).data.publicUrl;
   }
@@ -60639,18 +60974,86 @@ async function importBlogImage(input) {
     validation_status: "passed",
     validated_at: (/* @__PURE__ */ new Date()).toISOString()
   };
-  if (!client) return { id: randomUUID5(), ...record, stored: false };
+  if (!client) return { id: randomUUID5(), ...record, stored: false, variants: generated.variants.map(({ buffer: _buffer, ...variant }) => ({ ...variant, storage_path: "", storage_url: response.finalUrl, processing_status: "ready" })), srcset: generated.variants.filter((variant) => variant.format === "webp").map((variant) => `${response.finalUrl} ${variant.width}w`).join(", ") };
   const { data, error } = await client.from("blog_images").insert(record).select("*").single();
   if (error) throw error;
-  return { ...data, stored: true };
+  const variantRows = [];
+  try {
+    for (const variant of generated.variants) {
+      const variantPath = `${(/* @__PURE__ */ new Date()).getUTCFullYear()}/${digest}/${variant.width}.${variant.format}`;
+      const { error: variantUploadError } = await client.storage.from("blog-images").upload(variantPath, variant.buffer, { contentType: variant.mimeType, cacheControl: "31536000", upsert: true });
+      if (variantUploadError) throw variantUploadError;
+      variantRows.push({
+        image_id: data.id,
+        width: variant.width,
+        height: variant.height,
+        format: variant.format,
+        mime_type: variant.mimeType,
+        file_size: variant.fileSize,
+        storage_path: variantPath,
+        storage_url: client.storage.from("blog-images").getPublicUrl(variantPath).data.publicUrl,
+        content_hash: digest,
+        processing_status: "ready"
+      });
+    }
+    const { data: savedVariants, error: variantError } = await client.from("blog_image_variants").upsert(variantRows, { onConflict: "image_id,width,format" }).select("*");
+    if (variantError) throw variantError;
+    const webpVariants = (savedVariants || []).filter((variant) => variant.format === "webp").sort((left, right) => left.width - right.width);
+    return { ...data, stored: true, variants: savedVariants || [], srcset: webpVariants.map((variant) => `${variant.storage_url} ${variant.width}w`).join(", ") };
+  } catch (variantError) {
+    await client.from("blog_images").update({ validation_status: "blocked", relevance_status: "needs_review" }).eq("id", data.id);
+    throw variantError;
+  }
 }
-var MAX_IMAGE_BYTES, ALLOWED_TYPES;
+var MAX_IMAGE_BYTES, ALLOWED_TYPES, RESPONSIVE_WIDTHS, MAX_INPUT_PIXELS;
 var init_images = __esm({
   "src/lib/blog/images.ts"() {
     init_safe_public_fetch();
     init_server();
     MAX_IMAGE_BYTES = 5 * 1024 * 1024;
     ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"];
+    RESPONSIVE_WIDTHS = [320, 480, 768, 1024, 1280, 1600];
+    MAX_INPUT_PIXELS = 4e7;
+  }
+});
+
+// src/lib/blog/freshness.ts
+function zonedParts(date, timezone) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    weekday: "short"
+  });
+  const parts = Object.fromEntries(formatter.formatToParts(date).map((part) => [part.type, part.value]));
+  const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(parts.weekday);
+  return {
+    dateKey: `${parts.year}-${parts.month}-${parts.day}`,
+    hour: Number(parts.hour),
+    minute: Number(parts.minute),
+    weekday
+  };
+}
+function validateCalendarMove(input) {
+  if (input.scheduledAt == null) return { valid: true, conflicts: [] };
+  const candidate = new Date(input.scheduledAt);
+  if (!Number.isFinite(candidate.getTime()) || candidate.getTime() <= (input.now || /* @__PURE__ */ new Date()).getTime()) return { valid: false, conflicts: ["Choose a future publication time."] };
+  const local = zonedParts(candidate, input.timezone);
+  const conflicts = [];
+  if (input.blackoutWeekdays?.includes(local.weekday) || input.blackoutDates?.includes(local.dateKey)) conflicts.push("The selected date is inside a publication blackout.");
+  const existing = (input.existingPublicationTimes || []).map((value) => new Date(value)).filter((value) => Number.isFinite(value.getTime()));
+  if (existing.some((value) => Math.abs(value.getTime() - candidate.getTime()) < Math.max(15, input.minimumSpacingMinutes) * 6e4)) conflicts.push("The selected time conflicts with minimum article spacing.");
+  if (existing.filter((value) => zonedParts(value, input.timezone).dateKey === local.dateKey).length >= Math.max(1, input.maximumPostsPerDay)) conflicts.push("The selected day has reached its publication limit.");
+  return { valid: conflicts.length === 0, conflicts };
+}
+var HOUR_MS;
+var init_freshness = __esm({
+  "src/lib/blog/freshness.ts"() {
+    HOUR_MS = 60 * 60 * 1e3;
   }
 });
 
@@ -61436,6 +61839,9 @@ var init_index = __esm({
     init_automation_repository();
     init_automation();
     init_images();
+    init_nvidia();
+    init_length_policy();
+    init_freshness();
     init_errors();
     init_production_controls();
     init_version();
@@ -61445,6 +61851,8 @@ var init_index = __esm({
     apiRouter.use("/admin/blog/jobs", durableRateLimit({ namespace: "blog-jobs", limit: 20, windowSeconds: 3600 }));
     apiRouter.use("/admin/blog/batches", durableRateLimit({ namespace: "blog-batches", limit: 5, windowSeconds: 3600 }));
     apiRouter.use("/admin/blog/images/import", durableRateLimit({ namespace: "blog-images", limit: 10, windowSeconds: 3600 }));
+    apiRouter.use("/admin/blog/provider/test", durableRateLimit({ namespace: "blog-provider-test", limit: 5, windowSeconds: 3600 }));
+    apiRouter.use("/admin/blog/sections", durableRateLimit({ namespace: "blog-section-regeneration", limit: 10, windowSeconds: 3600 }));
     apiRouter.use("/blog/scheduler", durableRateLimit({ namespace: "blog-scheduler", limit: 10, windowSeconds: 300 }));
     apiRouter.use("/audit/export", durableRateLimit({ namespace: "report-export", limit: 10, windowSeconds: 300 }));
     apiRouter.use("/audit/cancel", durableRateLimit({ namespace: "audit-cancel", limit: 10, windowSeconds: 300 }));
@@ -61751,13 +62159,22 @@ var init_index = __esm({
     }));
     apiRouter.get("/admin/blog/overview", asyncJsonRoute(async (req, res) => {
       if (!await requireAdminRequester(req, res)) return;
-      const [overview, jobs2, discoveries] = await Promise.all([
+      const [overview, jobs2, discoveries, settings] = await Promise.all([
         blogAutomationRepository.overview(),
         blogAutomationRepository.listJobs(40),
-        blogAutomationRepository.listDiscoveries(40)
+        blogAutomationRepository.listDiscoveries(40),
+        blogAutomationRepository.getSettings()
       ]);
       res.setHeader("Cache-Control", "private, no-store");
-      res.json({ success: true, data: { overview, jobs: jobs2, discoveries } });
+      res.json({ success: true, data: { overview, jobs: jobs2, discoveries, provider: { provider: "NVIDIA NIM", enabled: Boolean(settings.provider_enabled), configured: Boolean(settings.provider_last_success_at), model: NVIDIA_DEFAULT_BLOG_MODEL, baseUrlHost: "integrate.api.nvidia.com", health: settings.provider_last_error_code ? "attention required" : settings.provider_last_success_at ? "connected" : "not tested", lastSuccessAt: settings.provider_last_success_at || null, lastErrorCode: settings.provider_last_error_code || "", lastDurationMs: settings.provider_last_duration_ms ?? null, liveVerificationStatus: settings.provider_live_verification_status || "not_run" } } });
+    }));
+    apiRouter.post("/admin/blog/provider/test", asyncJsonRoute(async (req, res) => {
+      const requester = await requireAdminRequester(req, res);
+      if (!requester) return;
+      const job = await blogAutomationRepository.createJob({ origin: "admin_manual", topic: "NVIDIA provider connectivity test", requestedBy: requester.userId, payload: { jobType: "provider_test" }, idempotencyKey: blogJobIdempotencyKey({ origin: "admin_manual", topic: "nvidia-provider-test", dateBucket: (/* @__PURE__ */ new Date()).toISOString().slice(0, 16) }) });
+      await logBlogAction(requester.userId, "queue_blog_provider_test", "nvidia_nim", { jobId: job.id });
+      res.setHeader("Cache-Control", "private, no-store");
+      res.status(202).json({ success: true, data: { result: { status: "queued", model: NVIDIA_DEFAULT_BLOG_MODEL, host: "integrate.api.nvidia.com", durationMs: null, errorCode: null }, job } });
     }));
     apiRouter.get("/admin/blog/settings", asyncJsonRoute(async (req, res) => {
       if (!await requireAdminRequester(req, res)) return;
@@ -61812,11 +62229,23 @@ var init_index = __esm({
           feedUrls: Array.isArray(req.body?.feedUrls) ? req.body.feedUrls.slice(0, 20) : void 0,
           sources: Array.isArray(req.body?.sources) ? req.body.sources.slice(0, 12) : void 0,
           sourceUrls: Array.isArray(req.body?.sourceUrls) ? req.body.sourceUrls.slice(0, 12).map(String) : void 0,
-          competitorUrls: Array.isArray(req.body?.competitorUrls) ? req.body.competitorUrls.slice(0, 5).map(String) : void 0
+          competitorUrls: Array.isArray(req.body?.competitorUrls) ? req.body.competitorUrls.slice(0, 5).map(String) : void 0,
+          articleType: normalizeBlogArticleType(req.body?.articleType, mode === "discover" ? "news_analysis" : "evergreen_guide"),
+          lengthMode: ["automatic", "brief", "standard", "detailed", "custom"].includes(String(req.body?.lengthMode)) ? String(req.body.lengthMode) : "automatic",
+          customMinimum: Math.max(500, Math.min(3500, Number(req.body?.customMinimum) || 0)),
+          customMaximum: Math.max(500, Math.min(4e3, Number(req.body?.customMaximum) || 0))
         },
         idempotencyKey: blogJobIdempotencyKey({ origin, topic, customHeadline: headline, dateBucket })
       });
       await logBlogAction(requester.userId, "queue_blog_job", job.id, { origin, mode, batchId: null });
+      res.status(202).json({ success: true, data: { job } });
+    }));
+    apiRouter.post("/admin/blog/jobs/:id/retry", asyncJsonRoute(async (req, res) => {
+      const requester = await requireAdminRequester(req, res);
+      if (!requester) return;
+      const job = await blogAutomationRepository.retryJob(req.params.id);
+      if (!job) throw new ApiError("BLOG_JOB_NOT_RETRYABLE", "This job is not in a retryable state.", 409);
+      await logBlogAction(requester.userId, "retry_blog_job", job.id, { provider: job.provider, model: job.model });
       res.status(202).json({ success: true, data: { job } });
     }));
     apiRouter.post("/admin/blog/batches", asyncJsonRoute(async (req, res) => {
@@ -61836,7 +62265,7 @@ var init_index = __esm({
           customHeadline: headline,
           requestedBy: requester.userId,
           batchId: batch.id,
-          payload: { jobType: "generate_article", audience: String(req.body?.audience || "").slice(0, 240), keywords: String(req.body?.keywords || "").slice(0, 300), sourceUrls: Array.isArray(req.body?.sourceUrls) ? req.body.sourceUrls.slice(0, 12).map(String) : [], competitorUrls: Array.isArray(req.body?.competitorUrls) ? req.body.competitorUrls.slice(0, 5).map(String) : [] },
+          payload: { jobType: "generate_article", audience: String(req.body?.audience || "").slice(0, 240), keywords: String(req.body?.keywords || "").slice(0, 300), sourceUrls: Array.isArray(req.body?.sourceUrls) ? req.body.sourceUrls.slice(0, 12).map(String) : [], competitorUrls: Array.isArray(req.body?.competitorUrls) ? req.body.competitorUrls.slice(0, 5).map(String) : [], articleType: normalizeBlogArticleType(req.body?.articleType), lengthMode: ["automatic", "brief", "standard", "detailed", "custom"].includes(String(req.body?.lengthMode)) ? String(req.body.lengthMode) : "automatic", customMinimum: Number(req.body?.customMinimum || 0), customMaximum: Number(req.body?.customMaximum || 0) },
           idempotencyKey: blogJobIdempotencyKey({ origin: "admin_batch", customHeadline: headline, batchId: batch.id })
         }));
       }
@@ -61895,17 +62324,58 @@ var init_index = __esm({
         post2 = await blogRepository.update(existing.id, { status: action === "hold" ? "needs_review" : "draft", scheduled_at: null, published_at: null, robots_directive: "noindex,nofollow", publication_reason: reason, reviewer_id: requester.userId, updated_by: requester.userId });
       } else if (action === "convert_manual") {
         post2 = await blogRepository.update(existing.id, { origin: "scheduled_manual", publication_reason: reason, updated_by: requester.userId });
-      } else if (action === "publish_now" || action === "reschedule") {
-        const scheduledAt = action === "reschedule" ? String(req.body?.scheduledAt || "") : null;
-        const row = prepareBlogPostForStorage({ ...existing, status: action === "publish_now" ? "published" : "scheduled", publishedAt: action === "publish_now" ? (/* @__PURE__ */ new Date()).toISOString() : null, scheduledAt, publicationReason: reason });
-        post2 = await blogRepository.update(existing.id, { ...row, reviewer_id: requester.userId, updated_by: requester.userId });
+      } else if (action === "publish_now" || action === "reschedule" || action === "unschedule" || action === "reset_recommended_time") {
+        const settings = await blogAutomationRepository.getSettings();
+        const posts = await blogRepository.listAdmin(200);
+        const requestedTime = action === "reset_recommended_time" ? existing.recommendedPublicationAt : action === "reschedule" ? String(req.body?.scheduledAt || "") : null;
+        if ((action === "reschedule" || action === "reset_recommended_time") && !requestedTime) throw new ApiError("BLOG_SCHEDULE_REQUIRED", "Choose a publication time.", 400);
+        if (action === "reschedule" || action === "reset_recommended_time") {
+          if (req.body?.scheduleVersion != null && Number(req.body.scheduleVersion) !== existing.scheduleVersion) throw new ApiError("BLOG_SCHEDULE_CONFLICT", "This article schedule changed in another session. Refresh before moving it.", 409);
+          const validation = validateCalendarMove({ scheduledAt: requestedTime, timezone: String(settings.timezone || "UTC"), existingPublicationTimes: posts.filter((item) => item.id !== existing.id).map((item) => item.scheduledAt || item.publishedAt).filter(Boolean), minimumSpacingMinutes: Number(settings.minimum_spacing_minutes || 180), maximumPostsPerDay: Number(settings.maximum_posts_per_day || 2), blackoutWeekdays: settings.blackout_weekdays || [], blackoutDates: settings.blackout_dates || [] });
+          if (!validation.valid) throw new ApiError("BLOG_SCHEDULE_CONFLICT", validation.conflicts.join(" "), 409);
+        }
+        if (action === "unschedule") {
+          post2 = await blogRepository.update(existing.id, { status: "draft", scheduled_at: null, robots_directive: "noindex,nofollow", publication_reason: reason, schedule_version: existing.scheduleVersion + 1, reviewer_id: requester.userId, updated_by: requester.userId });
+        } else {
+          const row = prepareBlogPostForStorage({ ...existing, status: action === "publish_now" ? "published" : "scheduled", publishedAt: action === "publish_now" ? (/* @__PURE__ */ new Date()).toISOString() : null, scheduledAt: requestedTime, publicationReason: reason, publicationRule: action === "reset_recommended_time" ? "administrator_reset_to_recommendation" : action === "reschedule" ? "administrator_calendar_move" : "administrator_publish_now", scheduleVersion: existing.scheduleVersion + 1 });
+          post2 = await blogRepository.update(existing.id, { ...row, reviewer_id: requester.userId, updated_by: requester.userId });
+        }
       } else {
         throw new ApiError("UNSUPPORTED_BLOG_WORKFLOW_ACTION", "This content workflow action is not supported.", 400);
       }
       if (!post2) return res.status(404).json({ success: false, error: "Article not found." });
       await blogRepository.syncEditorialRecords(post2, requester.userId, existing.status);
+      if ((existing.origin === "autopilot" || existing.origin === "trend_autopilot") && existing.status === "needs_review" && (action === "publish_now" || action === "cancel")) await blogAutomationRepository.recordAutomaticReview(action === "publish_now");
       await logBlogAction(requester.userId, `blog_workflow_${action}`, post2.id, { previousState: existing.status, newState: post2.status, reason });
       res.json({ success: true, data: { post: post2 } });
+    }));
+    apiRouter.get("/admin/blog/posts/:id/section-revisions", asyncJsonRoute(async (req, res) => {
+      if (!await requireAdminRequester(req, res)) return;
+      res.setHeader("Cache-Control", "private, no-store");
+      res.json({ success: true, data: { revisions: await blogRepository.listSectionRevisions(req.params.id) } });
+    }));
+    apiRouter.post("/admin/blog/posts/:id/section-regeneration", asyncJsonRoute(async (req, res) => {
+      const requester = await requireAdminRequester(req, res);
+      if (!requester) return;
+      const existing = await blogRepository.getAdminById(req.params.id);
+      if (!existing) throw new ApiError("BLOG_POST_NOT_FOUND", "Article not found.", 404);
+      const sectionKey = String(req.body?.sectionKey || "").slice(0, 120);
+      const sectionAction = String(req.body?.action || "regenerate");
+      if (!sectionKey || !["regenerate", "shorten", "make_practical", "add_example", "improve_clarity", "remove_repetition", "rewrite_from_sources"].includes(sectionAction)) throw new ApiError("BLOG_SECTION_INPUT_INVALID", "Choose a valid section and editing action.", 400);
+      const idempotencyKey = blogJobIdempotencyKey({ origin: "editor_update", topic: `${existing.id}:${sectionKey}:${sectionAction}`, dateBucket: String(existing.updatedAt) });
+      const job = await blogAutomationRepository.createJob({ origin: "editor_update", topic: existing.title, requestedBy: requester.userId, payload: { jobType: "regenerate_section", articleId: existing.id, sectionKey, sectionAction }, idempotencyKey });
+      await logBlogAction(requester.userId, "queue_blog_section_regeneration", existing.id, { jobId: job.id, sectionKey, sectionAction });
+      res.status(202).json({ success: true, data: { job } });
+    }));
+    apiRouter.post("/admin/blog/section-revisions/:id/decision", asyncJsonRoute(async (req, res) => {
+      const requester = await requireAdminRequester(req, res);
+      if (!requester) return;
+      const decision = String(req.body?.decision || "");
+      if (decision !== "accepted" && decision !== "rejected") throw new ApiError("BLOG_REVISION_DECISION_INVALID", "Choose Accept or Reject.", 400);
+      const revision = await blogRepository.decideSectionRevision(req.params.id, decision, requester.userId);
+      if (!revision) throw new ApiError("BLOG_REVISION_NOT_FOUND", "Pending section revision not found.", 404);
+      await logBlogAction(requester.userId, `blog_section_revision_${decision}`, revision.article_id, { revisionId: revision.id });
+      res.json({ success: true, data: { revision } });
     }));
     apiRouter.delete("/admin/blog/posts/:id", asyncJsonRoute(async (req, res) => {
       const requester = await requireAdminRequester(req, res);

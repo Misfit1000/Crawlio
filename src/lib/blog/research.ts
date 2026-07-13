@@ -11,6 +11,17 @@ export interface CompetitorReferenceSnapshot {
   publishedAt: string | null;
 }
 
+export function honestCompetitorTrafficLabel(input: { requestedLabel?: string; verifiedDataSource?: string; observedAt?: string | null }) {
+  const requested = String(input.requestedLabel || '').trim().toLowerCase();
+  const verified = Boolean(input.verifiedDataSource && input.observedAt && Number.isFinite(new Date(input.observedAt).getTime()));
+  if (requested === 'high traffic' && verified) return { label: 'High traffic', dataSource: String(input.verifiedDataSource), observedAt: new Date(String(input.observedAt)).toISOString() };
+  const allowed = new Map([
+    ['authoritative reference', 'Authoritative reference'], ['widely covered', 'Widely covered'], ['frequently discussed', 'Frequently discussed'],
+    ['competitor reference', 'Competitor reference'], ['prominent industry coverage', 'Prominent industry coverage'],
+  ]);
+  return { label: allowed.get(requested) || 'Traffic data unavailable', dataSource: '', observedAt: null };
+}
+
 function unique(values: string[], maximum: number) {
   return [...new Set(values.map((value) => value.replace(/\s+/g, ' ').trim()).filter(Boolean))].slice(0, maximum);
 }
@@ -63,7 +74,7 @@ export function buildCompetitorGapBrief(references: CompetitorReferenceSnapshot[
     contentGaps,
     formatObservations: references.map((reference) => `${reference.publisher}: ${reference.headings.length} observed H2/H3 headings`).slice(0, 10),
     proposedOriginalAngle: contentGaps.length ? `Answer the uncovered questions: ${contentGaps.join('; ')}.` : 'Use independent examples, evidence, and workflow ordering rather than reproducing reference structure.',
-    trafficLabel: 'traffic data unavailable',
+    trafficLabel: honestCompetitorTrafficLabel({}).label,
     copyingRule: 'Do not copy wording, examples, tables, paragraph order, or heading sequence.',
   };
 }

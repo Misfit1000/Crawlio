@@ -21,6 +21,6 @@ assert.doesNotMatch(content, /['"`](?:This component|next backend pass|current d
 assert.doesNotMatch(content, /FUNCTION_INVOCATION_FAILED|relation .* does not exist|SUPABASE_SERVICE_ROLE_KEY/i);
 
 const publicVersion = await readFile('src/lib/platform/version.ts', 'utf8');
-assert.doesNotMatch(publicVersion, /process\.env\.(?:SUPABASE_SERVICE_ROLE_KEY|GEMINI_API_KEY)/);
+assert.doesNotMatch(publicVersion, /process\.env\.(?:SUPABASE_SERVICE_ROLE_KEY|GEMINI_API_KEY|NVIDIA_API_KEY)/);
 
 console.log('No-public-development-artifacts smoke test passed.');

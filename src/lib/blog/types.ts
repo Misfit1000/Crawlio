@@ -4,6 +4,9 @@ export type BlogFreshnessStatus = 'high' | 'medium' | 'low' | 'expired' | 'everg
 export type BlogQualityStatus = 'pending' | 'passed' | 'needs_review' | 'blocked';
 export type BlogAssetStatus = BlogQualityStatus | 'not_required';
 export type BlogJobState = 'queued' | 'discovering' | 'researching' | 'briefing' | 'drafting' | 'validating' | 'checking_originality' | 'optimising' | 'sourcing_images' | 'prerendering' | 'ready_for_review' | 'scheduled' | 'publishing' | 'published' | 'skipped' | 'failed' | 'cancelled';
+export type BlogArticleType = 'urgent_news' | 'news_analysis' | 'glossary' | 'checklist' | 'evergreen_guide' | 'troubleshooting_guide' | 'technical_guide' | 'comparison';
+export type BlogLengthMode = 'automatic' | 'brief' | 'standard' | 'detailed' | 'custom';
+export type BlogProviderErrorCode = 'NVIDIA_NOT_CONFIGURED' | 'NVIDIA_AUTH_FAILED' | 'NVIDIA_MODEL_UNAVAILABLE' | 'NVIDIA_RATE_LIMITED' | 'NVIDIA_TIMEOUT' | 'NVIDIA_UNAVAILABLE' | 'NVIDIA_INVALID_RESPONSE' | 'NVIDIA_SCHEMA_VALIDATION_FAILED' | 'NVIDIA_OUTPUT_TOO_LARGE' | 'NVIDIA_CANCELLED';
 
 export interface BlogSource {
   id?: string;
@@ -47,6 +50,7 @@ export interface BlogPost {
   ogDescription: string;
   ogImageAlt: string;
   ogImageAttribution: string;
+  imageVariants: BlogImageVariant[];
   status: BlogPostStatus;
   origin: BlogArticleOrigin;
   articleType: string;
@@ -59,6 +63,10 @@ export interface BlogPost {
   discoveredAt: string | null;
   continuingDevelopment: boolean;
   scheduledAt: string | null;
+  recommendedPublicationAt: string | null;
+  publicationRule: string;
+  publicationUrgency: string;
+  scheduleVersion: number;
   publicationReason: string;
   qualityStatus: BlogQualityStatus;
   qualityResults: BlogQualityReport | null;
@@ -96,6 +104,7 @@ export interface BlogPostInput {
   ogDescription?: string;
   ogImageAlt?: string;
   ogImageAttribution?: string;
+  imageVariants?: BlogImageVariant[];
   status?: BlogPostStatus;
   origin?: BlogArticleOrigin;
   articleType?: string;
@@ -108,6 +117,10 @@ export interface BlogPostInput {
   discoveredAt?: string | null;
   continuingDevelopment?: boolean;
   scheduledAt?: string | null;
+  recommendedPublicationAt?: string | null;
+  publicationRule?: string;
+  publicationUrgency?: string;
+  scheduleVersion?: number;
   publicationReason?: string;
   qualityStatus?: BlogQualityStatus;
   qualityResults?: BlogQualityReport | null;
@@ -129,7 +142,7 @@ export interface BlogListResult {
   offset: number;
 }
 
-export interface GeminiBlogDraft {
+export interface BlogProviderDraft {
   title: string;
   excerpt: string;
   contentHtml: string;
@@ -142,6 +155,9 @@ export interface GeminiBlogDraft {
   summary: string;
   qualityReport?: BlogQualityReport;
   providerUsage?: { model: string; inputTokens: number | null; outputTokens: number | null; totalTokens: number | null };
+  generationStages?: string[];
+  articleType?: BlogArticleType;
+  targetWords?: { minimum: number; maximum: number; label: string };
 }
 
 export interface BlogQualityCheck {
@@ -238,4 +254,32 @@ export interface BlogAdminOverview {
   rssReady: number;
   providerInputTokens: number;
   providerOutputTokens: number;
+  automaticReviewed: number;
+  automaticApproved: number;
+  automaticRejected: number;
+  strictAutopilotUnlocked: boolean;
+}
+
+export interface BlogImageVariant {
+  id?: string;
+  imageId?: string;
+  width: number;
+  height: number;
+  format: 'webp' | 'avif' | 'jpeg' | 'png';
+  mimeType: string;
+  fileSize: number;
+  storagePath: string;
+  storageUrl: string;
+  status: 'ready' | 'failed' | 'deleted';
+}
+
+export interface BlogSectionRevision {
+  id: string;
+  articleId: string;
+  sectionKey: string;
+  action: string;
+  beforeHtml: string;
+  afterHtml: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  createdAt: string;
 }

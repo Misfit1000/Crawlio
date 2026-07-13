@@ -29,6 +29,11 @@ export const API_ROUTES = {
   adminBlogOverview: "/api/tools/admin/blog/overview",
   adminBlogSettings: "/api/tools/admin/blog/settings",
   adminBlogJobs: "/api/tools/admin/blog/jobs",
+  adminBlogJobRetry: (id: string) => `/api/tools/admin/blog/jobs/${encodeURIComponent(id)}/retry`,
   adminBlogBatches: "/api/tools/admin/blog/batches",
-  adminBlogImageImport: "/api/tools/admin/blog/images/import"
+  adminBlogImageImport: "/api/tools/admin/blog/images/import",
+  adminBlogProviderTest: "/api/tools/admin/blog/provider/test",
+  adminBlogSectionRevisions: (id: string) => `/api/tools/admin/blog/posts/${encodeURIComponent(id)}/section-revisions`,
+  adminBlogSectionRegeneration: (id: string) => `/api/tools/admin/blog/posts/${encodeURIComponent(id)}/section-regeneration`,
+  adminBlogSectionRevisionDecision: (id: string) => `/api/tools/admin/blog/section-revisions/${encodeURIComponent(id)}/decision`,
 };

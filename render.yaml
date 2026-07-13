@@ -23,7 +23,11 @@ services:
         value: "false"
       - key: BLOG_AUTOMATION_ENABLED
         value: "false"
-      - key: GEMINI_API_KEY
+      - key: NVIDIA_API_KEY
         sync: false
-      - key: GEMINI_MODEL
-        value: gemini-2.5-flash
+      - key: NVIDIA_API_BASE_URL
+        value: https://integrate.api.nvidia.com/v1
+      - key: NVIDIA_BLOG_MODEL
+        value: qwen/qwen3.5-122b-a10b
+      - key: NVIDIA_BLOG_ENABLED
+        value: "false"

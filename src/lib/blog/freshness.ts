@@ -21,7 +21,7 @@ export function classifyBlogFreshness(opportunity: BlogTrendOpportunity, now = n
   } else if (ageHours <= 168 && relevant && authoritative) {
     status = 'medium';
     reason = 'Published within seven days and still useful to the audience.';
-  } else if (opportunity.continuingDevelopment && relevant && authoritative && ageHours <= 720) {
+  } else if (opportunity.continuingDevelopment && relevant && authoritative) {
     status = 'medium';
     reason = 'The original item is older than 48 hours, but a documented rollout or material development is continuing.';
   } else if (!sourceTime) {
@@ -34,6 +34,7 @@ export function classifyBlogFreshness(opportunity: BlogTrendOpportunity, now = n
     ageHours: Number.isFinite(ageHours) ? Math.round(ageHours * 10) / 10 : null,
     reason,
     expiresAt: sourceTime == null ? null : new Date(sourceTime + (status === 'high' ? 48 : 168) * HOUR_MS).toISOString(),
+    newsSitemapEligible: status === 'high' && ageHours <= 48,
   };
 }
 
@@ -78,6 +79,10 @@ export interface PublicationScheduleSettings {
   delayAfterDiscoveryMinutes: number;
   maximumPostsPerDay: number;
   blackoutWeekdays?: number[];
+  blackoutDates?: string[];
+  fixedPublicationMinute?: number | null;
+  pauseAllPublication?: boolean;
+  maintenanceMode?: boolean;
 }
 
 function zonedParts(date: Date, timezone: string) {
@@ -111,6 +116,9 @@ export function selectAutomaticPublicationTime(input: {
   const settings = input.settings;
   const existing = (input.existingPublicationTimes || []).map((value) => new Date(value)).filter((value) => Number.isFinite(value.getTime()));
   const freshness = classifyBlogFreshness(input.opportunity, now);
+  if (settings.pauseAllPublication || settings.maintenanceMode) {
+    return { scheduledAt: null, timezone: settings.timezone, reason: 'Publication is paused by an administrator.', rule: 'publication_paused', urgency: freshness.status === 'high' ? 'high' : 'normal', spacingDecision: 'not_evaluated' };
+  }
   const delayMs = Math.max(0, settings.delayAfterDiscoveryMinutes) * 60_000;
   let candidate = new Date(now.getTime() + delayMs);
   const startHour = Math.max(0, Math.min(23, settings.preferredStartHour));
@@ -118,16 +126,21 @@ export function selectAutomaticPublicationTime(input: {
 
   const spacingMs = Math.max(15, settings.minimumSpacingMinutes) * 60_000;
   const stepMs = 15 * 60_000;
+  let found = false;
   for (let attempt = 0; attempt < 14 * 24 * 4; attempt += 1) {
     const local = zonedParts(candidate, settings.timezone);
-    const inWindow = local.hour >= startHour && local.hour < endHour;
-    const fixedTimeReady = settings.automaticTiming || (local.hour === startHour && local.minute < 15);
+    const fixedMinute = settings.fixedPublicationMinute == null ? null : Math.max(0, Math.min(1439, Number(settings.fixedPublicationMinute)));
+    const candidateMinute = local.hour * 60 + local.minute;
+    const inWindow = fixedMinute == null ? local.hour >= startHour && local.hour < endHour : candidateMinute >= fixedMinute && candidateMinute < fixedMinute + 15;
+    const fixedTimeReady = settings.automaticTiming || fixedMinute != null || (local.hour === startHour && local.minute < 15);
     const sameDayCount = existing.filter((time) => zonedParts(time, settings.timezone).dateKey === local.dateKey).length;
-    const blockedDay = settings.blackoutWeekdays?.includes(local.weekday);
+    const blockedDay = settings.blackoutWeekdays?.includes(local.weekday) || settings.blackoutDates?.includes(local.dateKey);
     const tooClose = existing.some((time) => Math.abs(time.getTime() - candidate.getTime()) < spacingMs);
-    if (inWindow && fixedTimeReady && !blockedDay && sameDayCount < Math.max(1, settings.maximumPostsPerDay) && !tooClose) break;
+    if (inWindow && fixedTimeReady && !blockedDay && sameDayCount < Math.max(1, settings.maximumPostsPerDay) && !tooClose) { found = true; break; }
     candidate = new Date(candidate.getTime() + stepMs);
   }
+
+  if (!found) return { scheduledAt: null, timezone: settings.timezone, reason: 'No valid publication window is available within the next 14 days.', rule: 'no_available_window', urgency: freshness.status === 'high' ? 'high' : 'normal', spacingDecision: 'conflict' };
 
   return {
     scheduledAt: candidate.toISOString(),
@@ -135,5 +148,30 @@ export function selectAutomaticPublicationTime(input: {
     reason: freshness.status === 'high'
       ? 'Fresh verified topic scheduled after quality checks with configured spacing.'
       : 'Evergreen or continuing topic scheduled in the next configured publication window.',
+    rule: settings.fixedPublicationMinute == null ? 'configured_publication_window' : 'fixed_publication_time',
+    urgency: freshness.status === 'high' ? 'high' : 'normal',
+    spacingDecision: `At least ${Math.max(15, settings.minimumSpacingMinutes)} minutes from another post.`,
   };
+}
+
+export function validateCalendarMove(input: {
+  scheduledAt: string | null;
+  timezone: string;
+  existingPublicationTimes?: string[];
+  minimumSpacingMinutes: number;
+  maximumPostsPerDay: number;
+  blackoutWeekdays?: number[];
+  blackoutDates?: string[];
+  now?: Date;
+}) {
+  if (input.scheduledAt == null) return { valid: true, conflicts: [] as string[] };
+  const candidate = new Date(input.scheduledAt);
+  if (!Number.isFinite(candidate.getTime()) || candidate.getTime() <= (input.now || new Date()).getTime()) return { valid: false, conflicts: ['Choose a future publication time.'] };
+  const local = zonedParts(candidate, input.timezone);
+  const conflicts: string[] = [];
+  if (input.blackoutWeekdays?.includes(local.weekday) || input.blackoutDates?.includes(local.dateKey)) conflicts.push('The selected date is inside a publication blackout.');
+  const existing = (input.existingPublicationTimes || []).map((value) => new Date(value)).filter((value) => Number.isFinite(value.getTime()));
+  if (existing.some((value) => Math.abs(value.getTime() - candidate.getTime()) < Math.max(15, input.minimumSpacingMinutes) * 60_000)) conflicts.push('The selected time conflicts with minimum article spacing.');
+  if (existing.filter((value) => zonedParts(value, input.timezone).dateKey === local.dateKey).length >= Math.max(1, input.maximumPostsPerDay)) conflicts.push('The selected day has reached its publication limit.');
+  return { valid: conflicts.length === 0, conflicts };
 }
