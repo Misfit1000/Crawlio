@@ -270,7 +270,7 @@ export default function App() {
 
   const renderContent = () => {
     if (workspaceRoute) {
-      return <AuditWorkspace auditId={workspaceRoute.auditId} section={workspaceRoute.section} />;
+      return <AuditWorkspace auditId={workspaceRoute.auditId} section={workspaceRoute.section} onRerun={startLiveAudit} />;
     }
 
     switch (activeTab) {

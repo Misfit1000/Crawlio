@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Activity, AlertTriangle, BarChart3, CheckCircle2, Clock, Clipboard, FileDown, Loader2, RefreshCw, Radio, Share2, ShieldAlert, StopCircle, Wifi, WifiOff } from 'lucide-react';
+import { Activity, AlertTriangle, BarChart3, CheckCircle2, Clipboard, FileDown, Loader2, RefreshCw, Radio, Share2, StopCircle, Wifi, WifiOff } from 'lucide-react';
 import type { ResourceAuditLiveData } from '../../lib/audit/resource-types';
 import type { LiveAuditConnectionState } from '../../lib/audit/live-supabase-client';
 import { getAuditModeLabel } from '../../lib/audit/audit-config';
@@ -10,7 +10,7 @@ import { safeJsonFetch } from '../../lib/http/safe-json';
 import { formatAuditElapsed, isCompletedAuditStatus, isTerminalAuditStatus } from '../../lib/audit/audit-time';
 import { customerSafeDiagnosticText } from '../../lib/audit/audit-failures';
 import { downloadAuditExport } from '../../lib/http/download';
-import { AuditStageTimeline, CategoryScoreBar, MetricBarChart, MetricCard, ProgressBar, RadialScoreGauge, SeverityDistribution, SitePreviewSection, SparklineChart, StatusBadge, SurfaceCard } from '../ui/visual-system';
+import { AuditStageTimeline, MetricBarChart, MetricCard, SitePreviewSection, SparklineChart, StatusBadge, SurfaceCard } from '../ui/visual-system';
 import { Notice, PageHeader, Panel } from '../ui/page-system';
 import {
   buildHistoryEntry,
@@ -28,6 +28,7 @@ import {
   type ChecklistStatus,
 } from '../../lib/audit/client-insights';
 import AuditActivityPanel from './AuditActivityPanel';
+import { AuditExecutiveSummary, PriorityRecommendations } from './AuditExecutiveSummary';
 import FindingWorkspace from './FindingWorkspace';
 
 interface Props {
@@ -320,8 +321,8 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun, onOpenWorkspac
 
   const progress = Math.max(0, Math.min(100, audit.progress || 0));
   const firstPage = data.latestPages.find((page) => page.title || page.metaDescription) || data.latestPages[0];
-  const estimatedScore = Math.max(0, Math.min(100, 100 - audit.criticalCount * 12 - audit.highCount * 7 - audit.mediumCount * 3 - audit.lowCount));
   const reportScores = (data.finalReport?.scores || {}) as Record<string, unknown>;
+  const unavailableChecks = Array.isArray(reportScores.unavailableChecks) ? reportScores.unavailableChecks.length : null;
   const scoreValue = (key: string) => {
     const rawValue = reportScores[key];
     if (rawValue == null || rawValue === '') return null;
@@ -329,8 +330,6 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun, onOpenWorkspac
     return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : null;
   };
   const finalOverallScore = scoreValue('overall');
-  const overallScore = finalOverallScore ?? estimatedScore;
-  const hasScoreEvidence = Boolean(data.finalReport) || audit.pagesCrawled > 0 || audit.issuesFound > 0;
   const categoryScoreCandidates: Array<{ label: string; value: number | null; tone: 'accent' | 'green' | 'yellow' | 'red' }> = [
     { label: 'On-page SEO', value: scoreValue('seo'), tone: 'green' },
     { label: 'Technical SEO', value: scoreValue('technical'), tone: 'accent' },
@@ -367,6 +366,8 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun, onOpenWorkspac
 
   return (
     <div className="w-full space-y-8 animate-rise" aria-live="polite">
+      <AuditActivityPanel events={data.latestEvents} phase={humanizeAuditText(audit.currentPhase)} progress={progress} pagesAnalysed={audit.pagesCrawled} pageLimit={audit.pageLimit} />
+      <div className="h-10 sm:h-12" aria-hidden="true" />
       <PageHeader
         eyebrow="Live audit"
         icon={Radio}
@@ -379,41 +380,26 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun, onOpenWorkspac
             <ConnectionBadge connection={connection} now={now} />
           </>
         }
-        actions={hasScoreEvidence ? (
-          <RadialScoreGauge value={overallScore} label={data.finalReport ? 'Site health' : 'Estimated health'} detail={data.finalReport ? 'Final report score' : 'Updates from measured findings'} size="sm" />
-        ) : (
-          <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full border border-dashed border-border bg-card text-center"><div className="text-xl font-semibold">--</div><div className="mt-1 px-3 text-xs text-muted-foreground">Score pending</div></div>
-        )}
+        actions={<div className="flex flex-wrap gap-2">
+          {isCompletedAuditStatus(audit.status) && onOpenWorkspace && <button type="button" onClick={onOpenWorkspace} className="trust-button min-h-10 px-3 py-2 text-sm"><BarChart3 className="h-4 w-4" /> Open report</button>}
+          {onRerun && isTerminalAuditStatus(audit.status) && <button type="button" onClick={rerunAudit} className="quiet-button min-h-10 px-3 py-2 text-sm"><RefreshCw className="h-4 w-4" /> Rerun</button>}
+          <button type="button" onClick={copyReportLink} className="quiet-button min-h-10 px-3 py-2 text-sm"><Share2 className="h-4 w-4" /> Copy link</button>
+          {data.finalReport && <button type="button" onClick={downloadJson} disabled={isDownloadingJson} className="quiet-button min-h-10 px-3 py-2 text-sm">{isDownloadingJson ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} JSON</button>}
+          {isCompletedAuditStatus(audit.status) && audit.processingTier !== 'free' && <button type="button" onClick={downloadPdf} disabled={isDownloadingPdf} className="quiet-button min-h-10 px-3 py-2 text-sm">{isDownloadingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} PDF</button>}
+          {(audit.status === 'queued' || audit.status === 'running') && <button type="button" onClick={cancelAudit} disabled={isCancelling} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-red-500/30 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-500/10 dark:text-red-300">{isCancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : <StopCircle className="h-4 w-4" />} Stop</button>}
+        </div>}
       />
-      <SurfaceCard className="overflow-hidden">
-        <div className="grid-overlay relative p-5 md:p-8">
-          <div className="absolute inset-0 -z-0 bg-gradient-to-br from-accent/10 via-transparent to-green-500/10" />
-          <div className="relative z-10">
-            <div className="space-y-6">
-              <ProgressBar label={humanizeAuditText(audit.currentPhase) || statusLabel(audit.status)} value={progress} tone={audit.status === 'failed' ? 'red' : 'accent'} />
-              <CurrentWorkCard currentWork={currentWork} connection={connection} now={now} />
-
-              <div className="grid gap-4 xl:grid-cols-[1.4fr_0.8fr_0.8fr]">
-                <AuditStageTimeline progress={progress} status={audit.status} />
-                <SparklineChart values={progressSeries} label="Progress over time" valueLabel={`${Math.round(progress)}%`} />
-                <MetricBarChart items={[
-                  { label: 'Fix now', value: audit.criticalCount, color: 'bg-red-500' },
-                  { label: 'High', value: audit.highCount, color: 'bg-orange-500' },
-                  { label: 'Review', value: audit.mediumCount, color: 'bg-amber-500' },
-                  { label: 'Low', value: audit.lowCount, color: 'bg-sky-500' },
-                ]} />
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-                <MetricCard label="Pages analysed" value={audit.pagesCrawled} detail={`${audit.pagesDiscovered} discovered · ${audit.pageLimit} maximum`} icon={<Clock className="h-5 w-5" />} />
-                <MetricCard label="Fixes found" value={audit.issuesFound} icon={<AlertTriangle className="h-5 w-5" />} tone={audit.criticalCount ? 'red' : 'yellow'} />
-                <MetricCard label="Urgent / high" value={`${audit.criticalCount}/${audit.highCount}`} icon={<ShieldAlert className="h-5 w-5" />} tone={audit.criticalCount ? 'red' : 'yellow'} />
-                <MetricCard label="Coverage warnings" value={audit.warningCount || 0} detail="Failed, blocked, or unavailable evidence" icon={<AlertTriangle className="h-5 w-5" />} tone={audit.warningCount ? 'yellow' : 'green'} />
-                <MetricCard label="Time elapsed" value={elapsedTime} icon={<Activity className="h-5 w-5" />} tone="blue" />
-              </div>
-            </div>
-          </div>
+      {(shareMessage || exportMessage) && <div role="status" className={`rounded-lg border p-3 text-sm font-semibold ${(shareMessage || exportMessage)?.includes('failed') ? 'border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-300' : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'}`}>{shareMessage || exportMessage}</div>}
+      <AuditExecutiveSummary audit={audit} score={data.finalReport ? finalOverallScore : null} scoreLabel="Final score" scoreDetail="Calculated from the stored deterministic report" categoryScores={categoryScores} progress={progress} unavailableChecks={unavailableChecks} />
+      <PriorityRecommendations issues={data.latestIssues} statuses={checklist} onViewFindings={() => document.getElementById('finding-workspace-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
+      <SurfaceCard className="p-5 md:p-6">
+        <CurrentWorkCard currentWork={currentWork} connection={connection} now={now} />
+        <div className="mt-5 grid gap-4 xl:grid-cols-[1.4fr_0.8fr_0.8fr]">
+          <AuditStageTimeline progress={progress} status={audit.status} />
+          <SparklineChart values={progressSeries} label="Progress over time" valueLabel={`${Math.round(progress)}%`} />
+          <MetricBarChart items={[{ label: 'Fix now', value: audit.criticalCount, color: 'bg-red-500' }, { label: 'High', value: audit.highCount, color: 'bg-orange-500' }, { label: 'Review', value: audit.mediumCount, color: 'bg-amber-500' }, { label: 'Low', value: audit.lowCount, color: 'bg-sky-500' }]} />
         </div>
+        <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 border-t border-border pt-4 text-xs text-muted-foreground"><span>{elapsedTime} elapsed</span><span>{audit.pagesCrawled} of {audit.pageLimit} page allowance analysed</span><span>{audit.warningCount || 0} unavailable checks or coverage warnings</span></div>
       </SurfaceCard>
 
       <SitePreviewSection
@@ -434,7 +420,6 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun, onOpenWorkspac
         auditId={auditId}
         auditUrl={audit.normalizedUrl}
         issues={data.latestIssues}
-        pages={data.latestPages}
         checklist={checklist}
         checklistSummary={checklistSummary}
         comparison={comparison}
@@ -448,37 +433,15 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun, onOpenWorkspac
         onRerun={onRerun ? rerunAudit : undefined}
       />
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
-        <SurfaceCard className="p-5 md:p-6">
-          <div className="mb-5">
-            <h3 className="text-xl font-bold">Health categories</h3>
-            <p className="text-sm text-muted-foreground">Final section scores are shown only after the audit engine calculates them.</p>
-          </div>
-          {categoryScores.length ? (
-            <div className="grid gap-3 md:grid-cols-2">
-              {categoryScores.map((item) => (
-                <CategoryScoreBar key={item.label} label={item.label} value={item.value} tone={item.tone} />
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-xl border border-dashed border-border bg-muted/25 p-5 text-sm leading-6 text-muted-foreground">
-              Section grades are not estimated while the audit is running. Live progress, pages checked, and measured findings remain available above.
-            </div>
-          )}
-        </SurfaceCard>
-        <SurfaceCard className="p-5 md:p-6">
-          <div className="mb-5">
-            <h3 className="text-xl font-bold">Fix priority</h3>
-            <p className="text-sm text-muted-foreground">Urgent and high-priority findings stay visible before the report completes.</p>
-          </div>
-          <SeverityDistribution critical={audit.criticalCount} high={audit.highCount} medium={audit.mediumCount} low={audit.lowCount} />
-        </SurfaceCard>
-      </div>
-
-      <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
+      <details className="suite-panel overflow-hidden">
+        <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 border-b border-transparent px-5 py-3 font-semibold marker:content-none open:border-border">
+          <span>Audit details and queue state</span>
+          <span className="text-xs font-normal text-muted-foreground">URLs, limits, status, and service details</span>
+        </summary>
+        <div className="p-5">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
-            <h2 className="text-2xl font-bold tracking-tight">Site being checked</h2>
+            <h2 className="text-2xl font-bold">Site being checked</h2>
             <p className="text-muted-foreground break-all">{audit.normalizedUrl}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -579,7 +542,8 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun, onOpenWorkspac
           <Info label="Elapsed" value={elapsedTime} />
           <Info label="Passive Security Review" value="Non-invasive checks only" />
         </div>
-      </div>
+        </div>
+      </details>
 
       {isCompletedAuditStatus(audit.status) && audit.processingTier === 'free' && (
         <div className="bg-accent/10 border border-accent/20 rounded-xl p-4 text-sm">
@@ -587,13 +551,6 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun, onOpenWorkspac
           <div className="text-muted-foreground mt-1">Accounts with full audit access can check up to 25 pages and use the extended report and export options.</div>
         </div>
       )}
-
-      <div className="grid md:grid-cols-4 gap-4">
-        <Metric icon={<Clock />} label="Pages scanned" value={`${audit.pagesCrawled}/${audit.pageLimit}`} />
-        <Metric icon={<ShieldAlert />} label="Urgent/high" value={`${audit.criticalCount}/${audit.highCount}`} />
-        <Metric icon={<AlertTriangle />} label="Fixes found" value={String(audit.issuesFound)} />
-        <Metric icon={isTerminalAuditStatus(audit.status) ? <CheckCircle2 /> : <Loader2 className="animate-spin" />} label="Status" value={statusLabel(audit.status)} />
-      </div>
 
       <section className="bg-card border border-border rounded-xl overflow-hidden">
         <div className="p-4 border-b border-border">
@@ -633,7 +590,6 @@ export function LiveAuditProgress({ auditId, onComplete, onRerun, onOpenWorkspac
         </div>
       </section>
 
-      <AuditActivityPanel events={data.latestEvents} />
     </div>
   );
 }
@@ -709,23 +665,10 @@ function Info({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
-  return (
-    <div className="bg-card border border-border rounded-xl p-4 flex items-center gap-3">
-      <div className="text-accent [&>svg]:w-5 [&>svg]:h-5">{icon}</div>
-      <div>
-        <div className="text-sm text-muted-foreground">{label}</div>
-        <div className="font-semibold capitalize">{value}</div>
-      </div>
-    </div>
-  );
-}
-
 function AuditWorkflowPanel({
   auditId,
   auditUrl,
   issues,
-  pages,
   checklist,
   checklistSummary,
   comparison,
@@ -741,7 +684,6 @@ function AuditWorkflowPanel({
   auditId: string;
   auditUrl: string;
   issues: ResourceAuditLiveData['latestIssues'];
-  pages: ResourceAuditLiveData['latestPages'];
   checklist: Record<string, ChecklistStatus>;
   checklistSummary: { actionable: number; fixed: number; ignored: number; percent: number };
   comparison: ReturnType<typeof compareAuditIssues>;
@@ -793,7 +735,7 @@ function AuditWorkflowPanel({
         <MetricCard label="Score change" value={comparison.scoreDelta === null ? '-' : `${comparison.scoreDelta > 0 ? '+' : ''}${comparison.scoreDelta}`} detail={latestScore === null ? auditId : `Current score ${latestScore}`} icon={<Radio className="h-6 w-6" />} tone={comparison.scoreDelta && comparison.scoreDelta < 0 ? 'red' : 'green'} />
       </div>
 
-      <div className="mt-6"><FindingWorkspace issues={issues} statuses={checklist} onStatusChange={onChecklistStatus} /></div>
+      <div className="mt-6"><FindingWorkspace auditId={auditId} issues={issues} statuses={checklist} onStatusChange={onChecklistStatus} /></div>
       <div className="mt-6 grid gap-4 md:grid-cols-3">
         <InsightChart title="Score trend" emptyText="Rerun this audit to build a trend." items={scoreTrend.map((entry) => ({ label: new Date(entry.updatedAt).toLocaleDateString(), value: entry.score }))} maxValue={100} />
         <InsightChart title="Crawl depth" emptyText="Pages appear as the audit engine scans." items={crawlDepth} maxValue={maxDepthCount} />

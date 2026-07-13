@@ -58,6 +58,7 @@ export interface IssueInsight {
 
 const HISTORY_KEY = 'seointel_audit_history_v1';
 const CHECKLIST_PREFIX = 'seointel_fix_checklist_v1:';
+const FINDING_NOTES_PREFIX = 'seointel_finding_notes_v1:';
 
 function hasStorage() {
   return typeof window !== 'undefined' && !!window.localStorage;
@@ -265,6 +266,26 @@ export function readChecklist(auditId: string): Record<string, ChecklistStatus> 
 export function writeChecklist(auditId: string, statuses: Record<string, ChecklistStatus>) {
   if (!hasStorage()) return;
   window.localStorage.setItem(`${CHECKLIST_PREFIX}${auditId}`, JSON.stringify(statuses));
+}
+
+export function readFindingNotes(auditId: string): Record<string, string> {
+  if (!hasStorage() || !auditId) return {};
+  try {
+    const raw = window.localStorage.getItem(`${FINDING_NOTES_PREFIX}${auditId}`);
+    const parsed = raw ? JSON.parse(raw) : {};
+    if (!parsed || typeof parsed !== 'object') return {};
+    return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string').slice(0, 200));
+  } catch {
+    return {};
+  }
+}
+
+export function writeFindingNotes(auditId: string, notes: Record<string, string>) {
+  if (!hasStorage() || !auditId) return;
+  const safeNotes = Object.fromEntries(Object.entries(notes).slice(0, 200).map(([key, value]) => [key, String(value).slice(0, 2000)]));
+  try {
+    window.localStorage.setItem(`${FINDING_NOTES_PREFIX}${auditId}`, JSON.stringify(safeNotes));
+  } catch {}
 }
 
 export function checklistCompletion(issues: ResourceAuditIssue[], statuses: Record<string, ChecklistStatus>) {

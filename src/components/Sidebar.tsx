@@ -10,19 +10,19 @@ const navGroups: Array<{
     title: 'Overview',
     items: [
       { icon: LayoutDashboard, label: 'Overview', description: 'Scores, usage, and next actions', id: 'dashboard' },
-      { icon: Activity, label: 'Start Audit', description: 'Run a live website audit', id: 'seo-audit' },
-      { icon: History, label: 'Audit History', description: 'Past runs and comparisons', id: 'audit-history' },
+      { icon: Activity, label: 'Start audit', description: 'Run a live website audit', id: 'seo-audit' },
+      { icon: History, label: 'Audit history', description: 'Past runs and comparisons', id: 'audit-history' },
       { icon: FileText, label: 'Reports', description: 'Evidence, exports, and delivery', id: 'reports' },
     ],
   },
   {
-    title: 'Audit Evidence',
+    title: 'Audit evidence',
     items: [
-      { icon: Search, label: 'SEO Findings', description: 'Metadata and content checks', id: 'seo-findings' },
+      { icon: Search, label: 'SEO findings', description: 'Metadata and content checks', id: 'seo-findings' },
       { icon: Gauge, label: 'Technical SEO', description: 'Delivery and status signals', id: 'technical-seo' },
       { icon: Layers, label: 'Crawlability', description: 'Discovery and indexing signals', id: 'crawlability' },
       { icon: BarChart3, label: 'Performance', description: 'Observed response and size', id: 'performance' },
-      { icon: ShieldCheck, label: 'Passive Security', description: 'Non-invasive public checks', id: 'security-audit' },
+      { icon: ShieldCheck, label: 'Passive security', description: 'Non-invasive public checks', id: 'security-audit' },
       { icon: Globe, label: 'Pages', description: 'Filter page-level evidence', id: 'pages' },
     ],
   },
@@ -56,8 +56,8 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOp
           <div className="border-b border-border p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-bold">SEO suite</div>
-                <div className="text-xs text-muted-foreground">Audit workspace</div>
+                <div className="text-sm font-semibold">Workspace</div>
+                <div className="text-xs text-muted-foreground">Website audits and reports</div>
               </div>
               <button onClick={onClose} className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden" aria-label="Close navigation">
                 <X className="h-4 w-4" />
@@ -89,7 +89,7 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOp
                       >
                         <Icon className="mt-0.5 h-5 w-5 shrink-0 text-accent" />
                         <span className="min-w-0">
-                          <span className="block truncate text-sm font-bold">{item.label}</span>
+                          <span className="block truncate text-sm font-semibold">{item.label}</span>
                           <span className="block truncate text-xs text-muted-foreground">{item.description}</span>
                         </span>
                       </button>
@@ -111,7 +111,7 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOp
             >
               <Settings className="h-5 w-5 text-accent" />
               <span>
-                <span className="block text-sm font-bold">Settings</span>
+                <span className="block text-sm font-semibold">Settings</span>
                 <span className="block text-xs text-muted-foreground">Account and preferences</span>
               </span>
             </button>
@@ -125,7 +125,7 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOp
             >
               <HelpCircle className="h-5 w-5 text-accent" />
               <span>
-                <span className="block text-sm font-bold">Help</span>
+                <span className="block text-sm font-semibold">Help</span>
                 <span className="block text-xs text-muted-foreground">Setup and support</span>
               </span>
             </button>

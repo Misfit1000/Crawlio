@@ -58,9 +58,9 @@ export function MarketingShell({
           </div>
         </div>
         {menuOpen && (
-          <nav id="public-mobile-nav" className="border-t border-border bg-card p-4 lg:hidden" aria-label="Mobile public navigation">
+          <nav id="public-mobile-nav" className="border-t border-border bg-[var(--surface-raised)] p-4 shadow-[0_12px_32px_var(--shadow-color)] lg:hidden" aria-label="Mobile public navigation">
             <div className="mx-auto grid max-w-xl gap-1">
-              {links.map(([label, href]) => <a key={href} href={href} onClick={() => setMenuOpen(false)} className="rounded-lg px-4 py-3 text-base font-semibold hover:bg-muted">{label}</a>)}
+              {links.map(([label, href]) => <a key={href} href={href} onClick={() => setMenuOpen(false)} className="rounded-lg border border-transparent px-4 py-3 text-base font-semibold text-foreground hover:border-border hover:bg-muted">{label}</a>)}
               {!userLabel && <button type="button" onClick={() => { setMenuOpen(false); onLogin(); }} className="mt-2 quiet-button w-full">Sign in</button>}
             </div>
           </nav>

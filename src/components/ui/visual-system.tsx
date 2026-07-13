@@ -24,11 +24,13 @@ export type PreviewProps = CompactPreviewProps & {
 export function SurfaceCard({
   children,
   className = '',
+  id,
 }: {
   children: React.ReactNode;
   className?: string;
+  id?: string;
 }) {
-  return <section className={`trust-card relative overflow-hidden ${className}`}>{children}</section>;
+  return <section id={id} className={`trust-card relative overflow-hidden ${className}`}>{children}</section>;
 }
 
 export function SectionHeader({
@@ -49,7 +51,7 @@ export function SectionHeader({
     <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
       <div>
         {eyebrow && <div className="suite-chip mb-3 w-fit text-accent">{eyebrow}</div>}
-        <Heading className="text-2xl font-bold tracking-tight md:text-4xl">{title}</Heading>
+        <Heading className="text-2xl font-bold md:text-4xl">{title}</Heading>
         {description && <p className="mt-3 max-w-3xl text-sm leading-7 text-muted-foreground md:text-base">{description}</p>}
       </div>
       {action && <div className="self-start md:self-auto">{action}</div>}
@@ -542,7 +544,7 @@ export function MetricCard({
       <div className="flex items-center justify-between gap-4">
         <div>
           <div className="text-sm font-medium text-muted-foreground">{label}</div>
-          <div className="mt-1 text-3xl font-bold tracking-tight">{value}</div>
+          <div className="mt-1 text-3xl font-bold">{value}</div>
           {detail && <div className="mt-1 text-xs text-muted-foreground">{detail}</div>}
         </div>
         {icon && <div className={`rounded-xl p-3 ${tones[tone]}`}>{icon}</div>}
@@ -1007,7 +1009,7 @@ export function LoadingSkeleton({ rows = 3 }: { rows?: number }) {
 
 export function BrandMark() {
   return (
-    <div className="flex items-center gap-2 font-bold tracking-tight text-foreground">
+    <div className="flex items-center gap-2 font-bold text-foreground">
       <div className="rounded-lg bg-accent p-2 text-accent-foreground shadow-sm">
         <TrendingUp className="h-5 w-5" />
       </div>
