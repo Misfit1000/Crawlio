@@ -1,4 +1,4 @@
-# SEOIntel Plans And Limits
+# Crawlio Plans And Limits
 
 ## Free Lightweight Audit
 
@@ -44,12 +44,12 @@ Server-side entitlement checks enforce daily/monthly audit quota before an audit
 
 ## Locked Features
 
-Locked UI sections should clearly say the feature is available in a paid audit. SEOIntel must not fake locked or unavailable data.
+Locked UI sections should clearly say the feature is available in a paid audit. Crawlio must not fake locked or unavailable data.
 
 ## Data Honesty
 
-SEOIntel does not fake backlinks, search volume, rankings, traffic, CPC, or domain authority. Those require imported or verified data sources.
+Crawlio does not fake backlinks, search volume, rankings, traffic, CPC, or domain authority. Those require imported or verified data sources.
 
 ## Security Scope
 
-Security checks are passive and non-invasive. SEOIntel checks public configuration signals and does not exploit vulnerabilities or perform penetration testing.
+Security checks are passive and non-invasive. Crawlio checks public configuration signals and does not exploit vulnerabilities or perform penetration testing.

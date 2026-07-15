@@ -16,7 +16,7 @@ const now = new Date('2026-07-13T12:00:00.000Z');
 const source = { url: 'https://developers.google.com/search/docs/crawling-indexing/overview', title: 'Crawling and indexing overview', publisher: 'Google Search Central', citationStatus: 'verified' as const, reliability: 'high' as const, primary: true, publishedAt: '2026-07-12T12:00:00.000Z' };
 
 const paragraphs = Array.from({ length: 132 }, (_, index) => `<p>Check ${index + 1} connects observable website evidence to a clear action for editors and developers.</p>`);
-const contentHtml = `<p>This guide explains a measured workflow for reviewing public website signals.</p><h2>Collect reliable evidence</h2>${paragraphs.slice(0, 44).join('')}<p>Use the <a href="${source.url}">official crawling and indexing documentation</a> for source context.</p><h2>Prioritize practical corrections</h2>${paragraphs.slice(44, 88).join('')}<p>Start with a <a href="/#start-audit">website audit</a> and review the <a href="/blog">SEOIntel article library</a>.</p><h2>Verify the outcome</h2>${paragraphs.slice(88).join('')}`;
+const contentHtml = `<p>This guide explains a measured workflow for reviewing public website signals.</p><h2>Collect reliable evidence</h2>${paragraphs.slice(0, 44).join('')}<p>Use the <a href="${source.url}">official crawling and indexing documentation</a> for source context.</p><h2>Prioritize practical corrections</h2>${paragraphs.slice(44, 88).join('')}<p>Start with a <a href="/#start-audit">website audit</a> and review the <a href="/blog">Crawlio article library</a>.</p><h2>Verify the outcome</h2>${paragraphs.slice(88).join('')}`;
 const input = {
   title: 'A Measured Technical SEO Review Workflow',
   tagline: 'Turn public crawl evidence into a review process that teams can repeat and verify.',

@@ -11,7 +11,7 @@ No provider call, feed loop, competitor fetch loop, or article generation runs i
 
 ## Freshness And Selection
 
-A source is high priority only when it was published or materially updated inside 48 hours, is relevant to SEOIntel's audience, and is authoritative or primary. Seven-day material can remain medium priority. Older material is low priority unless an evidenced continuing rollout is still active.
+A source is high priority only when it was published or materially updated inside 48 hours, is relevant to Crawlio's audience, and is authoritative or primary. Seven-day material can remain medium priority. Older material is low priority unless an evidenced continuing rollout is still active.
 
 Selection is deterministic and chooses at most two opportunities with distinct topic clusters and search intents. Existing coverage, stale items, weak novelty, and insufficient evidence are skipped. The system never generates filler to reach a quota.
 

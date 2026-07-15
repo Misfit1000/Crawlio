@@ -26,7 +26,8 @@ export function parseRobotsTxt(text: string) {
     const val = vals.join(':').trim();
     
     if (key.toLowerCase() === 'user-agent') {
-      currentUserAgentMatch = val === '*' || val.toLowerCase().includes('seointelbot');
+      const normalizedAgent = val.toLowerCase();
+      currentUserAgentMatch = val === '*' || normalizedAgent.includes('crawliobot') || normalizedAgent.includes('seointelbot');
     } else if (key.toLowerCase() === 'sitemap') {
       rules.sitemaps.push(val);
     } else if (currentUserAgentMatch) {

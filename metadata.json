@@ -1,6 +1,6 @@
 {
-  "name": "SEOIntel",
-  "description": "A comprehensive SEO audit suite and technical analysis platform.",
+  "name": "Crawlio",
+  "description": "Crawlio is an SEO auditing, website analysis, keyword research, reporting, and content intelligence platform.",
   "requestFramePermissions": ["geolocation"],
   "majorCapabilities": []
 }

@@ -240,7 +240,7 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
           phase: 'Preparing final report',
           action: 'Saving the completed audit',
           target: audit.finalUrl || audit.normalizedUrl,
-          message: 'The checks are complete. SEOIntel is loading the stored report.',
+          message: 'The checks are complete. Crawlio is loading the stored report.',
         };
       }
       return {

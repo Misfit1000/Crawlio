@@ -1,4 +1,5 @@
 import { blogRepository } from './repository';
+import { BRAND } from '../brand';
 
 function escapeXml(value: string) {
   return value.replace(/[<>&'"]/g, (character) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[character] || character));
@@ -40,12 +41,12 @@ export async function renderBlogRss(origin: string) {
     <description>${escapeXml(post.excerpt)}</description>
     ${post.publishedAt ? `<pubDate>${new Date(post.publishedAt).toUTCString()}</pubDate>` : ''}
   </item>`).join('\n');
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0"><channel><title>SEOIntel Blog</title><link>${escapeXml(`${origin}/blog`)}</link><description>Practical SEO, website health, and passive security guidance.</description>${items}</channel></rss>\n`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0"><channel><title>${BRAND.name} Blog</title><link>${escapeXml(`${origin}/blog`)}</link><description>Practical SEO, website health, and passive security guidance.</description><generator>${BRAND.name}</generator>${items}</channel></rss>\n`;
 }
 
 export async function renderBlogNewsSitemap(origin: string) {
   const result = await blogRepository.listPublished({ limit: 100, offset: 0 });
   const cutoff = Date.now() - 48 * 60 * 60 * 1000;
   const posts = result.posts.filter((post) => post.publishedAt && new Date(post.publishedAt).getTime() >= cutoff && post.freshnessStatus === 'high');
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">\n${posts.map((post) => `  <url><loc>${escapeXml(`${origin}/blog/${encodeURIComponent(post.slug)}`)}</loc><news:news><news:publication><news:name>SEOIntel</news:name><news:language>${escapeXml(post.language || 'en')}</news:language></news:publication><news:publication_date>${escapeXml(post.publishedAt || '')}</news:publication_date><news:title>${escapeXml(post.title)}</news:title></news:news></url>`).join('\n')}\n</urlset>\n`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:news="http://www.google.com/schemas/sitemap-news/0.9">\n${posts.map((post) => `  <url><loc>${escapeXml(`${origin}/blog/${encodeURIComponent(post.slug)}`)}</loc><news:news><news:publication><news:name>${BRAND.name}</news:name><news:language>${escapeXml(post.language || 'en')}</news:language></news:publication><news:publication_date>${escapeXml(post.publishedAt || '')}</news:publication_date><news:title>${escapeXml(post.title)}</news:title></news:news></url>`).join('\n')}\n</urlset>\n`;
 }

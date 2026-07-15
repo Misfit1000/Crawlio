@@ -42,7 +42,7 @@ export function AuditTerminalState({ audit, reportPending, reportRetrying, onRet
             <div>
               <h2 className="font-semibold">Preparing final report</h2>
               <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
-                The website checks have finished. SEOIntel is loading the saved report and will keep this audit visible while it becomes available.
+                The website checks have finished. Crawlio is loading the saved report and will keep this audit visible while it becomes available.
               </p>
             </div>
           </div>

@@ -57,7 +57,7 @@ export function usePageMetadata({
     }
     canonicalLink.href = canonical;
 
-    const scriptId = 'seointel-page-jsonld';
+    const scriptId = 'crawlio-page-jsonld';
     document.getElementById(scriptId)?.remove();
     if (jsonLd) {
       const script = document.createElement('script');

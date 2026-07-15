@@ -26,7 +26,7 @@ function makeRequest(baseUrl, path, method = 'GET', body) {
   return fetch(`${baseUrl}${path}`, {
     method,
     headers: {
-      'x-seointel-guest-id': 'local-e2e-owner',
+      'x-crawlio-guest-id': 'local-e2e-owner',
       ...(body ? { 'content-type': 'application/json' } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,

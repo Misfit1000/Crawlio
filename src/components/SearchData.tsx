@@ -94,7 +94,7 @@ export default function SearchData() {
             </div>
             <h3 className="mt-4 text-2xl font-bold">No imported search data yet.</h3>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-              Go to Data Sources and import a Google Search Console or Bing Webmaster Tools CSV. SEOIntel will show real rows from that file and will not estimate traffic, search volume, or rankings.
+              Go to Data Sources and import a Google Search Console or Bing Webmaster Tools CSV. Crawlio will show real rows from that file and will not estimate traffic, search volume, or rankings.
             </p>
           </div>
         </SurfaceCard>
@@ -176,7 +176,7 @@ export default function SearchData() {
 
       <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-4 text-sm leading-6 text-amber-800 dark:text-amber-200">
         <AlertCircle className="mr-2 inline h-4 w-4" />
-        Search data requires files exported from accounts you control. SEOIntel does not bypass search engines or scrape private data.
+        Search data requires files exported from accounts you control. Crawlio does not bypass search engines or scrape private data.
       </div>
     </div>
   );

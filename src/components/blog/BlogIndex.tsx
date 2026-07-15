@@ -5,6 +5,7 @@ import { usePageMetadata } from '../../lib/blog/metadata';
 import type { BlogListResult } from '../../lib/blog/types';
 import { EmptyState, LoadingSkeleton, StatusBadge } from '../ui/visual-system';
 import { Notice, PageHeader, Panel } from '../ui/page-system';
+import { BRAND } from '../../lib/brand';
 
 const PAGE_SIZE = 9;
 
@@ -23,13 +24,13 @@ export default function BlogIndex() {
   const collectionSchema = useMemo(() => ({
     '@context': 'https://schema.org',
     '@type': 'CollectionPage',
-    name: 'SEOIntel Blog',
+    name: `${BRAND.name} Blog`,
     description: 'Practical guides for SEO audits, technical SEO, crawlability, website health, and passive security.',
     url: `${window.location.origin}/blog`,
   }), []);
 
   usePageMetadata({
-    title: 'SEOIntel Blog - Practical SEO and Website Audit Guides',
+    title: `${BRAND.name} Blog - Practical SEO and Website Audit Guides`,
     description: 'Practical guides for on-page SEO, technical SEO, crawlability, website health, reporting, and passive browser security checks.',
     canonicalPath: '/blog',
     jsonLd: collectionSchema,
@@ -53,7 +54,7 @@ export default function BlogIndex() {
     <main id="main-content" className="bg-background text-foreground">
       <div className="section-shell space-y-10 py-12 sm:py-16 lg:py-20">
         <PageHeader
-          eyebrow="SEOIntel editorial"
+          eyebrow="Crawlio editorial"
           icon={BookOpen}
           title="Practical SEO engineering guides"
           description="Clear, evidence-conscious guidance for auditing websites, prioritizing fixes, and understanding technical SEO without unsupported ranking promises."
@@ -107,10 +108,10 @@ export default function BlogIndex() {
             )}
           </section>
         ) : (
-          <Panel className="p-8"><EmptyState icon={BookOpen} title="No published articles found" description={submittedQuery ? 'Try a broader search phrase.' : 'Published SEOIntel guides will appear here.'} /></Panel>
+          <Panel className="p-8"><EmptyState icon={BookOpen} title="No published articles found" description={submittedQuery ? 'Try a broader search phrase.' : 'Published Crawlio guides will appear here.'} /></Panel>
         )}
       </div>
-      <footer className="border-t border-border bg-card"><div className="section-shell flex flex-col gap-3 py-8 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between"><span>SEOIntel practical audit guidance</span><div className="flex flex-wrap gap-4"><a href="/" className="hover:text-accent">Product</a><a href="/#pricing" className="hover:text-accent">Plans</a><a href="/sitemap.xml" className="hover:text-accent">Sitemap</a><a href="/rss.xml" className="hover:text-accent">RSS</a></div></div></footer>
+      <footer className="border-t border-border bg-card"><div className="section-shell flex flex-col gap-3 py-8 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between"><span>Crawlio practical audit guidance</span><div className="flex flex-wrap gap-4"><a href="/" className="hover:text-accent">Product</a><a href="/#pricing" className="hover:text-accent">Plans</a><a href="/sitemap.xml" className="hover:text-accent">Sitemap</a><a href="/rss.xml" className="hover:text-accent">RSS</a></div></div></footer>
     </main>
   );
 }

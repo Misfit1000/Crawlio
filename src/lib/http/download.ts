@@ -26,7 +26,7 @@ export async function downloadAuditExport(auditId: string, format: 'pdf' | 'json
 
   const blob = await response.blob();
   const extension = format.includes('.') ? format.split('.').pop() : format;
-  const filename = filenameFromDisposition(response.headers.get('content-disposition'), `seointel-audit.${extension}`);
+  const filename = filenameFromDisposition(response.headers.get('content-disposition'), `crawlio-audit.${extension}`);
   const objectUrl = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = objectUrl;

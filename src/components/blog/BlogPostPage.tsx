@@ -5,6 +5,7 @@ import { usePageMetadata } from '../../lib/blog/metadata';
 import type { BlogPost } from '../../lib/blog/types';
 import { LoadingSkeleton, StatusBadge } from '../ui/visual-system';
 import { Notice, Panel } from '../ui/page-system';
+import { BRAND } from '../../lib/brand';
 
 function formatDate(value: string | null) {
   if (!value) return 'Recently published';
@@ -36,13 +37,13 @@ export default function BlogPostPage({ slug }: { slug: string }) {
     dateModified: post.updatedAt,
     mainEntityOfPage: post.canonicalUrl || `${window.location.origin}/blog/${post.slug}`,
     image: post.ogImageUrl || undefined,
-    author: { '@type': 'Organization', name: 'SEOIntel Editorial Team' },
-    publisher: { '@type': 'Organization', name: 'SEOIntel', url: window.location.origin },
+    author: { '@type': 'Organization', name: BRAND.editorialTeam },
+    publisher: { '@type': 'Organization', name: BRAND.name, url: window.location.origin },
   } : undefined, [post]);
 
   usePageMetadata({
-    title: post?.seoTitle || post?.title || 'SEOIntel Blog Article',
-    description: post?.metaDescription || post?.excerpt || 'Practical SEOIntel audit guidance.',
+    title: post?.seoTitle || post?.title || `${BRAND.name} Blog Article`,
+    description: post?.metaDescription || post?.excerpt || `Practical ${BRAND.name} audit guidance.`,
     canonicalPath: post?.canonicalUrl || `/blog/${slug}`,
     image: post?.ogImageUrl || undefined,
     type: 'article',
@@ -83,7 +84,7 @@ export default function BlogPostPage({ slug }: { slug: string }) {
             {post.sources.length > 0 && <section className="mt-12 border-t border-border pt-8" aria-labelledby="article-sources"><h2 id="article-sources" className="text-2xl font-semibold">Sources and references</h2><ul className="mt-4 space-y-3">{post.sources.map((source) => <li key={source.url} className="rounded-lg border border-border bg-muted/20 p-4"><a href={source.url} target="_blank" rel="noreferrer" className="font-semibold text-accent hover:underline">{source.title}</a><p className="mt-1 text-sm text-muted-foreground">{source.publisher}{source.author ? ` · ${source.author}` : ''}</p></li>)}</ul></section>}
             {post.relatedArticles.length > 0 && <section className="mt-12 border-t border-border pt-8" aria-labelledby="related-articles"><h2 id="related-articles" className="text-2xl font-semibold">Related articles</h2><div className="mt-4 grid gap-3 sm:grid-cols-2">{post.relatedArticles.map((article) => <a key={article.postId} href={`/blog/${article.slug}`} className="rounded-lg border border-border p-4 transition hover:border-accent/40 hover:bg-muted/30"><span className="font-semibold text-foreground">{article.title}</span>{article.reason && <span className="mt-1 block text-sm leading-6 text-muted-foreground">{article.reason}</span>}</a>)}</div></section>}
             <Panel className="mt-12 p-6 sm:p-8">
-              <div className="flex items-start gap-4"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent"><BookOpen className="h-5 w-5" /></div><div><h2 className="text-xl font-semibold">Apply the guidance with measured evidence</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Run an SEOIntel audit to connect these recommendations to real page findings, crawl evidence, and fix priorities.</p><a href="/#start-audit" className="trust-button mt-4">Start a free audit</a></div></div>
+              <div className="flex items-start gap-4"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent"><BookOpen className="h-5 w-5" /></div><div><h2 className="text-xl font-semibold">Apply the guidance with measured evidence</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">Run an Crawlio audit to connect these recommendations to real page findings, crawl evidence, and fix priorities.</p><a href="/#start-audit" className="trust-button mt-4">Start a free audit</a></div></div>
             </Panel>
           </article>
         )}

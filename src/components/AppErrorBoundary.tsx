@@ -18,7 +18,7 @@ export default class AppErrorBoundary extends React.Component<Props, State> {
   }
 
   componentDidCatch(error: Error) {
-    console.error('SEOIntel render recovery boundary', error);
+    console.error('Crawlio render recovery boundary', error);
   }
 
   private retry = () => {

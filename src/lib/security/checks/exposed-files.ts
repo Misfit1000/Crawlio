@@ -24,7 +24,7 @@ export async function run(pageData: any): Promise<SecurityIssue[]> {
         maxRedirects: 3,
         maxBytes: 1,
         allowedContentTypes: [],
-        userAgent: 'SEOIntelBot/1.0 (Passive Security Review)',
+        userAgent: 'CrawlioBot/1.0 (Passive Security Review)',
       });
       
       if (res.status >= 200 && res.status < 300) {

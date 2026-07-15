@@ -12,7 +12,7 @@ on:
         required: true
         default: https://seointel-audit-worker.onrender.com
       create_audit:
-        description: Create and follow one audit of the SEOIntel site
+        description: Create and follow one audit of the Crawlio site
         required: true
         type: boolean
         default: false

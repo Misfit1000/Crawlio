@@ -1,5 +1,6 @@
 import http from 'node:http';
 import type { AuditWorkerRuntimeState } from './audit-worker-runtime';
+import { BRAND } from '../lib/brand';
 
 export function startWorkerHealthServer(
   state: AuditWorkerRuntimeState,
@@ -14,6 +15,7 @@ export function startWorkerHealthServer(
 
   const server = http.createServer((req, res) => {
     const payload = {
+      product: BRAND.name,
       workerRole: 'audit-only',
       ok: state.status !== 'stopped' && state.queuePollingStatus !== 'error' && state.databaseConnected && !state.maintenanceMode,
       serviceStatus: state.maintenanceMode ? 'maintenance' : state.status === 'stopped' ? 'stopped' : 'online',

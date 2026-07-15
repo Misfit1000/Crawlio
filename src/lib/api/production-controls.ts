@@ -17,7 +17,7 @@ export type AuditAdmissionDecision = {
 let lastApiVersionWriteAt = 0;
 
 export function privacyHash(value: string) {
-  const secret = process.env.RATE_LIMIT_HASH_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || 'seointel-local-rate-limit';
+  const secret = process.env.RATE_LIMIT_HASH_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || 'crawlio-local-rate-limit';
   return createHash('sha256').update(`${secret}:${value}`).digest('hex');
 }
 

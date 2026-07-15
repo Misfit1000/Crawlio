@@ -1,4 +1,5 @@
 import type { ResourceAuditLiveData } from '../audit/resource-types';
+import { BRAND } from '../brand';
 
 const FORMULA_PREFIX = /^[\t\r ]*[=+\-@]/;
 
@@ -16,6 +17,10 @@ export function buildPublicAuditExport(data: ResourceAuditLiveData) {
   const audit = data.audit;
   if (!audit) return null;
   return {
+    generator: {
+      name: BRAND.name,
+      tagline: BRAND.tagline,
+    },
     audit: {
       id: audit.id,
       submittedInput: audit.submittedInput,

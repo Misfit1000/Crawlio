@@ -9,3 +9,5 @@ coverage/
 auth.db
 .env*
 !.env.example
+
+.vercel

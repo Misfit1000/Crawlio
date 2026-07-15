@@ -17,7 +17,7 @@
 2. Deploy the frontend/API and audit engine from the same commit.
 3. Open the manual production-smoke workflow without audit creation.
 4. Confirm version compatibility and queue polling.
-5. Run one audit of the SEOIntel-owned production domain and confirm a terminal state.
+5. Run one audit of the Crawlio-owned production domain and confirm a terminal state.
 6. Verify account export, audit deletion, and a test-account deletion.
 7. Check CSP, browser console, mobile widths, keyboard navigation, and dark/light themes.
 
@@ -27,4 +27,4 @@ Oracle deployment, paid-worker routing, multi-worker infrastructure, Stripe Chec
 
 ## Known SEO delivery limitation
 
-Public blog routes are currently rendered by the Vite client after the application loads. The sitemap and client metadata are truthful, but SEOIntel does not claim server-rendered article HTML. Add prerendering or server rendering in a separate reviewed change before relying on consistent crawler rendering for editorial growth.
+Public blog routes are currently rendered by the Vite client after the application loads. The sitemap and client metadata are truthful, but Crawlio does not claim server-rendered article HTML. Add prerendering or server rendering in a separate reviewed change before relying on consistent crawler rendering for editorial growth.

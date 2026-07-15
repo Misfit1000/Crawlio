@@ -3,10 +3,10 @@
 ## Clone
 
 ```bash
-mkdir -p seointel-workspace
-cd seointel-workspace
-git clone https://github.com/Misfit1000/KeywordsPlanner.git SEOIntel
-cd SEOIntel
+mkdir -p crawlio-workspace
+cd crawlio-workspace
+git clone https://github.com/Misfit1000/Crawlio.git Crawlio
+cd Crawlio
 git status
 git remote -v
 git branch --show-current

@@ -82,7 +82,7 @@ async function run() {
     console.log("✓ Invalid route returned JSON 404");
 
     // 2. audit start handler returns valid JSON
-    const guestHeaders = { 'x-seointel-guest-id': 'api-json-smoke-owner' };
+    const guestHeaders = { 'x-crawlio-guest-id': 'api-json-smoke-owner' };
     const startRes = await makeRequest('/api/tools/audit/start', 'POST', { url: 'https://example.com', maxPages: 1 }, guestHeaders);
     assert.ok(startRes.headers['content-type'].includes('application/json'), 'Should return JSON');
     const startData = JSON.parse(startRes.data);

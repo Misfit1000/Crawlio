@@ -1,6 +1,6 @@
 # Audited-Site Preview Fallbacks
 
-SEOIntel does not embed an audited website in an iframe. Many production websites block embedding with `X-Frame-Options` or Content Security Policy, so an iframe would make the audit workspace look broken even when the audit succeeded.
+Crawlio does not embed an audited website in an iframe. Many production websites block embedding with `X-Frame-Options` or Content Security Policy, so an iframe would make the audit workspace look broken even when the audit succeeded.
 
 ## Preview source order
 
@@ -19,10 +19,10 @@ Each state is labelled. An Open Graph image is never called a screenshot, and a 
 - Obvious localhost and private-network media URLs are rejected in the browser.
 - External preview images use a no-referrer policy.
 - Image load failures fall back to metadata without affecting audit findings or report access.
-- SEOIntel stores page summaries, not raw HTML.
+- Crawlio stores page summaries, not raw HTML.
 
 ## Database rollout
 
 Migration `009_audit_page_preview_metadata.sql` adds the optional preview fields to `audit_pages`. Apply it before deploying the updated worker when possible. The repository retries legacy page writes when those columns are not yet available, so an out-of-order deployment does not stop audit processing; richer stored previews appear after the migration is applied and a new audit is run.
 
-SEOIntel currently leaves `screenshot_url` empty unless a genuine trusted capture is supplied. It does not claim to take screenshots when no screenshot service exists.
+Crawlio currently leaves `screenshot_url` empty unless a genuine trusted capture is supplied. It does not claim to take screenshots when no screenshot service exists.

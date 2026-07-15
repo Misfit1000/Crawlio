@@ -97,7 +97,7 @@ function whyThisMatters(section: ReportSectionId) {
     'internal-links': 'Internal links help users navigate and help search engines discover and understand page relationships.',
     performance: 'Large pages and slow server responses can delay navigation and make crawling less efficient.',
     mobile: 'Mobile-readiness signals affect how comfortably visitors can use the page on narrow screens.',
-    security: 'Browser protection settings reduce avoidable client-side risk. SEOIntel records observations only and does not attempt exploitation.',
+    security: 'Browser protection settings reduce avoidable client-side risk. Crawlio records observations only and does not attempt exploitation.',
     'structured-data': 'Structured and social metadata can improve how public page information is interpreted and previewed.',
   };
   return copy[section];
@@ -159,7 +159,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
 
   useEffect(() => {
     let active = true;
-    const requestedId = window.localStorage.getItem('seointel_selected_report_id');
+    const requestedId = window.localStorage.getItem('crawlio_selected_report_id') || window.localStorage.getItem('seointel_selected_report_id');
     getAuditAccessHeaders()
       .then((headers) => safeJsonFetch<any>(`${API_ROUTES.auditHistory}?limit=100`, { headers }))
       .then((response) => {
@@ -197,7 +197,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
     setReportLoading(true);
     setReportError(null);
     setReportData(null);
-    window.localStorage.setItem('seointel_selected_report_id', selectedId);
+    window.localStorage.setItem('crawlio_selected_report_id', selectedId);
 
     getAuditAccessHeaders()
       .then((headers) => safeJsonFetch<ApiEnvelope<ResourceAuditLiveData>>(API_ROUTES.auditResult(selectedId), { headers }))
@@ -286,7 +286,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
       const raw = window.localStorage.getItem(type === 'search' ? 'seo_gsc_data' : 'seo_keyword_data');
       const rows = raw ? JSON.parse(raw) : [];
       if (!Array.isArray(rows)) throw new Error('Imported data is not in a supported format.');
-      downloadLocalCsv(`seointel-${type}-export.csv`, rows);
+      downloadLocalCsv(`crawlio-${type}-export.csv`, rows);
       showMessage(`${type === 'search' ? 'Search' : 'Keyword'} data downloaded.`);
     } catch (error) {
       showMessage(error instanceof Error ? error.message : 'Imported data export failed.');
@@ -313,7 +313,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
           <EmptyState
             icon={History}
             title="No audit reports yet"
-            description="Run a website audit to create a report. SEOIntel will not fill this workspace with sample rankings, traffic, backlinks, or made-up scores."
+            description="Run a website audit to create a report. Crawlio will not fill this workspace with sample rankings, traffic, backlinks, or made-up scores."
             action={onStartAudit ? <button type="button" onClick={onStartAudit} className="trust-button">Start website audit</button> : undefined}
           />
         </SurfaceCard>
@@ -467,7 +467,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
 
             {section.id === 'performance' && <p className="rounded-lg border border-border bg-muted/25 p-3 text-xs leading-5 text-muted-foreground">These are audit-time response and payload observations, not Google Core Web Vitals field data.</p>}
             {section.id === 'mobile' && <p className="rounded-lg border border-border bg-muted/25 p-3 text-xs leading-5 text-muted-foreground">The current audit engine does not produce a mobile usability score or field-device metrics. Any collected viewport findings are listed below; otherwise this section remains explicitly unmeasured.</p>}
-            {section.id === 'security' && <p className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-3 text-xs leading-5 text-muted-foreground">SEOIntel checks public HTTPS and browser protection signals only. It does not scan ports, submit attack payloads, brute-force credentials, or attempt exploitation.</p>}
+            {section.id === 'security' && <p className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-3 text-xs leading-5 text-muted-foreground">Crawlio checks public HTTPS and browser protection signals only. It does not scan ports, submit attack payloads, brute-force credentials, or attempt exploitation.</p>}
 
             {sectionFindings.length ? (
               <div className="grid gap-3 xl:grid-cols-2">
@@ -565,7 +565,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
         <details className="rounded-xl border border-border bg-card">
           <summary className="cursor-pointer px-5 py-4 font-semibold">Raw audit details</summary>
           <div className="border-t border-border p-5">
-            <p className="mb-3 text-xs leading-5 text-muted-foreground">Structured audit records only. SEOIntel does not store complete raw HTML in this report.</p>
+            <p className="mb-3 text-xs leading-5 text-muted-foreground">Structured audit records only. Crawlio does not store complete raw HTML in this report.</p>
             <pre className="max-h-[480px] overflow-auto rounded-lg bg-slate-950 p-4 text-xs leading-5 text-slate-100">{JSON.stringify({ audit: reportData.audit, scores: reportData.finalReport?.scores, events: reportData.latestEvents, pages: reportData.latestPages, issues: reportData.latestIssues }, null, 2)}</pre>
           </div>
         </details>

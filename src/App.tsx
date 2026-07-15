@@ -10,6 +10,7 @@ import { createAuditSubmitGuard } from './lib/api/audit-submit-guard';
 import { BrandMark, LoadingSkeleton, ThemeToggle } from './components/ui/visual-system';
 import { MarketingShell, WorkspaceShell } from './components/layout/ProductShells';
 import { useLocation, useNavigate } from 'react-router';
+import { BRAND } from './lib/brand';
 import {
   TAB_PATHS,
   isWorkspacePath,
@@ -117,11 +118,17 @@ export default function App() {
 
   useEffect(() => {
     const pages: Record<string, { title: string; description: string }> = {
-      '/': { title: 'SEOIntel - Visual SEO, Technical SEO & Passive Security Audit Tool', description: 'Run visual SEO, technical SEO, crawlability, performance, and passive security audits with desktop, mobile, and Google-style previews.' },
-      '/pricing': { title: 'SEOIntel Pricing and Free Audit Limits', description: 'Compare SEOIntel Free, Full, and Agency-ready audit limits without hidden ranking or backlink data claims.' },
-      '/reports/example': { title: 'SEOIntel Example Audit Report', description: 'Explore an example SEOIntel report layout with website health, coverage, passive security, previews, and prioritized fixes.' },
+      '/': { title: `${BRAND.name} - ${BRAND.tagline}`, description: BRAND.description },
+      '/pricing': { title: `Pricing and Free Audit Limits | ${BRAND.name}`, description: `Compare ${BRAND.name} Free, Full, and Agency-ready audit limits without hidden ranking or backlink data claims.` },
+      '/reports/example': { title: `Example Website Audit Report | ${BRAND.name}`, description: `Explore an example ${BRAND.name} report with website health, coverage, passive security, previews, and prioritized fixes.` },
+      '/login': { title: `Sign in | ${BRAND.name}`, description: `Sign in to manage ${BRAND.name} website audits and reports.` },
+      '/register': { title: `Create an account | ${BRAND.name}`, description: `Create a ${BRAND.name} account to save audits, reports, and fix progress.` },
+      '/admin/login': { title: `Administrator sign in | ${BRAND.name}`, description: `Secure administrator access for ${BRAND.name}.` },
     };
-    const page = pages[pathname];
+    const page = pages[pathname]
+      || (pathname.startsWith('/audit/live/') ? { title: `Live website audit | ${BRAND.name}`, description: 'Follow website checks and collected evidence as the audit runs.' } : null)
+      || (pathname.startsWith('/app') ? { title: `Audit workspace | ${BRAND.name}`, description: 'Review website audits, findings, reports, imports, and saved history.' } : null)
+      || (pathname.startsWith('/admin') ? { title: `Admin dashboard | ${BRAND.name}`, description: `Manage ${BRAND.name} users, audits, plans, blog operations, and deployment health.` } : null);
     if (!page) return;
     const description = document.querySelector<HTMLMetaElement>('meta[name="description"]');
     const canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');

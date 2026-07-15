@@ -323,7 +323,7 @@ export const getPlatformSettings = async () => {
   const client = clientOrNull();
   if (!client) {
     return {
-      platformName: 'SEOIntel Audit',
+      platformName: 'Crawlio Audit',
       supportEmail: 'support@keywordintelligence.com',
       requireEmailVerification: false,
       publicRegistration: true,
@@ -332,7 +332,7 @@ export const getPlatformSettings = async () => {
   const { data, error } = await client.from('platform_settings').select('*').eq('id', 'settings').maybeSingle();
   if (error) throw error;
   return data ? toCamelRow(data) : {
-    platformName: 'SEOIntel Audit',
+    platformName: 'Crawlio Audit',
     supportEmail: 'support@keywordintelligence.com',
     requireEmailVerification: false,
     publicRegistration: true,

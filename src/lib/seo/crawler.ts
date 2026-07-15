@@ -122,7 +122,7 @@ export async function crawlDomain(startUrl: string, options: CrawlOptions = {}):
               maxRedirects: 5,
               maxBytes: 2_000_000,
               allowedContentTypes: ['text/html', 'application/xhtml+xml'],
-              userAgent: 'SEOIntelBot/1.0 (Local Analysis Tools)',
+              userAgent: 'CrawlioBot/1.0 (Local Analysis Tools)',
               allowPrivateForTesting: process.env.SEOINTEL_ALLOW_PRIVATE_TEST_TARGETS === 'true',
               allowNonStandardPortsForTesting: process.env.SEOINTEL_ALLOW_PRIVATE_TEST_TARGETS === 'true',
             });

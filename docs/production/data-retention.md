@@ -11,4 +11,4 @@ Migration 011 records retention policy rows. Current defaults are:
 - customer reports: retained until owner deletion or account deletion;
 - published blog content: retained until archived.
 
-`npm run retention:preview` is a dry run. Review counts before `npm run retention:apply`. Schedule the apply command only in a protected service-role environment. The cleanup never stores or deletes full raw HTML because SEOIntel does not retain it.
+`npm run retention:preview` is a dry run. Review counts before `npm run retention:apply`. Schedule the apply command only in a protected service-role environment. The cleanup never stores or deletes full raw HTML because Crawlio does not retain it.

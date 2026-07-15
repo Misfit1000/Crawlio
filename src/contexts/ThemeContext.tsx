@@ -8,11 +8,13 @@ interface ThemeContextType {
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+const THEME_KEY = 'crawlio-theme-v1';
+const LEGACY_THEME_KEY = 'seointel-theme-v2';
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
     try {
-      const saved = localStorage.getItem('seointel-theme-v2');
+      const saved = localStorage.getItem(THEME_KEY) || localStorage.getItem(LEGACY_THEME_KEY);
       if (saved === 'light' || saved === 'dark') return saved;
       return 'light';
     } catch {
@@ -26,7 +28,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     root.classList.add(theme);
     root.style.colorScheme = theme;
     try {
-      localStorage.setItem('seointel-theme-v2', theme);
+      localStorage.setItem(THEME_KEY, theme);
     } catch {}
   }, [theme]);
 

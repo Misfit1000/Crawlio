@@ -14,7 +14,8 @@ export interface ViewportSize {
   height: number;
 }
 
-export const ACTIVITY_LAYOUT_KEY = 'seointel_audit_activity_layout_v2';
+export const ACTIVITY_LAYOUT_KEY = 'crawlio_audit_activity_layout_v1';
+export const LEGACY_ACTIVITY_LAYOUT_KEY = 'seointel_audit_activity_layout_v2';
 export const ACTIVITY_TOP_OFFSET = 80;
 export const ACTIVITY_EDGE_GAP = 12;
 export const ACTIVITY_DEFAULT_LAYOUT: ActivityPanelLayout = {

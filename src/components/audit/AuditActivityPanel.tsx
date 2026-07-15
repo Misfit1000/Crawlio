@@ -5,6 +5,7 @@ import type { ResourceAuditEvent } from '../../lib/audit/resource-types';
 import { customerSafeDiagnosticText } from '../../lib/audit/audit-failures';
 import {
   ACTIVITY_LAYOUT_KEY,
+  LEGACY_ACTIVITY_LAYOUT_KEY,
   activityPanelSize,
   clampActivityLayout,
   defaultActivityLayout,
@@ -64,7 +65,7 @@ export default function AuditActivityPanel({
 }) {
   const [layout, setLayout] = useState<ActivityPanelLayout>(() => {
     if (typeof window === 'undefined') return defaultActivityLayout(viewportSize());
-    return parseActivityLayout(window.localStorage.getItem(ACTIVITY_LAYOUT_KEY), viewportSize());
+    return parseActivityLayout(window.localStorage.getItem(ACTIVITY_LAYOUT_KEY) || window.localStorage.getItem(LEGACY_ACTIVITY_LAYOUT_KEY), viewportSize());
   });
   const [lastSeenCount, setLastSeenCount] = useState(0);
   const [filter, setFilter] = useState<EventFilter>('all');

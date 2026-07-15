@@ -98,12 +98,12 @@ const address = await listen(server);
 try {
   const paidAuditId = await createCompletedAudit('paid');
   const freeAuditId = await createCompletedAudit('free');
-  const headers = { 'x-seointel-guest-id': guestId };
+  const headers = { 'x-crawlio-guest-id': guestId };
 
   const paidResponse = await fetch(`http://127.0.0.1:${address.port}/api/tools/audit/export/${paidAuditId}/pdf`, { headers });
   assert.equal(paidResponse.status, 200);
   assert.match(paidResponse.headers.get('content-type') || '', /application\/pdf/);
-  assert.match(paidResponse.headers.get('content-disposition') || '', /attachment; filename="seointel-example.com-audit.pdf"/);
+  assert.match(paidResponse.headers.get('content-disposition') || '', /attachment; filename="crawlio-example.com-audit.pdf"/);
   const paidBuffer = Buffer.from(await paidResponse.arrayBuffer());
   assert.equal(paidBuffer.subarray(0, 4).toString(), '%PDF');
   assert.match(paidBuffer.subarray(Math.max(0, paidBuffer.length - 32)).toString(), /%%EOF/);
@@ -116,7 +116,7 @@ try {
   assert.equal(freeBody.upgradeRequired, true);
 
   const deniedResponse = await fetch(`http://127.0.0.1:${address.port}/api/tools/audit/export/${paidAuditId}/pdf`, {
-    headers: { 'x-seointel-guest-id': 'different-guest' },
+    headers: { 'x-crawlio-guest-id': 'different-guest' },
   });
   assert.equal(deniedResponse.status, 404);
 

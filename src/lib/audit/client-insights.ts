@@ -56,9 +56,12 @@ export interface IssueInsight {
   technicalDetails: string;
 }
 
-const HISTORY_KEY = 'seointel_audit_history_v1';
-const CHECKLIST_PREFIX = 'seointel_fix_checklist_v1:';
-const FINDING_NOTES_PREFIX = 'seointel_finding_notes_v1:';
+const HISTORY_KEY = 'crawlio_audit_history_v1';
+const LEGACY_HISTORY_KEY = 'seointel_audit_history_v1';
+const CHECKLIST_PREFIX = 'crawlio_fix_checklist_v1:';
+const LEGACY_CHECKLIST_PREFIX = 'seointel_fix_checklist_v1:';
+const FINDING_NOTES_PREFIX = 'crawlio_finding_notes_v1:';
+const LEGACY_FINDING_NOTES_PREFIX = 'seointel_finding_notes_v1:';
 
 function hasStorage() {
   return typeof window !== 'undefined' && !!window.localStorage;
@@ -83,7 +86,7 @@ export function buildIssueInsight(issue: ResourceAuditIssue): IssueInsight {
   let why = {
     seo: 'This can make the page harder to understand in search results and can reduce click quality.',
     technical: 'This can make the page harder for search engines to access, understand, or trust reliably.',
-    security: 'This can reduce browser-side protection signals and client trust, even though SEOIntel only runs passive checks.',
+    security: 'This can reduce browser-side protection signals and client trust, even though Crawlio only runs passive checks.',
   }[bucket];
 
   const failureCode = String(issue.failureCode || '').toUpperCase();
@@ -131,7 +134,7 @@ export function buildIssueInsight(issue: ResourceAuditIssue): IssueInsight {
 export function readAuditHistory(): AuditHistoryEntry[] {
   if (!hasStorage()) return [];
   try {
-    const raw = window.localStorage.getItem(HISTORY_KEY);
+    const raw = window.localStorage.getItem(HISTORY_KEY) || window.localStorage.getItem(LEGACY_HISTORY_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed.map((entry) => ({
       ...entry,
@@ -241,7 +244,7 @@ export function scoreTrendForUrl(normalizedUrl: string, history = readAuditHisto
 export function readChecklist(auditId: string): Record<string, ChecklistStatus> {
   if (!hasStorage()) return {};
   try {
-    const raw = window.localStorage.getItem(`${CHECKLIST_PREFIX}${auditId}`);
+    const raw = window.localStorage.getItem(`${CHECKLIST_PREFIX}${auditId}`) || window.localStorage.getItem(`${LEGACY_CHECKLIST_PREFIX}${auditId}`);
     const parsed = raw ? JSON.parse(raw) : {};
     return parsed && typeof parsed === 'object' ? parsed : {};
   } catch {
@@ -257,7 +260,7 @@ export function writeChecklist(auditId: string, statuses: Record<string, Checkli
 export function readFindingNotes(auditId: string): Record<string, string> {
   if (!hasStorage() || !auditId) return {};
   try {
-    const raw = window.localStorage.getItem(`${FINDING_NOTES_PREFIX}${auditId}`);
+    const raw = window.localStorage.getItem(`${FINDING_NOTES_PREFIX}${auditId}`) || window.localStorage.getItem(`${LEGACY_FINDING_NOTES_PREFIX}${auditId}`);
     const parsed = raw ? JSON.parse(raw) : {};
     if (!parsed || typeof parsed !== 'object') return {};
     return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string').slice(0, 200));

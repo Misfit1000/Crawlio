@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { ArrowRight, LogOut, Menu, User, X } from 'lucide-react';
 import { BrandMark, ThemeToggle } from '../ui/visual-system';
+import { BRAND } from '../../lib/brand';
 
 type Theme = 'light' | 'dark';
 
@@ -41,7 +42,7 @@ export function MarketingShell({
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <header className="sticky top-0 z-50 border-b border-border/80 bg-card/92 backdrop-blur-xl">
         <div className="section-shell flex h-[4.5rem] items-center justify-between gap-4">
-          <button type="button" onClick={onHome} className="rounded-lg" aria-label="SEOIntel home"><BrandMark /></button>
+          <button type="button" onClick={onHome} className="rounded-lg" aria-label={`${BRAND.name} home`}><BrandMark /></button>
           <nav className="hidden items-center gap-1 lg:flex" aria-label="Public navigation">
             {links.map(([label, href]) => <a key={href} href={href} className="rounded-lg px-3 py-2 text-sm font-semibold text-muted-foreground hover:bg-muted hover:text-foreground">{label}</a>)}
           </nav>
@@ -107,7 +108,7 @@ export function WorkspaceShell({
       <header className="relative z-50 flex h-[4.25rem] shrink-0 items-center border-b border-border/80 bg-card/92 px-4 backdrop-blur-xl md:px-6">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <button type="button" onClick={onToggleSidebar} className="rounded-lg p-2.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label={sidebarOpen ? 'Close navigation' : 'Open navigation'}><Menu className="h-5 w-5" /></button>
-          <button type="button" onClick={onHome} className="rounded-lg" aria-label="SEOIntel home"><BrandMark /></button>
+          <button type="button" onClick={onHome} className="rounded-lg" aria-label={`${BRAND.name} home`}><BrandMark /></button>
         </div>
         <div className="ml-3 flex items-center gap-2">
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
@@ -132,7 +133,7 @@ function PublicFooter() {
       <div className="section-shell grid gap-8 py-10 sm:grid-cols-2 lg:grid-cols-[1.2fr_1fr_1fr]">
         <div>
           <BrandMark />
-          <p className="mt-3 max-w-md text-sm leading-6 text-muted-foreground">Website audits with transparent coverage, passive security boundaries, and no invented ranking data.</p>
+          <p className="mt-3 max-w-md text-sm leading-6 text-muted-foreground">{BRAND.tagline} Evidence-led website audits with transparent coverage and no invented ranking data.</p>
         </div>
         <nav aria-label="Product links">
           <h2 className="text-sm font-semibold">Product</h2>

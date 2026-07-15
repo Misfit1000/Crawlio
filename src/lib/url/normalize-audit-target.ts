@@ -121,5 +121,5 @@ export const AUDIT_TARGET_INPUT_PROPS = {
   autoCapitalize: 'none',
   autoCorrect: 'off',
   spellCheck: false,
-  placeholder: 'Enter a website or domain, e.g. seointel.com',
+  placeholder: 'Enter a website or domain, e.g. example.com',
 };

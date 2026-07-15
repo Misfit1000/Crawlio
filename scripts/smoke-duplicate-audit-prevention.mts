@@ -31,7 +31,7 @@ async function startAudit(baseUrl: string, url: string, guestId: string, mode = 
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'x-seointel-guest-id': guestId,
+      'x-crawlio-guest-id': guestId,
     },
     body: JSON.stringify({ url, mode }),
   });

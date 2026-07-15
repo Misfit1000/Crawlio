@@ -1028,7 +1028,7 @@ export async function runAuditWorkerLoop() {
   });
 
   await writeWorkerHeartbeat(state, { status: 'starting', currentAuditId: null });
-  console.log(`SEOIntel audit worker started as ${config.workerId}`);
+  console.log(`Crawlio audit worker started as ${config.workerId}`);
   console.log('Supabase admin: connected');
   console.log(`Supabase project: ${config.supabaseHost}`);
   console.log(`Polling interval: ${config.pollIntervalMs}ms`);

@@ -104,12 +104,12 @@ const workflow = [
 
 const faqs = [
   ['What does an audit check?', 'The audit reviews on-page SEO, technical delivery, crawlability, internal links, metadata, headings, indexing directives, redirects, structured data, page accessibility, performance signals, and passive browser protections.'],
-  ['Can SEOIntel audit JavaScript-rendered pages?', 'The audit analyses the public response it can retrieve. Content that appears only after complex browser execution may have limited evidence, and the report will show that limitation rather than inventing a result.'],
+  ['Can Crawlio audit JavaScript-rendered pages?', 'The audit analyses the public response it can retrieve. Content that appears only after complex browser execution may have limited evidence, and the report will show that limitation rather than inventing a result.'],
   ['Does it estimate rankings or traffic?', 'No. Rankings, traffic, backlinks, and search volume appear only when they come from data you import or a real provider.'],
   ['What does completed with warnings mean?', 'The report contains useful collected evidence, but one or more pages or checks were blocked, unavailable, or stopped by a safe audit limit. Those gaps remain visible.'],
   ['Is the security audit a penetration test?', 'No. Passive security observations are not penetration testing. The audit reads public responses and browser-protection signals without exploitation or attack traffic.'],
   ['Are private or internal websites supported?', 'No. Audits are restricted to public websites. Private network addresses, local services, and authenticated internal pages are blocked by safety controls.'],
-  ['How is audit data stored?', 'SEOIntel stores job state, page summaries, findings, events, and report data. Complete raw HTML is not retained, and metadata previews are not screenshots.'],
+  ['How is audit data stored?', 'Crawlio stores job state, page summaries, findings, events, and report data. Complete raw HTML is not retained, and metadata previews are not screenshots.'],
   ['Does AI decide audit scores?', 'No. Audit findings and scores come from deterministic checks. Optional AI-assisted drafting is limited to administrator blog tools and still requires editorial review.'],
   ['Can I delete an audit or account?', 'Account owners can remove stored audits and request account deletion from the workspace settings. Retention and deletion boundaries are explained in the privacy policy.'],
 ];

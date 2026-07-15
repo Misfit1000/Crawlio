@@ -28,14 +28,14 @@ if (process.env.RUN_AUDIT_SMOKE === 'true') {
   const guestId = `production-smoke-${randomUUID()}`;
   const start = await json(`${appUrl}/api/tools/audit/start`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-SEOIntel-Guest-Id': guestId },
+    headers: { 'Content-Type': 'application/json', 'X-Crawlio-Guest-Id': guestId },
     body: JSON.stringify({ url: new URL(appUrl).hostname, mode: 'quick' }),
   });
   const auditId = start?.data?.auditId;
   if (!auditId) throw new Error('Audit start did not return an audit ID.');
   let terminal = null;
   for (let attempt = 0; attempt < 90; attempt += 1) {
-    const status = await json(`${appUrl}/api/tools/audit/status/${encodeURIComponent(auditId)}`, { headers: { 'X-SEOIntel-Guest-Id': guestId } });
+    const status = await json(`${appUrl}/api/tools/audit/status/${encodeURIComponent(auditId)}`, { headers: { 'X-Crawlio-Guest-Id': guestId } });
     const value = status?.data?.audit?.status;
     if (['completed', 'completed_with_warnings', 'failed', 'cancelled', 'abandoned'].includes(value)) { terminal = value; break; }
     await new Promise((resolve) => setTimeout(resolve, 5_000));

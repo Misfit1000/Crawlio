@@ -5,11 +5,11 @@ import { normalizeAuditTarget } from '../src/lib/url/normalize-audit-target';
 
 const accepted: Array<[string, string]> = [
   ['Bathuwa.com', 'https://bathuwa.com/'],
-  ['seointel.com', 'https://seointel.com/'],
-  ['WWW.SEOINTEL.COM', 'https://www.seointel.com/'],
-  ['seointel.com/page?view=1#section', 'https://seointel.com/page?view=1'],
-  ['https://seointel.com', 'https://seointel.com/'],
-  ['http://seointel.com:80/path', 'http://seointel.com/path'],
+  ['example.com', 'https://example.com/'],
+  ['WWW.EXAMPLE.COM', 'https://www.example.com/'],
+  ['example.com/page?view=1#section', 'https://example.com/page?view=1'],
+  ['https://example.com', 'https://example.com/'],
+  ['http://example.com:80/path', 'http://example.com/path'],
   ['  “Bathuwa.com”  ', 'https://bathuwa.com/'],
   ['bücher.de', 'https://xn--bcher-kva.de/'],
 ];

@@ -7,7 +7,7 @@ export default function NotFoundPage({ onHome }: { onHome: () => void }) {
     const previous = robots.content;
     robots.content = 'noindex, nofollow';
     const previousTitle = document.title;
-    document.title = 'Page not found | SEOIntel';
+    document.title = 'Page not found | Crawlio';
     return () => { robots.content = previous; document.title = previousTitle; };
   }, []);
 

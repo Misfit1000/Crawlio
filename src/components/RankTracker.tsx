@@ -114,7 +114,7 @@ export default function RankTracker() {
         eyebrow="Rankings data"
         icon={BarChart3}
         title="Actual SERP positions from your imported data"
-        description="Import Google Search Console, Bing Webmaster Tools, or provider CSV exports. SEOIntel does not scrape Google results or invent ranking rows."
+        description="Import Google Search Console, Bing Webmaster Tools, or provider CSV exports. Crawlio does not scrape Google results or invent ranking rows."
         actions={
           <button type="button" onClick={() => fileRef.current?.click()} className="trust-button">
             <Upload className="h-4 w-4" /> Import rankings CSV
@@ -182,7 +182,7 @@ export default function RankTracker() {
           <SurfaceCard className="overflow-hidden">
             <div className="border-b border-border bg-card px-5 py-4">
               <h3 className="text-xl font-bold">Imported ranking rows</h3>
-              <p className="mt-1 text-sm text-muted-foreground">Rendered from your CSV data. Nothing here is estimated by SEOIntel.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Rendered from your CSV data. Nothing here is estimated by Crawlio.</p>
             </div>
             <div className="overflow-x-auto">
               <table className="suite-table min-w-[760px]">

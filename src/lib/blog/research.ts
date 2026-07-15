@@ -27,7 +27,7 @@ function unique(values: string[], maximum: number) {
 }
 
 async function fetchReference(url: string) {
-  const response = await safePublicFetch(url, { timeoutMs: 8_000, maxRedirects: 3, maxBytes: 1_000_000, allowedContentTypes: ['text/html', 'application/xhtml+xml'], userAgent: 'SEOIntelEditorialBot/1.0 (+https://keywordsintel.vercel.app/)' });
+  const response = await safePublicFetch(url, { timeoutMs: 8_000, maxRedirects: 3, maxBytes: 1_000_000, allowedContentTypes: ['text/html', 'application/xhtml+xml'], userAgent: 'CrawlioEditorialBot/1.0 (+https://keywordsintel.vercel.app/)' });
   if (response.status < 200 || response.status >= 300) throw new Error(`Reference returned HTTP ${response.status}.`);
   const $ = load(response.body);
   const title = $('meta[property="og:title"]').attr('content') || $('title').text().trim();

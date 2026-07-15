@@ -1,6 +1,6 @@
 # Audit Scoring
 
-SEOIntel starts measured categories at 100 and applies deterministic deductions from deduplicated findings. A deduction considers severity, affected-page reach, whether the issue is site-wide, and whether it blocks technical delivery or crawlability. Derived response-status, redirect, slow-response, and large-HTML observations can also deduct from the relevant measured category.
+Crawlio starts measured categories at 100 and applies deterministic deductions from deduplicated findings. A deduction considers severity, affected-page reach, whether the issue is site-wide, and whether it blocks technical delivery or crawlability. Derived response-status, redirect, slow-response, and large-HTML observations can also deduct from the relevant measured category.
 
 Severity base points are critical 22, high 13, medium 6, low 2, and informational 0. Reach and category multipliers are bounded; each category remains between 0 and 100. The overall score is the equal average of categories actually measured by the current audit.
 

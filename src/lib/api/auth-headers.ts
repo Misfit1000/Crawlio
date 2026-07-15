@@ -1,3 +1,5 @@
+import { CRAWLIO_GUEST_HEADER } from '../brand';
+
 export async function getAuthHeaders(base: Record<string, string> = {}) {
   try {
     const { getSupabaseBrowserClient } = await import('../supabase/client');
@@ -13,10 +15,14 @@ export async function getAuthHeaders(base: Record<string, string> = {}) {
 }
 
 export function getOrCreateGuestSessionId() {
-  const key = 'seointel_guest_id';
+  const key = 'crawlio_guest_id';
+  const legacyKey = 'seointel_guest_id';
   try {
-    const existing = localStorage.getItem(key);
-    if (existing) return existing;
+    const existing = localStorage.getItem(key) || localStorage.getItem(legacyKey);
+    if (existing) {
+      localStorage.setItem(key, existing);
+      return existing;
+    }
     const next = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     localStorage.setItem(key, next);
     return next;
@@ -28,7 +34,7 @@ export function getOrCreateGuestSessionId() {
 export async function getAuditAccessHeaders(base: Record<string, string> = {}) {
   const headers = await getAuthHeaders(base);
   const guestId = getOrCreateGuestSessionId();
-  return guestId ? { ...headers, 'X-SEOIntel-Guest-Id': guestId } : headers;
+  return guestId ? { ...headers, [CRAWLIO_GUEST_HEADER]: guestId } : headers;
 }
 
 export const getAuditStartHeaders = getAuditAccessHeaders;

@@ -75,7 +75,7 @@ export default function Imports() {
   return (
     <div className="space-y-9 animate-rise">
       <PageHeader eyebrow="Data sources" icon={Database} title="Import real SEO data" description="Load your own search-performance, keyword-position, or backlink CSV exports. Imported rows stay in this browser unless you deliberately export them." />
-      <Notice tone="info" title="First-party and user-provided data only">Google Search Console and Bing data works only for sites you can verify or export. SEOIntel does not invent search volume, rankings, traffic, backlinks, or authority metrics.</Notice>
+      <Notice tone="info" title="First-party and user-provided data only">Google Search Console and Bing data works only for sites you can verify or export. Crawlio does not invent search volume, rankings, traffic, backlinks, or authority metrics.</Notice>
 
       {error && <Notice tone="danger" title="Import failed">{error}</Notice>}
 

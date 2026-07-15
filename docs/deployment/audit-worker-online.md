@@ -1,4 +1,4 @@
-# SEOIntel Online Audit Worker
+# Crawlio Online Audit Worker
 
 The live site needs three separate parts:
 
@@ -48,7 +48,7 @@ Never set `SUPABASE_SERVICE_ROLE_KEY` in browser code. Never create `VITE_SUPABA
 ## Expected Worker Logs
 
 ```text
-SEOIntel audit worker started as worker-production-1
+Crawlio audit worker started as worker-production-1
 Supabase admin: connected
 Supabase project: xxxxx.supabase.co
 Polling interval: 4000ms
@@ -103,7 +103,7 @@ npm run check:worker
 https://seointel-audit-worker.onrender.com/health
 ```
 
-Ping every 10 minutes. Do not point uptime monitors at the SEOIntel homepage, Vercel preview/production URLs, or audit start routes such as `/api/tools/audit/start`. Render Free Web Service may sleep without traffic, so queued audits can wait until `/health` wakes the worker.
+Ping every 10 minutes. Do not point uptime monitors at the Crawlio homepage, Vercel preview/production URLs, or audit start routes such as `/api/tools/audit/start`. Render Free Web Service may sleep without traffic, so queued audits can wait until `/health` wakes the worker.
 
 Admin bootstrap:
 
@@ -136,13 +136,13 @@ npm run check:worker
 Build and run with the worker Dockerfile:
 
 ```bash
-docker build -f Dockerfile.worker -t seointel-audit-worker .
+docker build -f Dockerfile.worker -t crawlio-audit-worker .
 docker run --rm \
   -e SUPABASE_URL=https://xxxxx.supabase.co \
   -e SUPABASE_SERVICE_ROLE_KEY=your_service_role_key \
   -e AUDIT_WORKER_ID=worker-production-1 \
   -e AUDIT_POLL_INTERVAL_MS=4000 \
-  seointel-audit-worker
+  crawlio-audit-worker
 ```
 
 Do not bake `.env` files into the image. `.dockerignore` excludes local env files, `node_modules`, `dist`, and Vercel/Supabase local folders.

@@ -1,7 +1,8 @@
 import React from 'react';
-import { AlertTriangle, CheckCircle2, ChevronDown, Globe, Monitor, Moon, Search, ShieldCheck, Smartphone, Sun, TrendingUp } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, Globe, Monitor, Moon, ScanSearch, Search, ShieldCheck, Smartphone, Sun } from 'lucide-react';
 import { safePreviewMediaUrl } from '../../lib/audit/preview-model';
 import { gradeRangeLabel, scoreToGrade, scoreTone as reportScoreTone } from '../../lib/audit/report-insights';
+import { BRAND } from '../../lib/brand';
 import { CompactWebsitePreview, DesktopHomepagePreview, MobileHomepagePreview, PreviewUnavailableState, type CompactPreviewProps } from './compact-site-preview';
 
 export { CompactWebsitePreview, DesktopHomepagePreview, MobileHomepagePreview, PreviewUnavailableState } from './compact-site-preview';
@@ -686,7 +687,7 @@ export function SitePreviewCard({
         <div className="text-xs font-semibold text-accent">{host || 'Website preview'}</div>
         <h3 className="mt-2 line-clamp-2 text-xl font-bold">{title || 'Site preview updates as pages are scanned'}</h3>
         <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">
-          {description || 'SEOIntel shows page details, scan progress, and fixes without storing raw page HTML.'}
+          {description || 'Crawlio shows page details, scan progress, and fixes without storing raw page HTML.'}
         </p>
         <div className="mt-4 break-all rounded-xl border border-border bg-muted/40 p-3 text-xs text-muted-foreground">{displayUrl}</div>
       </div>
@@ -1005,11 +1006,11 @@ export function LoadingSkeleton({ rows = 3 }: { rows?: number }) {
 
 export function BrandMark() {
   return (
-    <div className="flex items-center gap-2 font-bold text-foreground">
+    <div className="flex items-center gap-2.5 font-bold text-foreground">
       <div className="rounded-lg bg-accent p-2 text-accent-foreground shadow-sm">
-        <TrendingUp className="h-5 w-5" />
+        <ScanSearch className="h-5 w-5" aria-hidden="true" />
       </div>
-      <span className="text-lg max-[359px]:hidden sm:text-xl">SEO<span className="text-accent">Intel</span></span>
+      <span className="text-lg max-[359px]:hidden sm:text-xl">{BRAND.name}</span>
     </div>
   );
 }

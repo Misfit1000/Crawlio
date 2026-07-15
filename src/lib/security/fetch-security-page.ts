@@ -8,7 +8,7 @@ export async function fetchSecurityPage(url: string) {
       timeoutMs: 10_000,
       maxBytes: 2_000_000,
       allowedContentTypes: ['text/html', 'application/xhtml+xml'],
-      userAgent: 'SEOIntelBot/1.0 (Passive Security Review)',
+      userAgent: 'CrawlioBot/1.0 (Passive Security Review)',
     });
     const parsed = parseHtml(response.body, response.finalUrl);
     

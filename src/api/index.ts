@@ -45,6 +45,7 @@ import {
 } from '../lib/api/production-controls';
 import { publicVersionPayload } from '../lib/platform/version';
 import { buildPublicAuditExport, csvRow } from '../lib/report/export';
+import { BRAND } from '../lib/brand';
 
 const DUPLICATE_AUDIT_WINDOW_MS = 10 * 60 * 1000;
 
@@ -128,7 +129,10 @@ function getCookieValue(req: any, name: string) {
 }
 
 function guestIdentityForRequest(req: any) {
-  const explicitGuestId = firstHeaderValue(req.headers?.['x-seointel-guest-id']) || getCookieValue(req, 'seointel_guest_id');
+  const explicitGuestId = firstHeaderValue(req.headers?.['x-crawlio-guest-id'])
+    || firstHeaderValue(req.headers?.['x-seointel-guest-id'])
+    || getCookieValue(req, 'crawlio_guest_id')
+    || getCookieValue(req, 'seointel_guest_id');
   if (explicitGuestId) {
     const guestKeyHash = hashGuestValue(`guest-session:${explicitGuestId.slice(0, 128)}`);
     return { guestKey: `guest:${guestKeyHash}`, guestKeyHash };
@@ -271,7 +275,7 @@ apiRouter.get('/me/export', asyncJsonRoute(async (req, res) => {
   ]);
   const firstError = [profile.error, audits.error, projects.error, keywords.error, competitors.error].find(Boolean);
   if (firstError) throw firstError;
-  res.setHeader('Content-Disposition', 'attachment; filename="seointel-account-export.json"');
+  res.setHeader('Content-Disposition', 'attachment; filename="crawlio-account-export.json"');
   res.setHeader('Cache-Control', 'private, no-store');
   res.json({
     exportedAt: new Date().toISOString(),
@@ -280,7 +284,7 @@ apiRouter.get('/me/export', asyncJsonRoute(async (req, res) => {
     projects: projects.data || [],
     keywords: keywords.data || [],
     competitors: competitors.data || [],
-    storageNotice: 'SEOIntel stores audit summaries and findings, not complete raw HTML.',
+    storageNotice: `${BRAND.name} stores audit summaries and findings, not complete raw HTML.`,
   });
 }));
 
@@ -457,7 +461,7 @@ apiRouter.post('/admin/platform/settings', asyncJsonRoute(async (req, res) => {
   const row = {
     id: 'settings',
     key: 'settings',
-    platform_name: String(patch.platformName || before?.platform_name || 'SEOIntel').slice(0, 100),
+    platform_name: String(patch.platformName || before?.platform_name || BRAND.name).slice(0, 100),
     support_email: String(patch.supportEmail || before?.support_email || '').slice(0, 254),
     require_email_verification: Boolean(patch.requireEmailVerification ?? before?.require_email_verification),
     public_registration: Boolean(patch.publicRegistration ?? before?.public_registration ?? true),
@@ -1275,7 +1279,7 @@ apiRouter.get('/audit/export/:id/:format', asyncJsonRoute(async (req, res) => {
     const pdf = await renderAuditPdf(liveData);
     const safeHost = liveData.audit.hostname.replace(/[^a-z0-9.-]+/gi, '-').replace(/^-+|-+$/g, '') || 'website';
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="seointel-${safeHost}-audit.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="crawlio-${safeHost}-audit.pdf"`);
     res.setHeader('Content-Length', String(pdf.length));
     res.setHeader('Cache-Control', 'private, no-store');
     return res.status(200).send(pdf);

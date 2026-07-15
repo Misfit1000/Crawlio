@@ -1,5 +1,6 @@
 import type { ResourceAuditIssue, ResourceAuditLiveData, ResourceAuditPage } from '../audit/resource-types';
 import { groupRecommendations, scoreToGrade } from '../audit/report-insights';
+import { BRAND } from '../brand';
 
 const COLORS = {
   ink: '#10243a',
@@ -44,8 +45,9 @@ export async function renderAuditPdf(data: ResourceAuditLiveData): Promise<Buffe
       margins: { top: 44, right: 44, bottom: 48, left: 44 },
       bufferPages: true,
       info: {
-        Title: `SEOIntel audit report - ${audit.hostname}`,
-        Author: 'SEOIntel',
+        Title: `${BRAND.name} audit report - ${audit.hostname}`,
+        Author: BRAND.name,
+        Creator: BRAND.name,
         Subject: 'SEO, website health, and Passive Security Review',
       },
     });
@@ -59,7 +61,7 @@ export async function renderAuditPdf(data: ResourceAuditLiveData): Promise<Buffe
     const bottom = () => doc.page.height - 54;
 
     const drawHeader = () => {
-      doc.fillColor(COLORS.blue).font('Helvetica-Bold').fontSize(16).text('SEOIntel', margin, 28, { lineBreak: false });
+      doc.fillColor(COLORS.blue).font('Helvetica-Bold').fontSize(16).text(BRAND.name, margin, 28, { lineBreak: false });
       doc.fillColor(COLORS.muted).font('Helvetica').fontSize(8).text('SEO AUDIT REPORT', margin + 76, 34, { lineBreak: false });
       doc.moveTo(margin, 52).lineTo(doc.page.width - margin, 52).strokeColor(COLORS.line).lineWidth(1).stroke();
       doc.y = 66;
@@ -185,7 +187,7 @@ export async function renderAuditPdf(data: ResourceAuditLiveData): Promise<Buffe
     drawMetric(margin + (metricWidth + metricGap) * 3, metricY, metricWidth, 'Fix now', String(audit.criticalCount), audit.criticalCount ? COLORS.red : COLORS.green);
     doc.y = metricY + 76;
 
-    sectionTitle('Executive summary', `${data.finalReport?.summary || `SEOIntel checked ${audit.pagesCrawled} page(s) and found ${audit.issuesFound} issue(s).`} Grade ranges: A 90-100, B 80-89, C 70-79, D 60-69, E 50-59, F below 50. N/M means not measured.`);
+    sectionTitle('Executive summary', `${data.finalReport?.summary || `${BRAND.name} checked ${audit.pagesCrawled} page(s) and found ${audit.issuesFound} issue(s).`} Grade ranges: A 90-100, B 80-89, C 70-79, D 60-69, E 50-59, F below 50. N/M means not measured.`);
     drawScoreBar('On-page SEO', optionalScore(scores.seo), COLORS.blue);
     drawScoreBar('Technical SEO', optionalScore(scores.technical), COLORS.blue);
     drawScoreBar('Performance', optionalScore(scores.performance), COLORS.amber);
@@ -285,7 +287,7 @@ export async function renderAuditPdf(data: ResourceAuditLiveData): Promise<Buffe
       doc.page.margins.bottom = 0;
       const footerY = doc.page.height - 30;
       doc.moveTo(margin, footerY - 8).lineTo(doc.page.width - margin, footerY - 8).strokeColor(COLORS.line).lineWidth(0.5).stroke();
-      doc.fillColor(COLORS.muted).font('Helvetica').fontSize(7).text(`SEOIntel  |  ${audit.hostname}  |  Page ${pageIndex + 1} of ${range.count}`, margin, footerY, { width: contentWidth, align: 'center', lineBreak: false });
+      doc.fillColor(COLORS.muted).font('Helvetica').fontSize(7).text(`${BRAND.name}  |  ${audit.hostname}  |  Page ${pageIndex + 1} of ${range.count}`, margin, footerY, { width: contentWidth, align: 'center', lineBreak: false });
       doc.page.margins.bottom = originalBottomMargin;
     }
 

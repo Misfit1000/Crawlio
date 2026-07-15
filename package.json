@@ -1,5 +1,5 @@
 {
-  "name": "react-example",
+  "name": "crawlio",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -20,7 +20,7 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "npm run smoke:audit-scoring && npm run smoke:crawler-safety && npm run smoke:worker-batching && npm run smoke:worker-ownership && npm run smoke:audit-exports && npm run smoke:app-routing && npm run smoke:supabase-schema",
+    "test": "npm run smoke:audit-scoring && npm run smoke:crawler-safety && npm run smoke:worker-batching && npm run smoke:worker-ownership && npm run smoke:audit-exports && npm run smoke:app-routing && npm run smoke:supabase-schema && npm run smoke:branding",
     "smoke:live-audit": "tsx scripts/smoke-live-audit.mts",
     "smoke:api-json": "node scripts/smoke-api-json.mjs",
     "smoke:api-hardening": "tsx scripts/smoke-api-hardening.mjs",
@@ -71,6 +71,7 @@
     "smoke:no-placeholder-ui": "tsx scripts/smoke-no-placeholder-ui.mts",
     "smoke:no-public-dev-artifacts": "tsx scripts/smoke-no-public-dev-artifacts.mts",
     "smoke:premium-homepage": "tsx scripts/smoke-premium-homepage.mts",
+    "smoke:branding": "tsx scripts/smoke-branding.mts",
     "smoke:premium-audit-workspace": "tsx scripts/smoke-premium-audit-workspace.mts",
     "smoke:activity-floating-panel": "tsx scripts/smoke-activity-floating-panel.mts",
     "smoke:activity-drag-position": "tsx scripts/smoke-activity-drag-position.mts",

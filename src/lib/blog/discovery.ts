@@ -50,7 +50,7 @@ export async function discoverApprovedFeedItems(input: {
       maxRedirects: 3,
       maxBytes: 1_500_000,
       allowedContentTypes: ['application/rss+xml', 'application/atom+xml', 'application/xml', 'text/xml', 'text/rss+xml'],
-      userAgent: 'SEOIntelEditorialBot/1.0 (+https://keywordsintel.vercel.app/)',
+      userAgent: 'CrawlioEditorialBot/1.0 (+https://keywordsintel.vercel.app/)',
     });
     if (response.status < 200 || response.status >= 300) continue;
     const $ = load(response.body, { xmlMode: true });

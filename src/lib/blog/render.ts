@@ -1,4 +1,5 @@
 import type { BlogPost } from './types';
+import { BRAND } from '../brand';
 
 function escapeHtml(value: string) {
   return String(value || '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character] || character));
@@ -21,8 +22,8 @@ export function renderBlogArticleHtml(post: BlogPost, origin: string) {
     datePublished: post.publishedAt,
     dateModified: post.updatedAt,
     mainEntityOfPage: canonical,
-    author: { '@type': 'Organization', name: 'SEOIntel Editorial Team', url: origin },
-    publisher: { '@type': 'Organization', name: 'SEOIntel', url: origin },
+    author: { '@type': 'Organization', name: BRAND.editorialTeam, url: origin },
+    publisher: { '@type': 'Organization', name: BRAND.name, url: origin },
     keywords: post.tags.join(', '),
     articleSection: post.topicCluster || undefined,
     wordCount: post.contentText.split(/\s+/).filter(Boolean).length,
@@ -60,5 +61,5 @@ ${post.ogImageUrl ? `<meta property="og:image" content="${escapeHtml(post.ogImag
 <script type="application/ld+json">${safeJson(articleSchema)}</script><script type="application/ld+json">${safeJson(breadcrumbSchema)}</script>
 <style>:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;background:#f7f9fc;color:#12203d;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.72}a{color:#185bd8;text-underline-offset:3px}header{border-bottom:1px solid #dce4f0;background:#fff}.nav{max-width:1120px;margin:auto;padding:18px 24px;display:flex;justify-content:space-between;align-items:center}.brand{font-weight:700;text-decoration:none;color:#102149}.nav a:last-child{font-size:14px}main{max-width:820px;margin:auto;padding:56px 24px 80px}.meta{font-size:14px;color:#5b6b86}.tagline{font-size:20px;line-height:1.5;color:#455571}.hero-image{width:100%;height:auto;margin:28px 0;border-radius:10px}h1{font-size:clamp(2.2rem,6vw,4rem);line-height:1.08;letter-spacing:0;margin:14px 0 18px}h2{font-size:1.65rem;line-height:1.25;margin:48px 0 14px}h3{font-size:1.25rem;line-height:1.35;margin:32px 0 10px}p,li{font-size:17px}pre{overflow:auto;padding:18px;border:1px solid #dce4f0;border-radius:8px;background:#eef3fa}.references,.related{margin-top:52px;padding-top:28px;border-top:1px solid #dce4f0}.references li,.related li{margin:10px 0}.references span{display:block;font-size:13px;color:#6b7890}@media(max-width:640px){main{padding-top:36px}h1{font-size:2.35rem}.nav{padding:14px 18px}p,li{font-size:16px}}</style>
 </head>
-<body><header><nav class="nav" aria-label="Primary"><a class="brand" href="/">SEOIntel</a><a href="/blog">All articles</a></nav></header><main><article><p class="meta">${escapeHtml(post.topicCluster || 'SEO guidance')} · ${post.readingTimeMinutes} min read${post.publishedAt ? ` · <time datetime="${escapeHtml(post.publishedAt)}">${escapeHtml(new Date(post.publishedAt).toLocaleDateString('en', { dateStyle: 'long' }))}</time>` : ''}</p><h1>${escapeHtml(post.title)}</h1>${post.tagline ? `<p class="tagline">${escapeHtml(post.tagline)}</p>` : ''}${heroImage}<div class="article-body">${post.contentHtml}</div>${sources}${related}</article></main></body></html>`;
+<body><header><nav class="nav" aria-label="Primary"><a class="brand" href="/">${BRAND.name}</a><a href="/blog">All articles</a></nav></header><main><article><p class="meta">${escapeHtml(post.topicCluster || 'SEO guidance')} · ${post.readingTimeMinutes} min read${post.publishedAt ? ` · <time datetime="${escapeHtml(post.publishedAt)}">${escapeHtml(new Date(post.publishedAt).toLocaleDateString('en', { dateStyle: 'long' }))}</time>` : ''}</p><h1>${escapeHtml(post.title)}</h1>${post.tagline ? `<p class="tagline">${escapeHtml(post.tagline)}</p>` : ''}${heroImage}<div class="article-body">${post.contentHtml}</div>${sources}${related}</article></main></body></html>`;
 }

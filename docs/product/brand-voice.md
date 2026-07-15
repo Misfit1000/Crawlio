@@ -1,6 +1,6 @@
-# SEOIntel Brand Voice
+# Crawlio Brand Voice
 
-SEOIntel writes like an experienced auditor explaining evidence to a client: direct, calm, precise, and useful.
+Crawlio writes like an experienced auditor explaining evidence to a client: direct, calm, precise, and useful.
 
 ## Principles
 

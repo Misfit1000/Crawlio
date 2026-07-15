@@ -1,6 +1,6 @@
 # Resource-Light Audit Architecture
 
-SEOIntel is a lightweight SEO, performance, crawlability, reporting, and passive security audit platform. It does not use AI or paid SEO APIs for audit data.
+Crawlio is a lightweight SEO, performance, crawlability, reporting, and passive security audit platform. It does not use AI or paid SEO APIs for audit data.
 
 ## Runtime Split
 

@@ -1,5 +1,6 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { ApiError, requestIdFor, sendSafeApiError } from './errors';
+import { CRAWLIO_GUEST_HEADER, LEGACY_GUEST_HEADER } from '../brand';
 
 type RateLimitOptions = {
   namespace: string;
@@ -45,7 +46,7 @@ export function strictCorsAndOrigin(req: Request, res: Response, next: NextFunct
   if (origin && allowed.has(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Request-Id, X-SEOIntel-Guest-Id');
+    res.setHeader('Access-Control-Allow-Headers', `Authorization, Content-Type, X-Request-Id, ${CRAWLIO_GUEST_HEADER}, ${LEGACY_GUEST_HEADER}`);
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   }
   if (req.method === 'OPTIONS') {

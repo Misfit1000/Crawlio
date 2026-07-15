@@ -276,7 +276,7 @@ export async function safePublicFetch(value: string, input: SafePublicFetchOptio
     maxRedirects: input.maxRedirects ?? 5,
     maxBytes: input.maxBytes ?? 2_000_000,
     allowedContentTypes: input.allowedContentTypes ?? ['text/html', 'application/xhtml+xml'],
-    userAgent: input.userAgent ?? 'SEOIntelBot/1.0 (+https://keywordsintel.vercel.app/)',
+    userAgent: input.userAgent ?? 'CrawlioBot/1.0 (+https://keywordsintel.vercel.app/)',
     allowPrivateForTesting: input.allowPrivateForTesting ?? false,
     allowNonStandardPortsForTesting: input.allowNonStandardPortsForTesting ?? false,
     returnBuffer: input.returnBuffer ?? false,

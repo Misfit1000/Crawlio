@@ -42,7 +42,7 @@ interface DashboardProps {
 }
 
 function selectReport(entry: AuditHistoryEntry, onOpenReports?: () => void) {
-  window.localStorage.setItem('seointel_selected_report_id', entry.auditId);
+  window.localStorage.setItem('crawlio_selected_report_id', entry.auditId);
   onOpenReports?.();
 }
 
@@ -336,7 +336,7 @@ export default function Dashboard(props: DashboardProps) {
 
           <SurfaceCard className="p-5 md:p-6">
             <h2 className="text-xl font-semibold">Imported data</h2>
-            <p className="mt-1 text-sm text-muted-foreground">SEOIntel never substitutes demo rankings or traffic for missing provider data.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Crawlio never substitutes demo rankings or traffic for missing provider data.</p>
             <div className="mt-5 space-y-3">
               <div className="flex items-center justify-between gap-3"><span className="text-sm font-semibold">Search performance</span><StatusBadge tone={importState.search ? 'success' : 'warning'}>{importState.search ? 'Imported' : 'Import data'}</StatusBadge></div>
               <div className="flex items-center justify-between gap-3"><span className="text-sm font-semibold">Keyword positions</span><StatusBadge tone={importState.rankings ? 'success' : 'warning'}>{importState.rankings ? 'Imported' : 'Provider required'}</StatusBadge></div>

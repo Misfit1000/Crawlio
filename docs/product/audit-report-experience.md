@@ -1,6 +1,6 @@
 # Audit report experience
 
-SEOIntel reports use measured worker output and progressively reveal technical evidence. The authenticated dashboard and report pages must not contain sample scores, rankings, traffic, backlinks, or search-volume values.
+Crawlio reports use measured worker output and progressively reveal technical evidence. The authenticated dashboard and report pages must not contain sample scores, rankings, traffic, backlinks, or search-volume values.
 
 ## Grade scale
 

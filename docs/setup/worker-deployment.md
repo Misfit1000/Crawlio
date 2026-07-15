@@ -42,7 +42,7 @@ Do not run the worker as a Vercel serverless function. Multi-page crawls can exc
 
 Check worker logs for:
 
-- `SEOIntel audit worker started as ...`
+- `Crawlio audit worker started as ...`
 - claimed queued audits
 - fetch/crawl failures
 - Supabase credential or network errors

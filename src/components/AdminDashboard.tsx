@@ -393,7 +393,7 @@ function AdminDiagnostics() {
         <Panel title="Recent API errors" description="Restricted request IDs and internal diagnostics. Never shown in customer responses." icon={ShieldAlert}>{(data.recentApiErrors || []).length ? <SimpleTable rows={data.recentApiErrors.slice(0, 20)} columns={['request_id', 'route', 'internal_code', 'created_at']} /> : <Empty text="No recent API errors." />}</Panel>
         <Panel title="Failure categories" description="Target failures grouped by stable code from audits created in the last 24 hours." icon={AlertTriangle}>{Object.keys(metrics.failuresByCode || {}).length ? <div className="grid gap-2">{Object.entries(metrics.failuresByCode).sort(([, left]: any, [, right]: any) => Number(right) - Number(left)).map(([code, count]) => <div key={code} className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm"><code>{code}</code><span className="font-semibold">{String(count)}</span></div>)}</div> : <Empty text="No page failure categories recorded today." />}</Panel>
       </div>
-      <Notice tone="info">Database storage and Realtime quota totals remain provider-dashboard metrics. SEOIntel labels them unavailable instead of estimating or inventing usage.</Notice>
+      <Notice tone="info">Database storage and Realtime quota totals remain provider-dashboard metrics. Crawlio labels them unavailable instead of estimating or inventing usage.</Notice>
     </div>
   );
 }

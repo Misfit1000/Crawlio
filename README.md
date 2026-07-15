@@ -1,6 +1,8 @@
-# SEOIntel
+# Crawlio
 
-SEOIntel is a resource-aware SEO, technical SEO, and passive security audit platform. Vercel serves the Vite application and lightweight API; Supabase stores jobs and results; a separate Render worker performs public-site analysis.
+Crawlio is an SEO auditing, website analysis, keyword research, reporting, and content intelligence platform.
+
+**Crawl smarter. Rank better.** Vercel serves the Vite application and lightweight API; Supabase stores jobs and results; a separate Render worker performs public-site analysis.
 
 ## Features
 
@@ -24,6 +26,18 @@ SEOIntel is a resource-aware SEO, technical SEO, and passive security audit plat
 ## Deployment
 
 Deploy the frontend and bounded API to Vercel, apply Supabase migrations, and deploy the audit worker separately to Render. Never run the crawl loop inside a Vercel function. The source of truth is `docs/deployment/production-architecture.md`.
+
+## Rebrand migration
+
+- Old brand: SEOIntel
+- New brand: Crawlio
+- Repository: `https://github.com/Misfit1000/Crawlio`
+- Current production URL: `https://keywordsintel.vercel.app` until a verified Crawlio domain is configured
+- Vercel project: `crawlio` (renamed in place; existing production alias retained)
+- Compatibility identifiers: existing Supabase objects, migrations, guest/session keys, and deployment service identifiers remain stable
+- Render and Supabase resource names remain unchanged until their integrations can be renamed and verified safely
+
+See [`docs/product/rebrand-compatibility.md`](docs/product/rebrand-compatibility.md) for the exact compatibility identifiers and external resource names that remain intentionally unchanged.
 
 ## License
 

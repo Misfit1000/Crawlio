@@ -2,7 +2,7 @@
 
 Vercel rewrites only known SPA route families to `index.html`. Unknown production paths fall through to the static `404.html` with noindex metadata instead of returning the homepage with HTTP 200. Add every new public or authenticated route to both the React route contract and `vercel.json` in the same change.
 
-SEOIntel uses React Router in declarative browser mode. Route definitions and tab mappings live in `src/app/routes.ts`; URLs, not component state, are the navigation source of truth.
+Crawlio uses React Router in declarative browser mode. Route definitions and tab mappings live in `src/app/routes.ts`; URLs, not component state, are the navigation source of truth.
 
 Public routes include `/`, `/login`, `/register`, `/pricing`, `/reports/example`, `/blog`, `/blog/:slug`, and the guest-safe `/audit/live/:auditId` progress view. Authenticated product routes use `/app`. Audit evidence uses `/app/audits/:auditId/:section`, where section is `overview`, `seo`, `technical`, `crawlability`, `links`, `performance`, `security`, or `pages`.
 
