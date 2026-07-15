@@ -49,6 +49,10 @@ async function dispatch() {
 
 async function idempotency() {
   const sql = migration();
+  const providerHealthCreate = sql.indexOf('create table if not exists public.blog_provider_health');
+  const providerHealthAlter = sql.indexOf('alter table public.blog_provider_health drop constraint');
+  assert.ok(providerHealthCreate >= 0 && providerHealthCreate < providerHealthAlter, 'migration must create optional provider health storage before altering it');
+  assert.match(sql, /alter table public\.blog_provider_health enable row level security/);
   assert.match(sql, /for update skip locked limit 1/i);
   assert.match(sql, /workflow_stage = expected_stage/);
   assert.match(sql, /locked_by = execution_id/);

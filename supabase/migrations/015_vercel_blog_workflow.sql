@@ -39,10 +39,58 @@ create index if not exists blog_jobs_vercel_lease_idx
   on public.blog_generation_jobs (lease_expires_at)
   where execution_target = 'vercel' and lease_expires_at is not null;
 
+-- Migration 013 created this diagnostics table. Recreate it safely when an
+-- environment has the blog queue but missed that optional migration section.
+create table if not exists public.blog_provider_health (
+  id bigint generated always as identity primary key,
+  provider text not null,
+  model text not null,
+  status text not null,
+  safe_error_code text not null default '',
+  duration_ms integer null check (duration_ms is null or duration_ms >= 0),
+  test_kind text not null default 'admin_test',
+  actor_id uuid null,
+  created_at timestamptz not null default now()
+);
+create index if not exists blog_provider_health_created_idx
+  on public.blog_provider_health (created_at desc);
+
+do $$
+begin
+  if to_regclass('public.user_profiles') is not null
+    and not exists (
+      select 1 from pg_constraint
+      where conrelid = 'public.blog_provider_health'::regclass
+        and contype = 'f'
+        and conname = 'blog_provider_health_actor_id_fkey'
+    ) then
+    alter table public.blog_provider_health
+      add constraint blog_provider_health_actor_id_fkey
+      foreign key (actor_id) references public.user_profiles(id) on delete set null;
+  end if;
+end $$;
+
 -- Preserve NVIDIA health history while allowing all future provider checks to record Groq.
 alter table public.blog_provider_health drop constraint if exists blog_provider_health_provider_check;
 alter table public.blog_provider_health add constraint blog_provider_health_provider_check
   check (provider in ('nvidia_nim', 'groq'));
+alter table public.blog_provider_health enable row level security;
+drop policy if exists "admins read blog provider health" on public.blog_provider_health;
+create policy "admins read blog provider health" on public.blog_provider_health for select to authenticated
+  using (public.is_admin_user(auth.uid()));
+drop policy if exists "admins insert blog provider health" on public.blog_provider_health;
+create policy "admins insert blog provider health" on public.blog_provider_health for insert to authenticated
+  with check (public.is_admin_user(auth.uid()));
+grant select, insert on public.blog_provider_health to authenticated;
+
+do $$
+declare identity_sequence text;
+begin
+  identity_sequence := pg_get_serial_sequence('public.blog_provider_health', 'id');
+  if identity_sequence is not null then
+    execute format('grant usage, select on sequence %s to authenticated', identity_sequence);
+  end if;
+end $$;
 
 create table if not exists public.blog_dispatcher_state (
   id text primary key default 'vercel',
