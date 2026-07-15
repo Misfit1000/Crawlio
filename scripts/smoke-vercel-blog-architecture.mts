@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { generateGroqCompletion, getGroqBlogConfiguration, GROQ_DEFAULT_STRUCTURED_MODEL, GROQ_DEFAULT_WRITER_MODEL } from '../src/lib/blog/server/groq';
+import { generateGroqCompletion, getGroqBlogConfiguration, getSafeGroqDiagnostics, GROQ_DEFAULT_BASE_URL, GROQ_DEFAULT_STRUCTURED_MODEL, GROQ_DEFAULT_WRITER_MODEL, testGroqProvider } from '../src/lib/blog/server/groq';
 import { blogAutomationRepository } from '../src/lib/blog/automation-repository';
 import { dispatchVercelBlogStages } from '../src/lib/blog/server/vercel-workflow';
 
@@ -68,10 +68,42 @@ async function recovery() {
 
 async function apiSecurity() {
   const text = api();
-  for (const route of ['/admin/blog/jobs/:id', '/admin/blog/jobs/:id/cancel', '/admin/blog/jobs/:id/process', '/blog/jobs/dispatch', '/blog/jobs/recover']) assert.match(text, new RegExp(route.replace(/[/:]/g, (part) => part === '/' ? '\\/' : '\\:')));
+  for (const route of ['/admin/blog/jobs/:id', '/admin/blog/jobs/:id/cancel', '/admin/blog/jobs/:id/process', '/admin/blog/provider/diagnostics', '/blog/jobs/dispatch', '/blog/jobs/recover']) assert.match(text, new RegExp(route.replace(/[/:]/g, (part) => part === '/' ? '\\/' : '\\:')));
   assert.match(text, /schedulerRequestAllowed/);
   assert.match(text, /BLOG_DISPATCH_UNAUTHORIZED/);
   assert.match(text, /status: 'queued'/);
+  assert.match(text, /requireAdminRequester\(req, res\)[\s\S]{0,180}getSafeGroqDiagnostics/);
+}
+
+async function groqEnvironment() {
+  const keyPlaceholder = 'test-placeholder-not-a-real-key';
+  const disabledEnv = {
+    GROQ_API_KEY: keyPlaceholder,
+    GROQ_API_BASE_URL: GROQ_DEFAULT_BASE_URL,
+    GROQ_BLOG_STRUCTURED_MODEL: GROQ_DEFAULT_STRUCTURED_MODEL,
+    GROQ_BLOG_WRITER_MODEL: GROQ_DEFAULT_WRITER_MODEL,
+    GROQ_BLOG_ENABLED: 'false',
+    BLOG_AUTOMATION_ENABLED: 'false',
+  } as NodeJS.ProcessEnv;
+  const diagnostics = getSafeGroqDiagnostics(disabledEnv);
+  assert.deepEqual(diagnostics, {
+    provider: 'groq', enabled: false, configured: true, baseUrlHost: 'api.groq.com',
+    structuredModel: GROQ_DEFAULT_STRUCTURED_MODEL, writerModel: GROQ_DEFAULT_WRITER_MODEL, automationEnabled: false,
+  });
+  const serialized = JSON.stringify(diagnostics);
+  assert.doesNotMatch(serialized, /test-placeholder|apiKey|authorization|headers/i);
+  assert.equal(getGroqBlogConfiguration({ ...disabledEnv, GROQ_API_KEY: '' }).configured, false);
+  assert.equal(getSafeGroqDiagnostics({ ...disabledEnv, GROQ_API_KEY: '', GROQ_BLOG_ENABLED: 'true' }).configured, false);
+
+  Object.assign(process.env, disabledEnv);
+  let requests = 0;
+  const result = await testGroqProvider((async () => { requests += 1; return response('{"ok":true}'); }) as typeof fetch);
+  assert.equal(result.status, 'disabled');
+  assert.equal(requests, 0, 'disabled provider test must not issue a request');
+
+  const apiText = api();
+  assert.match(apiText, /process\.env\.BLOG_AUTOMATION_ENABLED !== 'true'/);
+  assert.match(apiText, /BLOG_PROVIDER_NOT_CONFIGURED/);
 }
 
 async function groqOnly() {
@@ -124,7 +156,7 @@ async function secrets() {
 const tests: Record<string, () => Promise<void>> = {
   'worker-role-separation': workerRoleSeparation, 'vercel-blog-dispatch': dispatch, 'stage-idempotency': idempotency,
   recovery, 'api-security': apiSecurity, 'groq-vercel-only': groqOnly, 'render-audit-only': renderOnly,
-  publication, scheduling, 'secret-boundaries': secrets,
+  publication, scheduling, 'secret-boundaries': secrets, 'groq-environment': groqEnvironment,
 };
 
 try {

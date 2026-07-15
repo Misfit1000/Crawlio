@@ -33,6 +33,7 @@ export const API_ROUTES = {
   adminBlogBatches: "/api/tools/admin/blog/batches",
   adminBlogImageImport: "/api/tools/admin/blog/images/import",
   adminBlogProviderTest: "/api/tools/admin/blog/provider/test",
+  adminBlogProviderDiagnostics: "/api/tools/admin/blog/provider/diagnostics",
   adminBlogSectionRevisions: (id: string) => `/api/tools/admin/blog/posts/${encodeURIComponent(id)}/section-revisions`,
   adminBlogSectionRegeneration: (id: string) => `/api/tools/admin/blog/posts/${encodeURIComponent(id)}/section-regeneration`,
   adminBlogSectionRevisionDecision: (id: string) => `/api/tools/admin/blog/section-revisions/${encodeURIComponent(id)}/decision`,

@@ -1,5 +1,7 @@
 import type { BlogProviderErrorCode } from '../types';
 
+if (typeof window !== 'undefined') throw new Error('Groq blog provider code is server-only.');
+
 export const GROQ_DEFAULT_BASE_URL = 'https://api.groq.com/openai/v1';
 export const GROQ_DEFAULT_STRUCTURED_MODEL = 'openai/gpt-oss-120b';
 export const GROQ_DEFAULT_WRITER_MODEL = 'llama-3.3-70b-versatile';
@@ -48,7 +50,7 @@ export function getGroqBlogConfiguration(env: NodeJS.ProcessEnv = process.env) {
   return {
     provider: 'groq' as const,
     enabled,
-    configured: enabled && Boolean(env.GROQ_API_KEY),
+    configured: Boolean(env.GROQ_API_KEY),
     apiKey: String(env.GROQ_API_KEY || ''),
     baseUrl,
     baseUrlHost: new URL(baseUrl).host,
@@ -57,6 +59,19 @@ export function getGroqBlogConfiguration(env: NodeJS.ProcessEnv = process.env) {
     maxConcurrency: boundedInteger(env.GROQ_BLOG_MAX_CONCURRENCY, 1, 1, 1),
     minimumRequestIntervalMs: boundedInteger(env.GROQ_BLOG_MIN_REQUEST_INTERVAL_MS, 2_000, 250, 30_000),
     maxRetries: boundedInteger(env.GROQ_BLOG_MAX_RETRIES, 2, 0, 2),
+  };
+}
+
+export function getSafeGroqDiagnostics(env: NodeJS.ProcessEnv = process.env) {
+  const config = getGroqBlogConfiguration(env);
+  return {
+    provider: 'groq' as const,
+    enabled: config.enabled,
+    configured: config.configured,
+    baseUrlHost: config.baseUrlHost,
+    structuredModel: config.structuredModel,
+    writerModel: config.writerModel,
+    automationEnabled: String(env.BLOG_AUTOMATION_ENABLED || 'false').toLowerCase() === 'true',
   };
 }
 

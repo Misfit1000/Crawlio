@@ -28,7 +28,7 @@ import { renderBlogArticleHtml } from '../lib/blog/render';
 import { blogAutomationRepository } from '../lib/blog/automation-repository';
 import { blogJobIdempotencyKey, validateManualBatch } from '../lib/blog/automation';
 import { importBlogImage } from '../lib/blog/images';
-import { getGroqBlogConfiguration, GROQ_DEFAULT_STRUCTURED_MODEL, GROQ_DEFAULT_WRITER_MODEL, testGroqProvider } from '../lib/blog/server/groq';
+import { getGroqBlogConfiguration, getSafeGroqDiagnostics, GROQ_DEFAULT_STRUCTURED_MODEL, GROQ_DEFAULT_WRITER_MODEL, testGroqProvider } from '../lib/blog/server/groq';
 import { dispatchVercelBlogStages, getVercelBlogRuntimeInfo, recoverAndDispatchVercelBlogWork } from '../lib/blog/server/vercel-workflow';
 import { normalizeBlogArticleType } from '../lib/blog/length-policy';
 import { validateCalendarMove } from '../lib/blog/freshness';
@@ -587,6 +587,12 @@ apiRouter.get('/admin/blog/overview', asyncJsonRoute(async (req, res) => {
   res.json({ success: true, data: { overview, jobs, discoveries, provider: { provider: 'Groq', execution: 'Vercel server workflow', enabled: Boolean(settings.provider_enabled && providerConfiguration.enabled), configured: providerConfiguration.configured, model: providerConfiguration.structuredModel, structuredModel: providerConfiguration.structuredModel, writerModel: providerConfiguration.writerModel, baseUrlHost: providerConfiguration.baseUrlHost, health: settings.provider_last_error_code ? 'attention required' : settings.provider_last_success_at ? 'connected' : providerConfiguration.configured ? 'not tested' : providerConfiguration.enabled ? 'not configured' : 'disabled', lastSuccessAt: settings.provider_last_success_at || null, lastErrorCode: settings.provider_last_error_code || '', lastDurationMs: settings.provider_last_duration_ms ?? null, liveVerificationStatus: settings.provider_live_verification_status || 'not_run', fixtureAvailable: fixtureConfiguration.enabled } } });
 }));
 
+apiRouter.get('/admin/blog/provider/diagnostics', asyncJsonRoute(async (req, res) => {
+  if (!(await requireAdminRequester(req, res))) return;
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: getSafeGroqDiagnostics() });
+}));
+
 apiRouter.post('/admin/blog/provider/test', asyncJsonRoute(async (req, res) => {
   const requester = await requireAdminRequester(req, res);
   if (!requester) return;
@@ -607,7 +613,10 @@ apiRouter.put('/admin/blog/settings', asyncJsonRoute(async (req, res) => {
   const requester = await requireAdminRequester(req, res);
   if (!requester) return;
   const feedUrls = Array.isArray(req.body?.approved_feed_urls) ? req.body.approved_feed_urls.slice(0, 20).map(String) : [];
-  if (req.body?.enabled === true && !getGroqBlogConfiguration().configured) throw new ApiError('BLOG_PROVIDER_NOT_CONFIGURED', 'Configure and enable Groq in the Vercel server environment before enabling automatic generation.', 409);
+  const providerConfiguration = getGroqBlogConfiguration();
+  if (req.body?.enabled === true && (!providerConfiguration.configured || !providerConfiguration.enabled || process.env.BLOG_AUTOMATION_ENABLED !== 'true')) {
+    throw new ApiError('BLOG_PROVIDER_NOT_CONFIGURED', 'Configure Groq and enable both Groq and blog automation in the Vercel server environment before enabling automatic generation.', 409);
+  }
   if (feedUrls.some((value) => { try { return new URL(value).protocol !== 'https:'; } catch { return true; } })) throw new ApiError('INVALID_BLOG_FEED', 'Approved feeds must use valid public HTTPS URLs.', 400);
   const timezone = String(req.body?.timezone || 'UTC');
   try { new Intl.DateTimeFormat('en', { timeZone: timezone }).format(); } catch { throw new ApiError('INVALID_TIMEZONE', 'Enter a valid IANA timezone.', 400); }

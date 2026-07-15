@@ -113,6 +113,7 @@
     "smoke:blog-publication-vercel": "tsx scripts/smoke-vercel-blog-architecture.mts publication",
     "smoke:blog-schedule-vercel": "tsx scripts/smoke-vercel-blog-architecture.mts scheduling",
     "smoke:blog-secret-boundaries": "tsx scripts/smoke-vercel-blog-architecture.mts secret-boundaries",
+    "smoke:groq-environment": "tsx scripts/smoke-vercel-blog-architecture.mts groq-environment",
     "smoke:groq-live": "tsx scripts/smoke-groq-live.mts",
     "smoke:blog-live-vercel-workflow": "tsx scripts/smoke-blog-live-vercel-workflow.mts",
     "smoke:blog-live-vercel-publication": "tsx scripts/smoke-blog-live-vercel-publication.mts",
