@@ -4,6 +4,7 @@ import { normalizeUrl, isSameDomain, stripTrackingParams } from './url-utils';
 import { fetchRobotsTxt, isBlockedByRobots, getSitemapUrlsFromRobots, parseRobotsTxt } from './robots';
 import { auditStore } from '../audit/audit-store';
 import { eventEmitter } from '../audit/event-emitter';
+import { safePublicFetch } from '../security/safe-public-fetch';
 
 export interface CrawlResult {
   url: string;
@@ -116,18 +117,18 @@ export async function crawlDomain(startUrl: string, options: CrawlOptions = {}):
         // Use an IIFE so the async work doesn't block this while-loop execution.
         (async (url, depth, discoveredFrom) => {
           try {
-            const startTime = Date.now();
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), timeoutMs);
-            const response = await fetch(url, {
-              headers: { 'User-Agent': 'SEOIntelBot/1.0 (Local Analysis Tools)' },
-              signal: controller.signal
+            const response = await safePublicFetch(url, {
+              timeoutMs,
+              maxRedirects: 5,
+              maxBytes: 2_000_000,
+              allowedContentTypes: ['text/html', 'application/xhtml+xml'],
+              userAgent: 'SEOIntelBot/1.0 (Local Analysis Tools)',
+              allowPrivateForTesting: process.env.SEOINTEL_ALLOW_PRIVATE_TEST_TARGETS === 'true',
+              allowNonStandardPortsForTesting: process.env.SEOINTEL_ALLOW_PRIVATE_TEST_TARGETS === 'true',
             });
-            clearTimeout(timeout);
-            const loadTimeMs = Date.now() - startTime;
-            const headers: Record<string, string> = {};
-            response.headers.forEach((val, key) => { headers[key.toLowerCase()] = val; });
-            const contentType = headers['content-type'] || '';
+            const loadTimeMs = response.durationMs;
+            const headers = response.headers;
+            const contentType = response.contentType;
             
             if (!contentType.includes('text/html')) {
               if (options.auditId) {
@@ -136,7 +137,7 @@ export async function crawlDomain(startUrl: string, options: CrawlOptions = {}):
               }
               results.push({
                 url,
-                finalUrl: response.url,
+                finalUrl: response.finalUrl,
                 status: response.status,
                 success: true,
                 headers,
@@ -147,9 +148,9 @@ export async function crawlDomain(startUrl: string, options: CrawlOptions = {}):
                 discoveredFrom
               });
             } else {
-              const html = await response.text();
-              const pageSizeBytes = Buffer.byteLength(html, 'utf8');
-              const parsedData = parseHtml(html, response.url);
+              const html = response.body;
+              const pageSizeBytes = response.bodyBytes;
+              const parsedData = parseHtml(html, response.finalUrl);
               
               if (options.auditId) {
                 eventEmitter.emitPageCrawled(options.auditId, url);
@@ -158,7 +159,7 @@ export async function crawlDomain(startUrl: string, options: CrawlOptions = {}):
 
               results.push({
                 url,
-                finalUrl: response.url,
+                finalUrl: response.finalUrl,
                 status: response.status,
                 success: true,
                 data: parsedData,
@@ -171,7 +172,7 @@ export async function crawlDomain(startUrl: string, options: CrawlOptions = {}):
               });
               
               for (const link of parsedData.internalLinks) {
-                const normalized = normalizeUrl(link.href, response.url);
+                const normalized = normalizeUrl(link.href, response.finalUrl);
                 if (normalized && isSameDomain(normalized, startUrl)) {
                   const cleanUrl = stripTrackingParams(normalized);
                   if (!visited.has(cleanUrl) && !toVisit.some(item => item.url === cleanUrl)) {

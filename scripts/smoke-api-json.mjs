@@ -104,6 +104,16 @@ async function run() {
     assert.ok(resultData.success === true || resultData.success === false);
     console.log("✓ Audit result returned valid JSON");
 
+    // The compatibility event path must stay bounded inside Vercel.
+    const eventRes = await makeRequest(`/api/tools/audit/events/${auditId}?limit=10`, 'GET', null, guestHeaders);
+    assert.ok(eventRes.headers['content-type'].includes('application/json'), 'Audit events should return bounded JSON');
+    assert.ok(!eventRes.headers['content-type'].includes('text/event-stream'), 'Audit events must not keep a serverless SSE request open');
+    const eventData = JSON.parse(eventRes.data);
+    assert.strictEqual(eventData.success, true);
+    assert.ok(Array.isArray(eventData.data.events));
+    assert.ok(eventData.data.events.length <= 10);
+    console.log("PASS: Audit events returned a bounded JSON snapshot");
+
     console.log("All JSON API smoke tests passed!");
     stopServer();
     process.exit(0);

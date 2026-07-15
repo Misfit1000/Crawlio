@@ -1,11 +1,10 @@
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { Router } from 'express';
 import { normalizeDomainInput, normalizeUserUrl } from '../lib/seo/url-utils';
 import { isCompletedAuditStatus } from '../lib/audit/audit-time';
 import { generateKeywords } from '../lib/keywords/generator';
 import { clusterKeywords } from '../lib/keywords/clustering';
 import { buildContentBrief } from '../lib/keywords/content-brief';
-import { auditStore } from '../lib/audit/audit-store';
 import { auditRepository } from '../lib/supabase/audit-repository';
 import { isSupabaseAdminEnabled, requireSupabaseAdminClient } from '../lib/supabase/server';
 import { getAuditModeConfig, type AuditMode } from '../lib/audit/resource-types';
@@ -45,6 +44,7 @@ import {
   verifyBotToken,
 } from '../lib/api/production-controls';
 import { publicVersionPayload } from '../lib/platform/version';
+import { buildPublicAuditExport, csvRow } from '../lib/report/export';
 
 const DUPLICATE_AUDIT_WINDOW_MS = 10 * 60 * 1000;
 
@@ -84,13 +84,30 @@ function schedulerRequestAllowed(req: any) {
   const expected = String(process.env.BLOG_DISPATCH_SECRET || process.env.BLOG_CRON_SECRET || process.env.BLOG_SCHEDULER_SECRET || process.env.CRON_SECRET || '');
   const supplied = firstHeaderValue(req.headers?.authorization).replace(/^Bearer\s+/i, '') || firstHeaderValue(req.headers?.['x-blog-scheduler-secret']);
   if (expected.length < 24 || supplied.length < 24) return false;
-  return createHash('sha256').update(expected).digest('hex') === createHash('sha256').update(supplied).digest('hex');
+  return timingSafeEqual(createHash('sha256').update(expected).digest(), createHash('sha256').update(supplied).digest());
 }
 
 function requestOrigin(req: any) {
-  const proto = firstHeaderValue(req.headers?.['x-forwarded-proto']) || 'https';
+  const configured = [
+    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '',
+    process.env.APP_URL || '',
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '',
+  ];
+  for (const value of configured) {
+    try {
+      const url = new URL(value);
+      if (url.protocol === 'https:') return url.origin;
+    } catch {}
+  }
+  if (process.env.NODE_ENV === 'production') return '';
+  const proto = firstHeaderValue(req.headers?.['x-forwarded-proto']) || 'http';
   const host = firstHeaderValue(req.headers?.['x-forwarded-host']) || firstHeaderValue(req.headers?.host);
-  return host ? `${proto}://${host}` : '';
+  try {
+    const url = new URL(`${proto}://${host}`);
+    return ['localhost', '127.0.0.1', '::1'].includes(url.hostname) ? url.origin : '';
+  } catch {
+    return '';
+  }
 }
 
 function requestImmediateBlogDispatch(req: any, jobId: string, chainDepth = 0) {
@@ -1152,54 +1169,13 @@ apiRouter.post('/audit/start', asyncJsonRoute((req, res) => startQueuedAudit(req
 
 apiRouter.get('/audit/events/:id', asyncJsonRoute(async (req, res) => {
   const auditId = req.params.id;
-  const resourceAudit = await auditRepository.getAudit(auditId);
-  if (!resourceAudit || !(await canAccessAudit(req, resourceAudit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
-  const audit = typeof auditStore.getAudit === 'function' ? auditStore.getAudit(auditId) : auditStore.getJob(auditId);
-  
-  if (!audit) {
-    return res.status(404).json({ success: false, error: 'Audit not found' });
-  }
-
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache, no-transform');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders();
-  
-  const sendEvent = (eventType, data) => {
-    res.write(`event: ${eventType}\n`);
-    res.write(`data: ${JSON.stringify(data)}\n\n`);
-  };
-
-  // Send existing history
-  const history = typeof auditStore.getAuditEvents === 'function' ? auditStore.getAuditEvents(auditId) : [];
-  for (const ev of history) {
-    sendEvent('audit-event', ev);
-  }
-
-  // Subscribe to new events
-  const onEvent = (ev) => {
-    sendEvent('audit-event', ev);
-    if (ev.type === 'audit_completed') {
-      sendEvent('audit-complete', { auditId, resultAvailable: true });
-    } else if (ev.type === 'audit_failed') {
-      sendEvent('audit-error', { auditId, error: ev.message });
-    }
-  };
-
-  if (typeof auditStore.subscribeToAudit === 'function') {
-    auditStore.subscribeToAudit(auditId, onEvent);
-  }
-
-  const heartbeat = setInterval(() => {
-    res.write(': heartbeat\n\n');
-  }, 15000);
-
-  req.on('close', () => {
-    clearInterval(heartbeat);
-    if (typeof auditStore.unsubscribeFromAudit === 'function') {
-      auditStore.unsubscribeFromAudit(auditId, onEvent);
-    }
-  });
+  const audit = await auditRepository.getAudit(auditId);
+  if (!audit || !(await canAccessAudit(req, audit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
+  const requestedLimit = Number(req.query.limit || 50);
+  const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(100, Math.floor(requestedLimit))) : 50;
+  const events = await auditRepository.getEvents(auditId, limit);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: { auditId, events } });
 }));
 
 
@@ -1213,7 +1189,8 @@ apiRouter.get('/audit/status/:id', asyncJsonRoute(async (req, res) => {
 apiRouter.post('/audit/cancel/:id', asyncJsonRoute(async (req, res) => {
   const audit = await auditRepository.getAudit(req.params.id);
   if (!audit || !(await canAccessAudit(req, audit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
-  await auditRepository.cancelAudit(req.params.id);
+  if (!['queued', 'running'].includes(audit.status)) throw new ApiError('AUDIT_NOT_CANCELLABLE', 'Only an active audit can be cancelled.', 409);
+  if (!(await auditRepository.cancelAudit(req.params.id))) throw new ApiError('AUDIT_NOT_CANCELLABLE', 'The audit is no longer active.', 409);
   res.json({ success: true, data: { auditId: req.params.id, status: 'cancelled' } });
 }));
 
@@ -1305,21 +1282,19 @@ apiRouter.get('/audit/export/:id/:format', asyncJsonRoute(async (req, res) => {
   }
 
   if (format === 'json') {
-    return res.json({ success: true, data: liveData.finalReport || liveData });
+    return res.json({ success: true, data: buildPublicAuditExport(liveData) });
   }
 
   if (format === 'issues.csv') {
     const header = 'severity,category,title,affectedUrl,evidence,recommendation\n';
-    const rows = liveData.latestIssues.map((issue) => [issue.severity, issue.category, issue.title, issue.affectedUrl, issue.evidence, issue.recommendation]
-      .map((value) => `"${String(value || '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    const rows = liveData.latestIssues.map((issue) => csvRow([issue.severity, issue.category, issue.title, issue.affectedUrl, issue.evidence, issue.recommendation])).join('\n');
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     return res.send(header + rows);
   }
 
   if (format === 'pages.csv') {
     const header = 'statusCode,url,responseTimeMs,pageSizeBytes,title,wordCount,crawlDepth,issueCount\n';
-    const rows = liveData.latestPages.map((page) => [page.statusCode, page.url, page.responseTimeMs, page.pageSizeBytes, page.title, page.wordCount, page.crawlDepth, page.issueCount]
-      .map((value) => `"${String(value || '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    const rows = liveData.latestPages.map((page) => csvRow([page.statusCode, page.url, page.responseTimeMs, page.pageSizeBytes, page.title, page.wordCount, page.crawlDepth, page.issueCount])).join('\n');
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     return res.send(header + rows);
   }

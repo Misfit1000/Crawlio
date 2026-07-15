@@ -10,6 +10,7 @@ const historyMigrationSql = readFileSync(resolve('supabase/migrations/008_audit_
 const previewMigrationSql = readFileSync(resolve('supabase/migrations/009_audit_page_preview_metadata.sql'), 'utf8');
 const resilienceMigrationSql = readFileSync(resolve('supabase/migrations/010_audit_resilience_and_failures.sql'), 'utf8');
 const productionMigrationSql = readFileSync(resolve('supabase/migrations/011_production_robustness.sql'), 'utf8');
+const admissionLockdownSql = readFileSync(resolve('supabase/migrations/016_server_only_audit_admission.sql'), 'utf8');
 
 for (const table of ['audits', 'audit_events', 'audit_pages', 'audit_issues', 'audit_reports']) {
   assert.match(sql, new RegExp(`create table if not exists public\\.${table}\\b`, 'i'), `${table} table is missing`);
@@ -27,7 +28,7 @@ for (const indexName of [
   assert.match(sql, new RegExp(`create index if not exists ${indexName}\\b`, 'i'), `${indexName} is missing`);
 }
 
-assert.match(sql, /browser clients can enqueue audits only/i, 'safe browser enqueue policy is missing');
+assert.match(sql, /browser clients can enqueue audits only/i, 'initial browser enqueue policy is missing');
 assert.match(sql, /audit rows are readable by browser clients/i, 'browser audit read policy is missing');
 for (const table of ['audits', 'audit_events', 'audit_pages', 'audit_issues', 'audit_reports']) {
   assert.match(privatePoliciesSql, new RegExp(`owners and admins can read ${table.replace('audit_', 'audit ')}`, 'i'), `${table} owner read policy is missing`);
@@ -58,6 +59,11 @@ for (const fn of ['admit_audit_submission', 'consume_api_rate_limit', 'consume_u
   assert.match(productionMigrationSql, new RegExp(`grant execute on function public\\.${fn}`, 'i'), `${fn} service-role grant is missing`);
 }
 assert.match(productionMigrationSql, /recovery_attempts/i, 'bounded stale recovery metadata is missing');
+for (const policy of ['browser clients can enqueue audits only', 'browser clients can enqueue own audits only', 'admins can update audits']) {
+  assert.match(admissionLockdownSql, new RegExp(`drop policy if exists "${policy}"`, 'i'), `${policy} must be removed by migration 016`);
+}
+assert.match(admissionLockdownSql, /revoke insert, update, delete on public\.audits from anon, authenticated/i, 'Direct browser audit mutations must be revoked');
+assert.match(admissionLockdownSql, /api_schema_version = 12/i, 'Database compatibility version must advance with the admission policy change');
 for (const bannedTerm of ['fire' + 'base', 'fire' + 'store']) {
   assert.equal(sql.toLowerCase().includes(bannedTerm), false, `migration should not contain ${bannedTerm} references`);
 }

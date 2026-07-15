@@ -37,6 +37,7 @@ export class PublicFetchError extends Error {
 }
 
 export interface SafePublicFetchOptions {
+  method?: 'GET' | 'HEAD';
   timeoutMs?: number;
   dnsTimeoutMs?: number;
   maxRedirects?: number;
@@ -200,7 +201,7 @@ async function requestPinned(url: URL, address: ResolvedAddress, options: Requir
       protocol: url.protocol,
       hostname: url.hostname,
       port: normalizedPort(url),
-      method: 'GET',
+      method: options.method,
       path: `${url.pathname}${url.search}`,
       headers: {
         'User-Agent': options.userAgent,
@@ -269,6 +270,7 @@ async function requestPinned(url: URL, address: ResolvedAddress, options: Requir
 
 export async function safePublicFetch(value: string, input: SafePublicFetchOptions = {}): Promise<SafePublicResponse> {
   const options: Required<SafePublicFetchOptions> = {
+    method: input.method ?? 'GET',
     timeoutMs: input.timeoutMs ?? 8_000,
     dnsTimeoutMs: input.dnsTimeoutMs ?? 3_000,
     maxRedirects: input.maxRedirects ?? 5,

@@ -16,7 +16,6 @@ import { run as checkEmailTrust } from './email-trust';
 import { run as checkMisconfiguration } from './misconfiguration';
 import { run as checkExposedFiles } from './exposed-files';
 
-import { auditStore } from '../../audit/audit-store';
 import { eventEmitter } from '../../audit/event-emitter';
 
 export async function runSecurityChecks(pageData: any, auditId?: string): Promise<SecurityIssue[]> {
@@ -51,12 +50,8 @@ export async function runSecurityChecks(pageData: any, auditId?: string): Promis
 
   if (pageData.url && pageData.headers) {
     if (auditId) eventEmitter.emitCheckStarted(auditId, 'Exposed Files', pageData.url);
-    const resultIssues = await checkExposedFiles(pageData, auditId);
+    const resultIssues = await checkExposedFiles(pageData);
     if (auditId) {
-      // checkExposedFiles might already emit issues, but let's be safe. Wait, if we emit here, we might double-emit.
-      // Let's assume checkExposedFiles does not emit its own issues anymore, or we just emit here.
-      // In the previous version, we added emitIssueFound to exposed-files.ts.
-      // Let's remove auditId passing to checkExposedFiles and handle it here to be consistent.
       resultIssues.forEach(issue => eventEmitter.emitIssueFound(auditId, issue));
       eventEmitter.emitCheckCompleted(auditId, 'Exposed Files', pageData.url);
     }

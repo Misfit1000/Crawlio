@@ -886,10 +886,31 @@ export const auditRepository = {
     return this.updateAuditJob(id, patch);
   },
 
+  async updateAuditForWorker(id: string, workerId: string, patch: Partial<ResourceAuditDocument>) {
+    const update = { ...patch, updatedAt: nowIso() };
+    const client = getSupabaseAdminClient();
+    if (client) {
+      const { data, error } = await client
+        .from('audits')
+        .update(auditPatchToRow(update))
+        .eq('id', id)
+        .eq('status', 'running')
+        .eq('locked_by', workerId)
+        .select('id')
+        .maybeSingle();
+      assertNoError(error, 'Update worker-owned audit');
+      return Boolean(data);
+    }
+    const current = memory.audits.get(id);
+    if (!current || current.status !== 'running' || current.lockedBy !== workerId) return false;
+    memory.audits.set(id, { ...current, ...update });
+    return true;
+  },
+
   async cancelAuditJob(id: string) {
     const timestamp = nowIso();
-    await this.updateAuditJob(id, {
-      status: 'cancelled',
+    const patch = {
+      status: 'cancelled' as const,
       cancelledAt: timestamp,
       completedAt: timestamp,
       currentPhase: 'Cancelled by user',
@@ -897,13 +918,25 @@ export const auditRepository = {
       lockedBy: null,
       lockedAt: null,
       leaseExpiresAt: null,
-    });
+      updatedAt: timestamp,
+    };
+    const client = getSupabaseAdminClient();
+    if (client) {
+      const { data, error } = await client.from('audits').update(auditPatchToRow(patch)).eq('id', id).in('status', ['queued', 'running']).select('id').maybeSingle();
+      assertNoError(error, 'Cancel active audit');
+      if (!data) return false;
+    } else {
+      const current = memory.audits.get(id);
+      if (!current || !['queued', 'running'].includes(current.status)) return false;
+      memory.audits.set(id, { ...current, ...patch });
+    }
     await this.appendAuditEvent(id, {
       type: 'audit_cancelled',
       timestamp,
       message: 'Audit cancelled by user',
       phase: 'Cancelled by user',
     });
+    return true;
   },
 
   async cancelAudit(id: string) {
@@ -1441,7 +1474,7 @@ export const auditRepository = {
         assertNoError(error, 'Claim audit job');
         if (data) {
           if (candidate.status === 'running') {
-            await this.prepareStaleAuditRetry(data.id, workerId);
+            if (!(await this.prepareStaleAuditRetry(data.id, workerId))) return null;
             return this.getAuditJob(data.id);
           }
           return toAuditDocument(data);
@@ -1480,7 +1513,7 @@ export const auditRepository = {
     };
     memory.audits.set(next.id, claimed);
     if (next.status === 'running') {
-      await this.prepareStaleAuditRetry(next.id, workerId);
+      if (!(await this.prepareStaleAuditRetry(next.id, workerId))) return null;
       return this.getAuditJob(next.id);
     }
     return claimed;
@@ -1586,6 +1619,8 @@ export const auditRepository = {
   },
 
   async prepareStaleAuditRetry(auditId: string, workerId: string) {
+    const ownedAudit = await this.getAuditJob(auditId);
+    if (!ownedAudit || ownedAudit.status !== 'running' || ownedAudit.lockedBy !== workerId) return false;
     const client = getSupabaseAdminClient();
     if (client) {
       for (const table of ['audit_pages', 'audit_issues', 'audit_reports']) {
@@ -1603,7 +1638,7 @@ export const auditRepository = {
       message: `Audit recovered by ${workerId} after a stale worker lease.`,
       phase: 'Recovering stale audit',
     });
-    await this.updateAuditJob(auditId, {
+    const updated = await this.updateAuditForWorker(auditId, workerId, {
       status: 'running',
       progress: 1,
       currentPhase: 'Recovering stale audit',
@@ -1621,6 +1656,7 @@ export const auditRepository = {
       finalUrl: null,
       error: null,
     });
+    return updated;
   },
 
   async releaseAuditLock(id: string) {

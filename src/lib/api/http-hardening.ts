@@ -31,9 +31,8 @@ function configuredOrigins(req: Request) {
     process.env.APP_URL,
     process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '',
     process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '',
-    `${req.protocol}://${req.get('host')}`,
   ].filter(Boolean);
-  if (process.env.NODE_ENV !== 'production') values.push('http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:4173', 'http://127.0.0.1:4173');
+  if (process.env.NODE_ENV !== 'production') values.push(`${req.protocol}://${req.get('host')}`, 'http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:4173', 'http://127.0.0.1:4173');
   return new Set(values.map((value) => {
     try { return new URL(String(value)).origin; } catch { return ''; }
   }).filter(Boolean));

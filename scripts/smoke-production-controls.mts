@@ -6,6 +6,7 @@ import { API_SCHEMA_VERSION, publicVersionPayload } from '../src/lib/platform/ve
 const root = new URL('../', import.meta.url);
 const read = (file: string) => readFile(new URL(file, root), 'utf8');
 const migration = await read('supabase/migrations/011_production_robustness.sql');
+const admissionLockdownMigration = await read('supabase/migrations/016_server_only_audit_admission.sql');
 const api = await read('src/api/index.ts');
 const controls = await read('src/lib/api/production-controls.ts');
 
@@ -71,7 +72,9 @@ async function queueLimits() {
 
 async function deploymentCompatibility() {
   const version = publicVersionPayload();
-  assert.equal(API_SCHEMA_VERSION, 11);
+  const migratedSchemaVersion = Number(admissionLockdownMigration.match(/api_schema_version\s*=\s*(\d+)/i)?.[1]);
+  assert.ok(Number.isInteger(migratedSchemaVersion), 'Latest migration must declare its API schema version.');
+  assert.equal(API_SCHEMA_VERSION, migratedSchemaVersion);
   for (const key of ['applicationVersion', 'commitIdentifier', 'buildTimestamp', 'apiSchemaVersion', 'auditEngineVersion', 'scoringVersion', 'checkRegistryVersion']) assert.ok(key in version);
   assert.match(migration, /create table if not exists public\.deployment_versions/i);
   assert.match(controls, /AUDIT_SERVICE_UPDATING/);

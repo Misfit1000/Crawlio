@@ -11,8 +11,8 @@ export interface AuditHistoryEntry {
   normalizedUrl: string;
   hostname: string;
   status: string;
-  score: number;
-  scoreSource?: 'final_report' | 'issue_weight';
+  score: number | null;
+  scoreSource?: 'final_report' | 'unavailable';
   scores?: ReportScoreSnapshot;
   issuesFound: number;
   criticalCount: number;
@@ -62,10 +62,6 @@ const FINDING_NOTES_PREFIX = 'seointel_finding_notes_v1:';
 
 function hasStorage() {
   return typeof window !== 'undefined' && !!window.localStorage;
-}
-
-export function scoreFromAudit(audit: Pick<ResourceAuditDocument, 'criticalCount' | 'highCount' | 'mediumCount' | 'lowCount'>) {
-  return Math.max(0, Math.min(100, 100 - audit.criticalCount * 12 - audit.highCount * 7 - audit.mediumCount * 3 - audit.lowCount));
 }
 
 export function issueSignature(issue: Pick<ResourceAuditIssue, 'title' | 'affectedUrl' | 'category'>) {
@@ -137,7 +133,11 @@ export function readAuditHistory(): AuditHistoryEntry[] {
   try {
     const raw = window.localStorage.getItem(HISTORY_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed.map((entry) => ({
+      ...entry,
+      score: entry?.scoreSource === 'final_report' && Number.isFinite(Number(entry.score)) ? Number(entry.score) : null,
+      scoreSource: entry?.scoreSource === 'final_report' ? 'final_report' : 'unavailable',
+    })) : [];
   } catch {
     return [];
   }
@@ -152,7 +152,7 @@ export function buildHistoryEntry(data: ResourceAuditLiveData): AuditHistoryEntr
   const audit = data.audit;
   if (!audit) return null;
   const scores = extractReportScores(data.finalReport?.scores);
-  const score = scores.overall ?? scoreFromAudit(audit);
+  const score = scores.overall;
   const startedAt = audit.startedAt || audit.createdAt;
   const endedAt = audit.completedAt || audit.cancelledAt || (audit.status === 'failed' ? audit.updatedAt : null);
   const durationSeconds = endedAt
@@ -165,7 +165,7 @@ export function buildHistoryEntry(data: ResourceAuditLiveData): AuditHistoryEntr
     hostname: audit.hostname,
     status: audit.status,
     score,
-    scoreSource: scores.overall == null ? 'issue_weight' : 'final_report',
+    scoreSource: scores.overall == null ? 'unavailable' : 'final_report',
     scores,
     issuesFound: audit.issuesFound,
     criticalCount: audit.criticalCount,
@@ -227,22 +227,8 @@ export function compareAuditIssues(currentIssues: ResourceAuditIssue[], previous
     newIssues,
     unchangedIssues,
     fixedCount,
-    scoreDelta: previous && currentScore != null ? currentScore - previous.score : null,
+    scoreDelta: previous && currentScore != null && previous.score != null ? currentScore - previous.score : null,
   };
-}
-
-export function scoreFromIssues(issues: Array<Pick<ResourceAuditIssue, 'severity'>>) {
-  const counts = issues.reduce(
-    (acc, issue) => {
-      if (issue.severity === 'critical') acc.critical += 1;
-      else if (issue.severity === 'high') acc.high += 1;
-      else if (issue.severity === 'medium') acc.medium += 1;
-      else if (issue.severity === 'low') acc.low += 1;
-      return acc;
-    },
-    { critical: 0, high: 0, medium: 0, low: 0 },
-  );
-  return Math.max(0, Math.min(100, 100 - counts.critical * 12 - counts.high * 7 - counts.medium * 3 - counts.low));
 }
 
 export function scoreTrendForUrl(normalizedUrl: string, history = readAuditHistory()) {

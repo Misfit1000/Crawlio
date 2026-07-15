@@ -75,6 +75,7 @@ assert.equal('workerId' in health, false);
 assert.equal('runtime' in health, false);
 assert.equal('currentAuditId' in health, false);
 assert.deepEqual(health.supportedModes, ['quick', 'standard']);
+assert.equal(health.planLimitsSummary.agency.maxPages, 25, 'Disabled deep mode must report the standard 25-page ceiling.');
 server!.close();
 
 assert.equal(

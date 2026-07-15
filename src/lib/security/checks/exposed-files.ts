@@ -1,6 +1,5 @@
 import { SecurityIssue } from '../types';
-import { auditStore } from '../../audit/audit-store';
-import { eventEmitter } from '../../audit/event-emitter';
+import { safePublicFetch } from '../safe-public-fetch';
 
 const SAFE_PATHS = [
   '/.git/config',
@@ -10,7 +9,7 @@ const SAFE_PATHS = [
   '/config.json'
 ];
 
-export async function run(pageData: any, auditId?: string): Promise<SecurityIssue[]> {
+export async function run(pageData: any): Promise<SecurityIssue[]> {
   const issues: SecurityIssue[] = [];
   const origin = new URL(pageData.url).origin;
   
@@ -19,9 +18,16 @@ export async function run(pageData: any, auditId?: string): Promise<SecurityIssu
     
     try {
       const url = `${origin}${path}`;
-      const res = await fetch(url, { method: 'HEAD', headers: { 'User-Agent': 'SEOIntel-Bot' } });
+      const res = await safePublicFetch(url, {
+        method: 'HEAD',
+        timeoutMs: 4_000,
+        maxRedirects: 3,
+        maxBytes: 1,
+        allowedContentTypes: [],
+        userAgent: 'SEOIntelBot/1.0 (Passive Security Review)',
+      });
       
-      if (res.ok) {
+      if (res.status >= 200 && res.status < 300) {
         issues.push({
           id: `exposed-${path.replace(/[^a-zA-Z0-9]/g, '')}`,
           category: 'configuration',

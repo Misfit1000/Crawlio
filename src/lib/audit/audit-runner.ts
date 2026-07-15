@@ -3,6 +3,7 @@ import { eventEmitter } from './event-emitter';
 import { crawlDomain } from '../seo/crawler';
 import { runAllChecks } from '../seo/checks/runner';
 import { AuditIssue } from './types';
+import { safePublicFetch } from '../security/safe-public-fetch';
 
 export async function runAuditJob(jobId: string, maxPages = 10) {
   const job = auditStore.getJob(jobId);
@@ -86,8 +87,8 @@ export async function runAuditJob(jobId: string, maxPages = 10) {
       
       eventEmitter.emitCheckStarted(jobId, 'Robots.txt check', robotsUrl);
       try {
-        const robRes = await fetch(robotsUrl, { method: 'HEAD', headers: { 'User-Agent': 'SEOIntel-Bot' }});
-        if (!robRes.ok) {
+        const robRes = await safePublicFetch(robotsUrl, { method: 'HEAD', timeoutMs: 5_000, maxBytes: 1, allowedContentTypes: [] });
+        if (robRes.status < 200 || robRes.status >= 300) {
            const iss = { id: 'missing-robots', category: 'crawlability', severity: 'high' as const, title: 'Missing robots.txt', description: 'Could not find a valid robots.txt file.', affectedUrl: robotsUrl };
            allIssues.push(iss);
            eventEmitter.emitIssueFound(jobId, iss);
@@ -103,8 +104,8 @@ export async function runAuditJob(jobId: string, maxPages = 10) {
       
       eventEmitter.emitCheckStarted(jobId, 'Sitemap check', sitemapUrl);
       try {
-        const smRes = await fetch(sitemapUrl, { method: 'HEAD', headers: { 'User-Agent': 'SEOIntel-Bot' }});
-        if (!smRes.ok) {
+        const smRes = await safePublicFetch(sitemapUrl, { method: 'HEAD', timeoutMs: 5_000, maxBytes: 1, allowedContentTypes: [] });
+        if (smRes.status < 200 || smRes.status >= 300) {
            const iss = { id: 'missing-sitemap', category: 'crawlability', severity: 'medium' as const, title: 'Missing sitemap.xml', description: 'Could not find a valid sitemap.xml file at the root.', affectedUrl: sitemapUrl };
            allIssues.push(iss);
            eventEmitter.emitIssueFound(jobId, iss);

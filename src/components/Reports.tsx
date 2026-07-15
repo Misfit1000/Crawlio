@@ -230,7 +230,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
   const groupedSites = useMemo(() => new Set(history.map((entry) => entry.normalizedUrl)).size, [history]);
   const scores = useMemo(() => extractReportScores(reportData?.finalReport?.scores), [reportData]);
   const overallScore = scores.overall ?? (isCompletedAuditStatus(selectedHistory?.status) ? selectedHistory?.score ?? null : null);
-  const scoreIsFinal = scores.overall != null;
+  const scoreIsFinal = scores.overall != null || (isCompletedAuditStatus(selectedHistory?.status) && selectedHistory?.score != null);
   const issues = reportData?.latestIssues || selectedHistory?.topIssues || [];
   const pages = reportData?.latestPages || [];
   const recommendations = useMemo(() => groupRecommendations(issues), [issues]);
@@ -348,7 +348,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
           </div>
           <div className="p-5 md:p-6">
             <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-              <AuditGrade score={overallScore} detail={scoreIsFinal ? 'Final audit engine score' : isCompletedAuditStatus(selectedHistory?.status) ? 'Estimated from stored issue counts; final score unavailable' : `No final score: audit ${selectedHistory?.status || 'not completed'}`} />
+              <AuditGrade score={overallScore} detail={scoreIsFinal ? 'Stored final audit engine score' : `No final score: audit ${selectedHistory?.status || 'not completed'}`} />
               <div className="flex flex-wrap gap-2 no-print">
                 <button type="button" onClick={copyReportLink} className="quiet-button"><Share2 className="h-4 w-4" /> Copy link</button>
                 <button type="button" onClick={() => window.print()} className="quiet-button"><Printer className="h-4 w-4" /> Print</button>
@@ -380,7 +380,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
           <p className="mt-1 text-sm text-muted-foreground">The audit result and its measured categories, before technical detail.</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard label="Overall grade" value={scoreToGrade(overallScore) || '--'} detail={overallScore == null ? 'Not measured' : `${Math.round(overallScore)}/100 ${scoreIsFinal ? 'final score' : 'stored estimate'}`} icon={<BarChart3 className="h-5 w-5" />} tone={overallScore != null && overallScore >= 80 ? 'green' : 'yellow'} />
+          <MetricCard label="Overall grade" value={scoreToGrade(overallScore) || '--'} detail={overallScore == null ? 'Not measured' : `${Math.round(overallScore)}/100 final score`} icon={<BarChart3 className="h-5 w-5" />} tone={overallScore != null && overallScore >= 80 ? 'green' : 'yellow'} />
           <MetricCard label="Pages checked" value={reportData?.audit?.pagesCrawled ?? selectedHistory?.pagesCrawled ?? '--'} detail={reportData?.audit ? `${reportData.audit.pagesDiscovered} discovered` : 'Stored audit summary'} icon={<Layers className="h-5 w-5" />} />
           <MetricCard label="Fix now" value={counts.critical} detail={`${counts.high} high-priority finding(s)`} icon={<AlertTriangle className="h-5 w-5" />} tone={counts.critical ? 'red' : counts.high ? 'yellow' : 'green'} />
           <MetricCard label="Observed pages" value={pages.length || '--'} detail={pages.length ? `${pageMetrics.errorPages} returned an error status` : 'Page details unavailable'} icon={<Globe2 className="h-5 w-5" />} />

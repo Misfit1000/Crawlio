@@ -1,5 +1,5 @@
 export const APPLICATION_VERSION = '1.0.0-beta';
-export const API_SCHEMA_VERSION = 11;
+export const API_SCHEMA_VERSION = 12;
 export const AUDIT_ENGINE_VERSION = '2026.07';
 export const SCORING_VERSION = '2.0';
 export const CHECK_REGISTRY_VERSION = '2.0';

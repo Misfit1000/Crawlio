@@ -145,7 +145,7 @@ export default function Dashboard(props: DashboardProps) {
                 </div>
                 <AuditGrade
                   score={latestScore}
-                  detail={!isCompletedAuditStatus(latest.status) ? `No final score: audit ${latest.status}` : latest.scoreSource === 'final_report' ? 'Final audit engine score' : 'Estimated from stored issue counts'}
+                  detail={!isCompletedAuditStatus(latest.status) ? `No final score: audit ${latest.status}` : latest.scoreSource === 'final_report' ? 'Final audit engine score' : 'Final score unavailable'}
                 />
                 <button type="button" onClick={() => selectReport(latest, props.onOpenReports)} className="quiet-button w-full">
                   Open full report <ArrowRight className="h-4 w-4" />
@@ -167,9 +167,9 @@ export default function Dashboard(props: DashboardProps) {
         <MetricCard
           label="Latest grade"
           value={latestGrade || '--'}
-          detail={latestScore != null ? `${Math.round(latestScore)}/100 ${latest?.scoreSource === 'final_report' ? 'final score' : 'stored estimate'}` : latest ? `Latest audit ${latest.status}` : 'No audit completed'}
+          detail={latestScore != null ? `${Math.round(latestScore)}/100 final score` : latest ? `Latest audit ${latest.status}; score unavailable` : 'No audit completed'}
           icon={<Gauge className="h-5 w-5" />}
-          tone={latest && latest.score >= 80 ? 'green' : latest ? 'yellow' : 'accent'}
+          tone={latest?.score != null && latest.score >= 80 ? 'green' : latest ? 'yellow' : 'accent'}
         />
         <MetricCard label="Pages checked" value={latest?.pagesCrawled ?? '--'} detail={latest?.pageLimit ? `Audit limit: ${latest.pageLimit}` : latest ? 'Stored page summaries' : 'No page data stored'} icon={<Layers className="h-5 w-5" />} />
         <MetricCard label="Open fixes" value={latest?.issuesFound ?? '--'} detail={latest ? `${latest.criticalCount} fix now, ${latest.highCount} high priority` : 'No findings stored'} icon={<AlertTriangle className="h-5 w-5" />} tone={latest?.criticalCount ? 'red' : latest ? 'yellow' : 'accent'} />
@@ -300,7 +300,7 @@ export default function Dashboard(props: DashboardProps) {
                   {history.slice(0, 8).map((entry) => (
                     <tr key={entry.auditId}>
                       <td className="max-w-[280px] truncate font-semibold">{entry.normalizedUrl}</td>
-                      <td className="font-semibold tabular-nums">{isCompletedAuditStatus(entry.status) ? <>{scoreToGrade(entry.score) || '--'} <span className="text-xs text-muted-foreground">{Math.round(entry.score)}</span></> : '--'}</td>
+                      <td className="font-semibold tabular-nums">{isCompletedAuditStatus(entry.status) && entry.score != null ? <>{scoreToGrade(entry.score) || '--'} <span className="text-xs text-muted-foreground">{Math.round(entry.score)}</span></> : '--'}</td>
                       <td className="tabular-nums">{entry.pagesCrawled}</td>
                       <td className="tabular-nums">{entry.issuesFound}</td>
                       <td><StatusBadge tone={isCompletedAuditStatus(entry.status) ? 'success' : entry.status === 'failed' ? 'danger' : 'warning'}>{entry.status.replace(/_/g, ' ')}</StatusBadge></td>

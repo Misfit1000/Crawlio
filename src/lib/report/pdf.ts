@@ -19,12 +19,6 @@ function optionalScore(value: unknown) {
   return Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : null;
 }
 
-function estimatedScore(data: ResourceAuditLiveData) {
-  const audit = data.audit;
-  if (!audit) return 0;
-  return Math.max(0, Math.min(100, 100 - audit.criticalCount * 12 - audit.highCount * 7 - audit.mediumCount * 3 - audit.lowCount));
-}
-
 function severityColor(severity: string) {
   if (severity === 'critical') return COLORS.red;
   if (severity === 'high') return COLORS.orange;
@@ -180,13 +174,12 @@ export async function renderAuditPdf(data: ResourceAuditLiveData): Promise<Buffe
     doc.moveDown(1);
 
     const scores = (data.finalReport?.scores || {}) as Record<string, unknown>;
-    const finalOverall = optionalScore(scores.overall);
-    const overall = finalOverall ?? estimatedScore(data);
+    const overall = optionalScore(scores.overall);
     const overallGrade = scoreToGrade(overall) || 'N/M';
     const metricGap = 10;
     const metricWidth = (contentWidth - metricGap * 3) / 4;
     const metricY = doc.y;
-    drawMetric(margin, metricY, metricWidth, finalOverall == null ? 'Estimated grade' : 'Overall grade', `${overallGrade}  ${Math.round(overall)}`, overall >= 80 ? COLORS.green : overall >= 60 ? COLORS.blue : COLORS.amber);
+    drawMetric(margin, metricY, metricWidth, 'Overall grade', overall == null ? 'N/M' : `${overallGrade}  ${Math.round(overall)}`, overall == null ? COLORS.muted : overall >= 80 ? COLORS.green : overall >= 60 ? COLORS.blue : COLORS.amber);
     drawMetric(margin + (metricWidth + metricGap), metricY, metricWidth, 'Pages checked', String(audit.pagesCrawled), COLORS.blue);
     drawMetric(margin + (metricWidth + metricGap) * 2, metricY, metricWidth, 'Open fixes', String(audit.issuesFound), COLORS.amber);
     drawMetric(margin + (metricWidth + metricGap) * 3, metricY, metricWidth, 'Fix now', String(audit.criticalCount), audit.criticalCount ? COLORS.red : COLORS.green);

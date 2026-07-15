@@ -22,6 +22,7 @@ export interface AuditWriteSink {
 }
 
 export interface AuditWriteBatchOptions {
+  workerId?: string;
   pageBatchSize?: number;
   issueBatchSize?: number;
   eventBatchSize?: number;
@@ -41,12 +42,16 @@ export interface AuditWriteMetrics {
   analysisMs: number;
 }
 
-const defaultSink: AuditWriteSink = {
-  updateAudit: (id, patch) => auditRepository.updateAudit(id, patch),
-  appendPages: (id, pages) => auditRepository.appendPages(id, pages),
-  appendIssues: (id, issues) => auditRepository.appendIssues(id, issues),
-  appendEvents: (id, events) => auditRepository.appendEvents(id, events),
-};
+function createDefaultSink(workerId?: string): AuditWriteSink {
+  return {
+    updateAudit: (id, patch) => workerId
+      ? auditRepository.updateAuditForWorker(id, workerId, patch)
+      : auditRepository.updateAudit(id, patch),
+    appendPages: (id, pages) => auditRepository.appendPages(id, pages),
+    appendIssues: (id, issues) => auditRepository.appendIssues(id, issues),
+    appendEvents: (id, events) => auditRepository.appendEvents(id, events),
+  };
+}
 
 function pageId(auditId: string, url: string) {
   return createHash('sha256').update(`${auditId}:${url}`).digest('hex').slice(0, 40);
@@ -79,9 +84,10 @@ export class AuditWriteBatch {
 
   constructor(
     private readonly auditId: string,
-    private readonly sink: AuditWriteSink = defaultSink,
+    sink: AuditWriteSink | undefined = undefined,
     options: AuditWriteBatchOptions = {},
   ) {
+    this.sink = sink ?? createDefaultSink(options.workerId);
     this.pageBatchSize = Math.max(1, options.pageBatchSize ?? 5);
     this.issueBatchSize = Math.max(1, options.issueBatchSize ?? 40);
     this.eventBatchSize = Math.max(1, options.eventBatchSize ?? 20);
@@ -89,6 +95,8 @@ export class AuditWriteBatch {
     this.writeTimeoutMs = Math.max(1_000, options.writeTimeoutMs ?? 15_000);
     this.now = options.now ?? Date.now;
   }
+
+  private readonly sink: AuditWriteSink;
 
   async addPage(page: AuditPageInput) {
     const fullPage: ResourceAuditPage = { id: pageId(this.auditId, page.url), ...page };

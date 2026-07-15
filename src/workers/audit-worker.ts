@@ -30,6 +30,7 @@ import { calculateTransparentAuditScore, toReportScoreRecord } from '../lib/audi
 import { AuditWriteBatch } from './audit-write-batch';
 import { HostRequestScheduler } from './host-request-scheduler';
 import { isAuditJobType } from './audit-job-types';
+import { AUDIT_ENGINE_VERSION, CHECK_REGISTRY_VERSION, SCORING_VERSION } from '../lib/platform/version';
 import {
   aggregateFailureCounts,
   classifyAuditFailure,
@@ -208,10 +209,13 @@ async function fetchPageWithRetry(
   throw new RetriedFetchError(lastError, maxAttempts);
 }
 
-async function ensureNotCancelled(auditId: string) {
+async function ensureWorkerOwnership(auditId: string, workerId: string) {
   const audit = await auditRepository.getAudit(auditId);
   if (audit?.status === 'cancelled') {
     throw new Error('AUDIT_CANCELLED');
+  }
+  if (!audit || audit.status !== 'running' || audit.lockedBy !== workerId) {
+    throw new Error('AUDIT_OWNERSHIP_LOST');
   }
 }
 
@@ -223,7 +227,7 @@ function normalizeCrawlUrl(input: string, base?: string) {
   return url.toString();
 }
 
-async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteBatch) {
+async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteBatch, workerId: string) {
   const config = getAuditProfileForDocument(audit);
   const startUrl = normalizeCrawlUrl(audit.normalizedUrl) || audit.normalizedUrl;
   const rootQueueItem: QueueItem = { url: startUrl, depth: 0, sourceUrls: [], anchorTexts: [] };
@@ -368,7 +372,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     progress: 8,
   });
 
-  await ensureNotCancelled(audit.id);
+  await ensureWorkerOwnership(audit.id, workerId);
 
   const origin = new URL(audit.normalizedUrl).origin;
   await writeProgress({
@@ -439,7 +443,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
       return;
     }
 
-    await ensureNotCancelled(audit.id);
+    await ensureWorkerOwnership(audit.id, workerId);
     const crawlProgress = 20 + Math.floor((visited.size / Math.max(visited.size + queue.length, 1)) * 35);
     await writeProgress({
       progress: Math.min(55, crawlProgress),
@@ -519,7 +523,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
       depth: item.depth,
     };
 
-    await ensureNotCancelled(audit.id);
+    await ensureWorkerOwnership(audit.id, workerId);
     const analysisStartedAt = Date.now();
     await writeProgress({
       currentPhase: 'Reviewing technical signals',
@@ -533,7 +537,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
       .filter((issue) => isSeoIssueAllowedForProfile(config, issue))
       .map((issue) => mapAuditIssue(issue, fetched.finalUrl));
     for (const issue of seoIssues) {
-      await ensureNotCancelled(audit.id);
+      await ensureWorkerOwnership(audit.id, workerId);
       await addIssue(issue);
     }
     completedChecks += checkRun.completedChecks;
@@ -552,7 +556,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
       progress: 75,
     });
 
-    await ensureNotCancelled(audit.id);
+    await ensureWorkerOwnership(audit.id, workerId);
     await writeProgress({
       currentPhase: 'Reviewing passive security signals',
       currentUrl: fetched.finalUrl,
@@ -571,7 +575,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
       }), item, false);
     }
     for (const issue of securityIssues) {
-      await ensureNotCancelled(audit.id);
+      await ensureWorkerOwnership(audit.id, workerId);
       await addIssue(issue);
     }
     await writer.addEvent({
@@ -783,6 +787,9 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
   const report: ResourceAuditReport = {
     scores: {
       ...toReportScoreRecord(transparentScore),
+      auditEngineVersion: AUDIT_ENGINE_VERSION,
+      scoringVersion: SCORING_VERSION,
+      checkRegistryVersion: CHECK_REGISTRY_VERSION,
       pageTypeCounts,
       issueCategoryCounts: categoryCounts,
       warningSummary: aggregateFailureCounts(failures),
@@ -841,11 +848,11 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
   }, { force: true });
 }
 
-async function processAudit(audit: ResourceAuditDocument) {
-  const writer = new AuditWriteBatch(audit.id);
+async function processAudit(audit: ResourceAuditDocument, workerId: string) {
+  const writer = new AuditWriteBatch(audit.id, undefined, { workerId });
   const profile = getAuditProfileForDocument(audit);
   try {
-    await processAuditJob(audit, writer);
+    await processAuditJob(audit, writer, workerId);
   } finally {
     await writer.flush();
     await auditRepository.trimAuditEvents(audit.id, profile.maxEvents);
@@ -892,7 +899,7 @@ export async function runOneAudit(
   }
 
   if (!isAuditJobType(audit.effectiveMode)) {
-    await auditRepository.updateAudit(audit.id, { status: 'failed', error: 'Unsupported audit job type.', completedAt: nowIso() });
+    await auditRepository.updateAuditForWorker(audit.id, workerId, { status: 'failed', error: 'Unsupported audit job type.', completedAt: nowIso(), lockedBy: null, lockedAt: null, leaseExpiresAt: null });
     console.error(`Audit worker rejected unsupported job type for ${audit.id}`);
     return true;
   }
@@ -905,7 +912,7 @@ export async function runOneAudit(
 
   const stopLeaseRefresher = createLeaseRefresher(audit.id, workerId);
   try {
-    await processAudit(audit);
+    await processAudit(audit, workerId);
     const latest = await auditRepository.getAudit(audit.id);
     if (latest?.status === 'cancelled') {
       console.log(`Audit ${audit.id} cancelled`);
@@ -931,6 +938,11 @@ export async function runOneAudit(
       }
       return true;
     }
+    if (error?.message === 'AUDIT_OWNERSHIP_LOST') {
+      console.error(`Audit ${audit.id} stopped because this worker no longer owns the active lease.`);
+      if (runtimeState) await writeWorkerHeartbeat(runtimeState, { status: 'idle', currentAuditId: null, queuePollingStatus: 'active' });
+      return true;
+    }
     const terminalAudit = await auditRepository.getAudit(audit.id).catch(() => null);
     if (terminalAudit && isTerminalAuditStatus(terminalAudit.status)) {
       console.error(`Audit ${audit.id} post-finalisation cleanup failed without changing terminal status: ${error instanceof Error ? error.message : String(error)}`);
@@ -952,7 +964,7 @@ export async function runOneAudit(
     } catch (diagnosticError) {
       console.error(`Audit ${audit.id} diagnostic storage failed: ${diagnosticError instanceof Error ? diagnosticError.message : String(diagnosticError)}`);
     }
-    await auditRepository.updateAudit(audit.id, {
+    const failed = await auditRepository.updateAuditForWorker(audit.id, workerId, {
       status: 'failed',
       progress: 100,
       error: safeMessage,
@@ -962,12 +974,14 @@ export async function runOneAudit(
       lockedAt: null,
       leaseExpiresAt: null,
     });
-    await auditRepository.appendEvent(audit.id, {
-      type: 'audit_failed',
-      message: failure.safeTitle,
-      affectedUrl: failure.affectedUrl,
-      progress: 100,
-    });
+    if (failed) {
+      await auditRepository.appendEvent(audit.id, {
+        type: 'audit_failed',
+        message: failure.safeTitle,
+        affectedUrl: failure.affectedUrl,
+        progress: 100,
+      });
+    }
     console.error(`Audit ${audit.id} failed [${failure.code}]: ${failure.internalDetails}`);
     if (runtimeState) {
       await writeWorkerHeartbeat(runtimeState, { status: 'idle', currentAuditId: null, queuePollingStatus: 'active', databaseConnected: true });
