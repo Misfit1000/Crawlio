@@ -5,7 +5,7 @@
 1. Create a Supabase project.
 2. Copy the project URL and anon key for the frontend.
 3. Copy the service role key for the API and worker only.
-4. Apply every SQL file in `supabase/migrations/` in numeric order through `013_blog_provider_and_editor_completion.sql`. Existing projects must apply migrations 012 and 013 in order without rewriting either file.
+4. Apply every SQL file in `supabase/migrations/` in numeric order through `019_finding_workflow_and_operations.sql`. Never rewrite an applied migration.
 
 ## Frontend Environment
 
@@ -40,8 +40,12 @@ The migration creates:
 - `audit_pages`
 - `audit_issues`
 - `audit_reports`
+- `audit_finding_workflow`
+- service-only operational state and deployment records
 
 It also enables RLS, adds Realtime publication entries, and creates indexes for queue claiming, live timelines, pages, issues, and cleanup.
+
+Migration 019 permits authenticated owners to manage workflow only for their own signed-in audits. Guests retain a device-only fallback and cannot write shared workflow rows. `operations_alert_state` has RLS and no browser policy.
 
 ## Runtime Contract
 

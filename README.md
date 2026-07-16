@@ -13,6 +13,7 @@ Crawlio is an SEO auditing, website analysis, keyword research, reporting, and c
 - **Imported Link Data**: Review user-supplied Common Crawl or generic SEO CSV exports without inventing backlink metrics.
 - **Transparent Scores**: Measured deductions are stored with limitations; unavailable provider data does not affect scores.
 - **Account History And Comparison**: Owner-scoped Supabase history with new, resolved, and persistent issue comparison.
+- **Synced Finding Workflow**: Signed-in owners persist fix status, notes, due dates, and resolution metadata with RLS and optimistic conflict handling.
 - **No Paid Audit APIs**: Audit evidence comes from bounded public-page analysis and user imports.
 - **Editorial Content Operations**: Administrator-controlled manual, batch, and optional Groq-backed Vercel jobs with source records, quality gates, review, scheduling, static HTML, RSS, and sitemaps.
 
@@ -26,6 +27,8 @@ Crawlio is an SEO auditing, website analysis, keyword research, reporting, and c
 ## Deployment
 
 Deploy the frontend and bounded API to Vercel, apply Supabase migrations, and deploy the audit worker separately to Render. Never run the crawl loop inside a Vercel function. The source of truth is `docs/deployment/production-architecture.md`.
+
+Use `npm run e2e:critical` for deterministic Chromium release journeys and `npm run smoke:production` for the separately configured production gate. Production smoke audit creation is opt-in and always limited to the Quick profile.
 
 ## Rebrand migration
 

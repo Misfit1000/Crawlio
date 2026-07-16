@@ -17,7 +17,20 @@ The repository includes temporary write fallbacks for a rolling deployment, but 
 
 ## Current migration head
 
-Apply every migration in numeric order from `001_resource_light_audit.sql` through `016_server_only_audit_admission.sql`. Migration 015 must be applied as one complete transaction after 014; migration 016 then removes direct browser audit mutations and advances the compatibility ledger to API schema 12. Never modify an already-applied migration; add the next numbered migration for future schema corrections.
+Apply every migration in numeric order from `001_resource_light_audit.sql` through `019_finding_workflow_and_operations.sql`. Migrations 001-018 are published history and must not be edited. Migration 019 is additive: it creates owner-scoped finding workflow records, service-only alert deduplication state, Realtime publication for workflow rows, supporting indexes, and advances the database ledger to API schema 13.
+
+For migration 019:
+
+1. Record the production release commit and create a Supabase-supported backup or restore point.
+2. Apply the complete migration in the Supabase SQL Editor or normal CLI migration pipeline.
+3. Run the verification queries at the bottom of the file.
+4. Confirm RLS is enabled on both new tables; `operations_alert_state` must have no browser policies.
+5. Confirm an authenticated audit owner can persist one finding status, note, and due date, while another account and a guest cannot.
+6. Deploy the frontend/API and audit engine from the same commit.
+7. Open Admin > Diagnostics and confirm database schema 13, matching commits, and a healthy engine heartbeat.
+8. Run `npm run smoke:production` without audit creation, then optionally run one configured Quick Audit.
+
+The API keeps audit admission compatible with schema 12 during this additive rollout window, but finding synchronization remains unavailable until migration 019 is applied. Do not leave production in that transitional state.
 
 ## Production robustness release
 

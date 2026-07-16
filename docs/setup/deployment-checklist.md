@@ -1,6 +1,6 @@
 # Deployment Checklist
 
-Apply migrations in numeric order through `016_server_only_audit_admission.sql`. Verify RLS, server-only audit admission, the Vercel blog claim/complete/recovery RPCs, review thresholds, section revisions, image variants, approved sources, and fixture publication guards before deploying code.
+Apply migrations in numeric order through `019_finding_workflow_and_operations.sql`. Verify RLS, server-only audit admission, finding-workflow ownership, alert-state secrecy, the Vercel blog claim/complete/recovery RPCs, review thresholds, section revisions, image variants, approved sources, and fixture publication guards before deploying code.
 
 ## Pre-Deploy
 
@@ -19,6 +19,8 @@ npm run smoke:blog
 npm run e2e:local-audit
 npm run verify:seo
 npm run verify:security
+npm run verify:audit-architecture
+npm run e2e:critical
 npm audit --audit-level=moderate
 git diff --check
 ```
@@ -49,13 +51,14 @@ git diff --check
 
 ## Supabase
 
-- Apply every file in `supabase/migrations/` in numeric order through 016; never rewrite an earlier migration.
+- Apply every file in `supabase/migrations/` in numeric order through 019; never rewrite an earlier migration.
 - Confirm Supabase Realtime is enabled for audit tables.
 - Confirm the live audit page shows `WebSocket live` after opening an audit.
 - Confirm RLS is enabled on audit tables.
 - Confirm authenticated clients can read only their own audit rows through RLS. Guest audits use the identity-protected Vercel status endpoint and do not receive direct table-read policies.
 - Confirm privileged writes use the service role key only from API/worker environments.
 - Confirm `blog_posts` has RLS enabled and only published posts are publicly readable.
+- Confirm `audit_finding_workflow` is owner-scoped and `operations_alert_state` has no browser policy.
 
 ## Post-Deploy
 
@@ -72,3 +75,4 @@ git diff --check
 10. Confirm a completed Paid, Agency, or Admin audit downloads a valid PDF and a Free audit receives the expected upgrade message.
 11. Confirm cancel works for a queued audit.
 12. Publish a reviewed test article, verify complete initial HTML at `/blog/{slug}`, and confirm it appears in `/sitemap.xml` and `/rss.xml`.
+13. Run the manual no-audit production release smoke, then one explicitly enabled Quick Audit against the controlled smoke target.

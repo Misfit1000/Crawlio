@@ -18,6 +18,7 @@ Use independent secrets for each purpose. Never copy a service-role or provider 
 - `ADMIN_EMAILS`: optional bootstrap list; database roles remain authoritative.
 - `GUEST_DAILY_AUDIT_LIMIT`, `DOMAIN_DAILY_AUDIT_LIMIT`, `GLOBAL_ACTIVE_AUDIT_LIMIT`, `API_JSON_BODY_LIMIT`: optional server limits.
 - `TURNSTILE_SECRET_KEY`: optional server-side verification; enable only with a matching browser widget and platform setting.
+- `OPERATIONS_ALERTS_ENABLED`, `OPERATIONS_ALERT_WEBHOOK_URL`, `OPERATIONS_ALERT_COOLDOWN_MINUTES`: optional server-only aggregate health alerts. Keep disabled until an HTTPS webhook has been tested with safe fixture data.
 
 ## Vercel blog-only
 
@@ -38,5 +39,8 @@ Do not add `GROQ_*`, `BLOG_*`, `CRON_SECRET`, `RATE_LIMIT_HASH_SECRET`, or brows
 ## CI and local verification
 
 - `BUILD_TIMESTAMP`, `GIT_COMMIT_SHA`: optional version metadata; CI sets these for builds.
-- `APP_URL`, `WORKER_URL`, `RUN_AUDIT_SMOKE`: production smoke inputs. Audit creation remains opt-in.
+- `PRODUCTION_APP_URL`, `PRODUCTION_WORKER_HEALTH_URL`: explicit release-smoke endpoints.
+- `EXPECTED_COMMIT_IDENTIFIER`, `EXPECTED_API_SCHEMA_VERSION`: optional release contract assertions.
+- `PRODUCTION_SMOKE_ENABLED`, `PRODUCTION_SMOKE_TARGET_URL`: opt-in bounded Quick Audit. Never point a recurring monitor at the audit route.
+- `APP_URL`, `WORKER_URL`, `RUN_AUDIT_SMOKE`: supported compatibility aliases for older local commands only.
 - Supabase CLI/local variables are optional for local database workflows and are not browser configuration.

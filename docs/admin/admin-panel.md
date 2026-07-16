@@ -68,6 +68,10 @@ The workers page reads `platform_settings` rows keyed as `audit_worker:*` and sh
 - supported modes
 - stale/sleeping warning
 
+## Production Diagnostics
+
+The diagnostics page combines bounded recent audit rows, heartbeats, deployment contracts, plan limits, safe API errors, and stable failure categories. It does not scan the full audit history or expose credentials, private infrastructure, page content, or user email addresses. Status reasons explain queue age, stale leases, heartbeat loss, completion-rate degradation, commit mismatch, and pending schema migration.
+
 If no heartbeat exists, deploy the Render Web Service worker and verify `https://seointel-audit-worker.onrender.com/health`. Uptime monitors must ping only that worker health URL; do not ping the Crawlio homepage or audit start routes such as `/api/tools/audit/start`.
 
 ## Settings
@@ -91,4 +95,4 @@ The plans page edits `plan_limits`:
 - priority
 - export/PDF/white-label/embed/API flags
 
-Run `supabase/migrations/003_plans_admin_limits.sql` before using the panel.
+Run every migration through `019_finding_workflow_and_operations.sql` before using the complete panel.

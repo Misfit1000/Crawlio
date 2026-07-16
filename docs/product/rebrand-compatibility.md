@@ -4,7 +4,7 @@ The public product name is **Crawlio**. The previous public name was **SEOIntel*
 
 ## Stable identifiers retained
 
-The rebrand does not rename deployed database tables, columns, functions, policies, storage buckets, audit IDs, report IDs, article IDs, or environment secrets. Migrations 001-016 remain immutable historical records.
+The rebrand does not rename deployed database tables, columns, functions, policies, storage buckets, audit IDs, report IDs, article IDs, or environment secrets. Migrations 001-018 remain immutable historical records; new changes use the next sequential migration.
 
 The application reads these legacy browser and request identifiers temporarily so existing sessions and saved workspace state continue to work:
 
