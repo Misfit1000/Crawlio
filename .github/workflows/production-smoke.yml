@@ -1,38 +1,70 @@
-name: Manual production smoke
+name: Production release smoke
 
 on:
   workflow_dispatch:
     inputs:
       app_url:
-        description: Production or preview application origin
+        description: Application origin (uses PRODUCTION_APP_URL repository variable when empty)
+        required: false
+        type: string
+      worker_health_url:
+        description: Full audit-engine health URL (uses repository variable when empty)
+        required: false
+        type: string
+      expected_commit:
+        description: Expected deployed commit (optional)
+        required: false
+        type: string
+      expected_schema:
+        description: Expected API schema version
         required: true
-        default: https://keywordsintel.vercel.app
-      worker_url:
-        description: Audit engine origin
+        default: '13'
+        type: string
+      create_quick_audit:
+        description: Run one bounded Quick Audit against the configured smoke target
         required: true
-        default: https://seointel-audit-worker.onrender.com
-      create_audit:
-        description: Create and follow one audit of the Crawlio site
-        required: true
-        type: boolean
         default: false
+        type: boolean
 
 permissions:
   contents: read
 
+concurrency:
+  group: crawlio-production-smoke
+  cancel-in-progress: false
+
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
+    environment: production
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: node scripts/production-smoke.mjs
+      - name: Run bounded production smoke
+        id: smoke
+        shell: bash
         env:
-          APP_URL: ${{ inputs.app_url }}
-          WORKER_URL: ${{ inputs.worker_url }}
-          RUN_AUDIT_SMOKE: ${{ inputs.create_audit }}
+          PRODUCTION_APP_URL: ${{ inputs.app_url || vars.PRODUCTION_APP_URL }}
+          PRODUCTION_WORKER_HEALTH_URL: ${{ inputs.worker_health_url || vars.PRODUCTION_WORKER_HEALTH_URL }}
+          PRODUCTION_SMOKE_TARGET_URL: ${{ vars.PRODUCTION_SMOKE_TARGET_URL }}
+          PRODUCTION_SMOKE_ENABLED: ${{ inputs.create_quick_audit }}
+          EXPECTED_COMMIT_IDENTIFIER: ${{ inputs.expected_commit }}
+          EXPECTED_API_SCHEMA_VERSION: ${{ inputs.expected_schema }}
+          OPERATIONS_ALERTS_ENABLED: ${{ vars.OPERATIONS_ALERTS_ENABLED }}
+          OPERATIONS_ALERT_WEBHOOK_URL: ${{ secrets.OPERATIONS_ALERT_WEBHOOK_URL }}
+        run: npm run smoke:production:ci | tee production-smoke-result.json
+      - name: Publish smoke summary
+        if: always()
+        shell: bash
+        run: |
+          echo '## Crawlio production smoke' >> "$GITHUB_STEP_SUMMARY"
+          if [ -f production-smoke-result.json ]; then
+            node -e "const fs=require('fs');const r=JSON.parse(fs.readFileSync('production-smoke-result.json','utf8')); console.log('Status: **'+r.status+'**  '); console.log('Application: `'+(r.applicationCommit||'unknown')+'`  '); console.log('Audit engine: `'+(r.workerCommit||'unknown')+'`  '); for(const c of r.checks) console.log('- '+c.status+': '+c.name+(c.message?' - '+c.message:''));" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'The smoke runner did not produce a result file.' >> "$GITHUB_STEP_SUMMARY"
+          fi

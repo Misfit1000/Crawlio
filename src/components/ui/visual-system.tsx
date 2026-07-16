@@ -645,7 +645,7 @@ export function SeverityDistribution({
   ];
   return (
     <div className="space-y-4">
-      <div className="flex h-5 overflow-hidden rounded-full bg-muted shadow-inner" aria-label="Fix priority distribution">
+      <div className="flex h-5 overflow-hidden rounded-full bg-muted shadow-inner" role="img" aria-label="Fix priority distribution">
         {parts.map((part) => (
           <div key={part.severity} className={`${part.className} min-w-1 transition-all duration-700`} style={{ width: `${(part.value / total) * 100}%` }} />
         ))}

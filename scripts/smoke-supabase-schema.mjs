@@ -12,6 +12,7 @@ const resilienceMigrationSql = readFileSync(resolve('supabase/migrations/010_aud
 const productionMigrationSql = readFileSync(resolve('supabase/migrations/011_production_robustness.sql'), 'utf8');
 const admissionLockdownSql = readFileSync(resolve('supabase/migrations/016_server_only_audit_admission.sql'), 'utf8');
 const fullAuditLimitSql = readFileSync(resolve('supabase/migrations/018_full_audit_50_page_limit.sql'), 'utf8');
+const workflowOperationsSql = readFileSync(resolve('supabase/migrations/019_finding_workflow_and_operations.sql'), 'utf8');
 
 for (const table of ['audits', 'audit_events', 'audit_pages', 'audit_issues', 'audit_reports']) {
   assert.match(sql, new RegExp(`create table if not exists public\\.${table}\\b`, 'i'), `${table} table is missing`);
@@ -67,6 +68,16 @@ assert.match(admissionLockdownSql, /revoke insert, update, delete on public\.aud
 assert.match(admissionLockdownSql, /api_schema_version = 12/i, 'Database compatibility version must advance with the admission policy change');
 assert.match(fullAuditLimitSql, /max_pages_standard = 50/i, 'Full Audit migration must raise the standard page limit to 50');
 assert.match(fullAuditLimitSql, /max_pages_standard = 25/i, 'Full Audit migration must preserve custom administrator limits');
+for (const table of ['audit_finding_workflow', 'operations_alert_state']) {
+  assert.match(workflowOperationsSql, new RegExp(`create table if not exists public\\.${table}\\b`, 'i'), `${table} migration is missing`);
+  assert.match(workflowOperationsSql, new RegExp(`alter table public\\.${table} enable row level security`, 'i'), `${table} RLS is missing`);
+}
+assert.match(workflowOperationsSql, /unique \(audit_id, finding_key\)/i, 'finding workflow stable-key uniqueness is missing');
+assert.match(workflowOperationsSql, /create or replace function public\.validate_audit_finding_workflow/i, 'finding evidence validation trigger function is missing');
+assert.match(workflowOperationsSql, /set search_path = ''/i, 'finding validation function must use an empty search path');
+assert.match(workflowOperationsSql, /audit owners can update finding workflow/i, 'finding workflow owner update policy is missing');
+assert.match(workflowOperationsSql, /operations_alert_state.*no anon\/authenticated policies/is, 'service-only alert-state policy note is missing');
+assert.match(workflowOperationsSql, /api_schema_version = 13/i, 'Database compatibility version must advance to 13');
 for (const bannedTerm of ['fire' + 'base', 'fire' + 'store']) {
   assert.equal(sql.toLowerCase().includes(bannedTerm), false, `migration should not contain ${bannedTerm} references`);
 }

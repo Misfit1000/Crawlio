@@ -21,7 +21,8 @@ import { publicVersionPayload } from "./src/lib/platform/version";
 
 const dirName = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
 
-const PORT = 3000;
+const configuredPort = Number(process.env.PORT || 3000);
+const PORT = Number.isInteger(configuredPort) && configuredPort >= 1 && configuredPort <= 65535 ? configuredPort : 3000;
 
 async function startServer() {
   const app = express();

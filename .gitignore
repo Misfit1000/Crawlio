@@ -4,6 +4,8 @@ dist/
 .vercel/
 .supabase/
 coverage/
+test-results/
+playwright-report/
 .DS_Store
 *.log
 auth.db
