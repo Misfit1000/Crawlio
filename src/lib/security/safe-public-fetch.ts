@@ -95,6 +95,17 @@ function inIpv4Cidr(address: string, network: string, prefix: number) {
   return (value & mask) === (base & mask);
 }
 
+function embeddedIpv4Address(address: string) {
+  const dotted = address.match(/^(?:::ffff:|::|0:0:0:0:0:ffff:|0:0:0:0:0:0:)(\d+\.\d+\.\d+\.\d+)$/i);
+  if (dotted) return dotted[1];
+
+  const hexadecimal = address.match(/^(?:::ffff:|::|0:0:0:0:0:ffff:|0:0:0:0:0:0:)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
+  if (!hexadecimal) return null;
+  const high = Number.parseInt(hexadecimal[1], 16);
+  const low = Number.parseInt(hexadecimal[2], 16);
+  return `${high >>> 8}.${high & 0xff}.${low >>> 8}.${low & 0xff}`;
+}
+
 export function isPrivateOrReservedAddress(address: string) {
   const normalized = address.toLowerCase().split('%')[0];
   if (isIP(normalized) === 4) {
@@ -122,8 +133,8 @@ export function isPrivateOrReservedAddress(address: string) {
   if (/^fe[89ab]/.test(normalized)) return true;
   if (/^ff/.test(normalized)) return true;
   if (/^2001:db8(?:[:]|$)/.test(normalized)) return true;
-  const mapped = normalized.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  return mapped ? isPrivateOrReservedAddress(mapped[1]) : false;
+  const embeddedIpv4 = embeddedIpv4Address(normalized);
+  return embeddedIpv4 ? isPrivateOrReservedAddress(embeddedIpv4) : false;
 }
 
 function normalizedPort(url: URL) {
@@ -153,10 +164,21 @@ export function parsePublicHttpUrl(value: string, options: Pick<SafePublicFetchO
 }
 
 async function resolvePublicAddresses(hostname: string, timeoutMs: number, allowPrivateForTesting = false): Promise<ResolvedAddress[]> {
+  const lookupHostname = hostname.startsWith('[') && hostname.endsWith(']')
+    ? hostname.slice(1, -1)
+    : hostname;
+  const literalFamily = isIP(lookupHostname);
+  if (literalFamily) {
+    if (!allowPrivateForTesting && isPrivateOrReservedAddress(lookupHostname)) {
+      throw new PublicFetchError('PRIVATE_NETWORK_TARGET', 'Private, local, reserved, and metadata-network targets cannot be audited.');
+    }
+    return [{ address: lookupHostname, family: literalFamily as 4 | 6 }];
+  }
+
   let timer: NodeJS.Timeout | undefined;
   try {
     const records = await Promise.race([
-      lookup(hostname, { all: true, verbatim: true }),
+      lookup(lookupHostname, { all: true, verbatim: true }),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new PublicFetchError('DNS_TEMPORARY_FAILURE', 'DNS resolution timed out.')), timeoutMs);
       }),
