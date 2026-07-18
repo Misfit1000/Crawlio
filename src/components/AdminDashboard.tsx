@@ -1,27 +1,28 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
-import { Activity, AlertTriangle, BarChart3, BookOpen, CheckCircle2, Clock3, Database, Gauge, Loader2, RefreshCw, Search, Settings, ShieldAlert, SlidersHorizontal, Users, Wifi, XCircle } from 'lucide-react';
+import { Activity, AlertTriangle, BookOpen, CheckCircle2, Clock3, Database, FileCheck2, Gauge, History, LibraryBig, Loader2, RefreshCw, Settings, ShieldAlert, SlidersHorizontal, Users, Wifi, XCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { isCompletedAuditStatus } from '../lib/audit/audit-time';
 import {
-  getAdminActions,
   getAdminDiagnostics,
-  getAdminAudits,
   getAdminWorkers,
-  getAllUsers,
   getPlanLimits,
   getPlatformSettings,
   sendAdminSentryTestEvent,
-  updateAuditAdminAction,
   updatePlanLimit,
   updatePlatformSettings,
-  updateUserAdminFields,
 } from '../services/supabaseDataService';
 import { Notice, PageHeader, Panel as UiPanel } from './ui/page-system';
+import AdminActivityView from './admin/AdminActivityView';
+import AdminAuditOperationsView from './admin/AdminAuditOperationsView';
+import AdminContentHealthView from './admin/AdminContentHealthView';
+import AdminOperationsView from './admin/AdminOperationsView';
+import AdminResourcesView from './admin/AdminResourcesView';
+import AdminUsersView from './admin/AdminUsersView';
+import AdminActionDialog from './admin/AdminActionDialog';
 
 const BlogAdmin = React.lazy(() => import('./blog/BlogAdmin'));
 
-type AdminTab = 'overview' | 'users' | 'audits' | 'queue' | 'workers' | 'diagnostics' | 'settings' | 'plans' | 'blog';
+type AdminTab = 'overview' | 'users' | 'audits' | 'queue' | 'workers' | 'content-health' | 'resources' | 'activity' | 'diagnostics' | 'settings' | 'plans' | 'blog';
 
 const tabs: Array<{ id: AdminTab; label: string; icon: any; path: string }> = [
   { id: 'overview', label: 'Overview', icon: Activity, path: '/admin' },
@@ -29,44 +30,19 @@ const tabs: Array<{ id: AdminTab; label: string; icon: any; path: string }> = [
   { id: 'audits', label: 'Audits', icon: Database, path: '/admin/audits' },
   { id: 'queue', label: 'Queue', icon: SlidersHorizontal, path: '/admin/queue' },
   { id: 'workers', label: 'Audit Engine', icon: Wifi, path: '/admin/workers' },
+  { id: 'content-health', label: 'Content Health', icon: FileCheck2, path: '/admin/content-health' },
+  { id: 'resources', label: 'Resources', icon: LibraryBig, path: '/admin/resources' },
+  { id: 'activity', label: 'Activity', icon: History, path: '/admin/activity' },
   { id: 'diagnostics', label: 'Diagnostics', icon: Gauge, path: '/admin/diagnostics' },
   { id: 'settings', label: 'Settings', icon: Settings, path: '/admin/settings' },
   { id: 'plans', label: 'Plans', icon: ShieldAlert, path: '/admin/plans' },
   { id: 'blog', label: 'Blog', icon: BookOpen, path: '/admin/blog' },
 ];
 
-const DUPLICATE_AUDIT_WARNING_MS = 10 * 60 * 1000;
-
 function tabFromPath(pathname: string) {
   const match = pathname.match(/^\/admin\/([^/]+)/);
   const id = match?.[1] as AdminTab | undefined;
   return tabs.some((tab) => tab.id === id) ? id! : 'overview';
-}
-
-function auditOwnerKey(row: any) {
-  return row.userId ? `user:${row.userId}` : `guest:${row.guestKeyHash || 'unknown'}`;
-}
-
-function requestAdminReason(action: string) {
-  const reason = window.prompt(`Reason for ${action}:`)?.trim() || '';
-  return reason.length >= 4 ? reason : null;
-}
-
-function duplicateAuditWarning(row: any, rows: any[]) {
-  const rowTime = new Date(row.createdAt).getTime();
-  if (!row.normalizedUrl || Number.isNaN(rowTime)) return null;
-  const owner = auditOwnerKey(row);
-  const matches = rows.filter((candidate) => {
-    const candidateTime = new Date(candidate.createdAt).getTime();
-    return candidate.id !== row.id
-      && candidate.normalizedUrl === row.normalizedUrl
-      && auditOwnerKey(candidate) === owner
-      && !Number.isNaN(candidateTime)
-      && Math.abs(candidateTime - rowTime) <= DUPLICATE_AUDIT_WARNING_MS;
-  });
-  return matches.length
-    ? `${matches.length + 1} audits for same URL and owner within 10 minutes`
-    : null;
 }
 
 export default function AdminDashboard() {
@@ -111,11 +87,14 @@ export default function AdminDashboard() {
         })}
       </UiPanel>
 
-      {activeTab === 'overview' && <AdminOverview />}
-      {activeTab === 'users' && <AdminUsers adminUserId={user.id} />}
-      {activeTab === 'audits' && <AdminAudits adminUserId={user.id} />}
-      {activeTab === 'queue' && <AdminQueue adminUserId={user.id} />}
+      {activeTab === 'overview' && <AdminOperationsView />}
+      {activeTab === 'users' && <AdminUsersView currentAdminId={user.id} />}
+      {activeTab === 'audits' && <AdminAuditOperationsView />}
+      {activeTab === 'queue' && <AdminAuditOperationsView />}
       {activeTab === 'workers' && <AdminWorkers />}
+      {activeTab === 'content-health' && <AdminContentHealthView onOpenPost={(postId) => navigate(`/admin/blog${postId ? `?post=${encodeURIComponent(postId)}` : ''}`)} />}
+      {activeTab === 'resources' && <AdminResourcesView />}
+      {activeTab === 'activity' && <AdminActivityView />}
       {activeTab === 'diagnostics' && <AdminDiagnostics />}
       {activeTab === 'settings' && <AdminSettings />}
       {activeTab === 'plans' && <AdminPlans adminUserId={user.id} />}
@@ -146,223 +125,6 @@ function useAdminData<T>(loader: () => Promise<T>, deps: React.DependencyList = 
 
   useEffect(refresh, deps);
   return { data, error, loading, refresh };
-}
-
-function AdminOverview() {
-  const users = useAdminData(() => getAllUsers(), []);
-  const audits = useAdminData(() => getAdminAudits(100), []);
-  const workers = useAdminData(() => getAdminWorkers(), []);
-  const actions = useAdminData(() => getAdminActions(10), []);
-
-  const stats = useMemo(() => {
-    const userRows = users.data || [];
-    const auditRows = audits.data || [];
-    return {
-      totalUsers: userRows.length,
-      freeUsers: userRows.filter((item: any) => item.plan === 'free').length,
-      paidUsers: userRows.filter((item: any) => item.plan === 'paid').length,
-      agencyUsers: userRows.filter((item: any) => item.plan === 'agency').length,
-      queued: auditRows.filter((item: any) => item.status === 'queued').length,
-      running: auditRows.filter((item: any) => item.status === 'running').length,
-      failed: auditRows.filter((item: any) => item.status === 'failed').length,
-      completed: auditRows.filter((item: any) => isCompletedAuditStatus(item.status)).length,
-      successRate: auditRows.length ? Math.round((auditRows.filter((item: any) => isCompletedAuditStatus(item.status)).length / auditRows.length) * 100) : 0,
-    };
-  }, [users.data, audits.data]);
-
-  if (users.loading || audits.loading || workers.loading) return <Loading />;
-  const error = users.error || audits.error || workers.error || actions.error;
-
-  return (
-    <div className="space-y-6">
-      {error && <Notice tone="danger" title="Some admin data could not be loaded">{error}</Notice>}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric icon={Users} label="Total users" value={stats.totalUsers} detail={`${stats.paidUsers + stats.agencyUsers} paid or agency`} />
-        <Metric icon={Clock3} label="Active queue" value={stats.queued + stats.running} detail={`${stats.queued} waiting, ${stats.running} checking`} tone="warning" />
-        <Metric icon={CheckCircle2} label="Completed audits" value={stats.completed} detail={`${stats.successRate}% of recent audits`} tone="success" />
-        <Metric icon={XCircle} label="Failed audits" value={stats.failed} detail={stats.failed ? 'Review and retry failed jobs' : 'No failed audits in this view'} tone={stats.failed ? 'danger' : 'success'} />
-      </div>
-      <div className="grid gap-4 xl:grid-cols-[0.92fr_1.08fr]">
-        <Panel title="Audit distribution" description="Recent jobs by lifecycle state." icon={BarChart3}>
-          <div className="space-y-4">
-            {[
-              ['Completed', stats.completed, 'bg-emerald-500'],
-              ['Waiting', stats.queued, 'bg-blue-500'],
-              ['Checking', stats.running, 'bg-violet-500'],
-              ['Failed', stats.failed, 'bg-red-500'],
-            ].map(([label, value, color]) => {
-              const total = Math.max(1, stats.completed + stats.queued + stats.running + stats.failed);
-              return <div key={String(label)}><div className="mb-1.5 flex items-center justify-between text-sm"><span className="text-muted-foreground">{label}</span><span className="font-semibold">{value}</span></div><div className="h-2 overflow-hidden rounded-full bg-muted"><div className={`h-full rounded-full transition-all duration-700 ${color}`} style={{ width: `${Math.max(Number(value) ? 4 : 0, (Number(value) / total) * 100)}%` }} /></div></div>;
-            })}
-          </div>
-          <div className="mt-5 grid grid-cols-3 gap-2 border-t border-border pt-4 text-center text-xs"><div><div className="text-lg font-semibold">{stats.freeUsers}</div><div className="text-muted-foreground">Free</div></div><div><div className="text-lg font-semibold">{stats.paidUsers}</div><div className="text-muted-foreground">Paid</div></div><div><div className="text-lg font-semibold">{stats.agencyUsers}</div><div className="text-muted-foreground">Agency</div></div></div>
-        </Panel>
-        <Panel title="Audit engine heartbeat" description="Current Render worker registrations and freshness." icon={Wifi} action={<button type="button" onClick={workers.refresh} className="quiet-button min-h-9 px-3 py-1.5 text-xs"><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>}>
-          {(workers.data || []).length ? (workers.data || []).map((worker: any) => <WorkerRow key={worker.id} worker={worker} />) : <Empty text="No audit engine heartbeat found." />}
-        </Panel>
-      </div>
-      <div>
-        <Panel title="Latest admin actions" description="Recent privileged changes for operational traceability." icon={ShieldAlert} action={<button type="button" onClick={actions.refresh} className="quiet-button min-h-9 px-3 py-1.5 text-xs"><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>}>
-          {(actions.data || []).length ? <SimpleTable rows={actions.data || []} columns={['action', 'targetType', 'targetId', 'createdAt']} /> : <Empty text="No admin actions logged yet." />}
-        </Panel>
-      </div>
-    </div>
-  );
-}
-
-function AdminUsers({ adminUserId }: { adminUserId: string }) {
-  const users = useAdminData(() => getAllUsers(), []);
-  const [search, setSearch] = useState('');
-  const [planFilter, setPlanFilter] = useState('all');
-  const [roleFilter, setRoleFilter] = useState('all');
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const [mutationError, setMutationError] = useState<string | null>(null);
-  const [message, setMessage] = useState('');
-  const rows = (users.data || []).filter((item: any) => {
-    const matchesSearch = `${item.email || ''} ${item.username || ''} ${item.displayName || ''}`.toLowerCase().includes(search.toLowerCase());
-    return matchesSearch && (planFilter === 'all' || item.plan === planFilter) && (roleFilter === 'all' || item.role === roleFilter);
-  });
-
-  const updateUser = async (id: string, patch: any) => {
-    const reason = requestAdminReason(patch.resetQuotas ? 'resetting this user quota' : 'changing this user access');
-    if (!reason) return;
-    setUpdatingId(id);
-    setMutationError(null);
-    setMessage('');
-    try {
-      await updateUserAdminFields(id, patch, adminUserId, reason);
-      setMessage('User access updated.');
-      users.refresh();
-    } catch (error) {
-      setMutationError(error instanceof Error ? error.message : 'User update failed.');
-    } finally {
-      setUpdatingId(null);
-    }
-  };
-
-  return (
-    <Panel title="User management" description="Manage server-backed roles, plans, subscription state, and audit quotas." icon={Users} action={<span className="suite-chip">{rows.length} shown</span>}>
-      {(users.error || mutationError) && <Notice tone="danger" className="mb-4">{users.error || mutationError}</Notice>}
-      {message && <Notice tone="success" className="mb-4">{message}</Notice>}
-      <div className="mb-4 grid gap-3 md:grid-cols-[minmax(240px,1fr)_180px_180px]">
-        <label className="relative block"><span className="sr-only">Search users</span><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search email, username, or name" className="suite-input pl-9" /></label>
-        <label><span className="sr-only">Filter by role</span><select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="suite-input"><option value="all">All roles</option><option value="user">User</option><option value="support">Support</option><option value="admin">Admin</option></select></label>
-        <label><span className="sr-only">Filter by plan</span><select value={planFilter} onChange={(event) => setPlanFilter(event.target.value)} className="suite-input"><option value="all">All plans</option>{['free', 'paid', 'agency', 'admin'].map((plan) => <option key={plan} value={plan}>{plan}</option>)}</select></label>
-      </div>
-      {users.loading ? <Loading /> : (
-        <div className="max-w-full overflow-x-auto rounded-lg border border-border">
-          <table className="suite-table min-w-[900px]">
-            <thead>
-              <tr><th>User</th><th>Role</th><th>Plan</th><th>Subscription</th><th>Quota use</th><th>Action</th></tr>
-            </thead>
-            <tbody>
-              {rows.map((item: any) => (
-                <tr key={item.id}>
-                  <td><div className="font-semibold">{item.displayName || item.username || item.email || 'Unnamed user'}{item.id === adminUserId && <span className="ml-2 text-xs font-medium text-accent">You</span>}</div><div className="mt-1 max-w-[260px] truncate text-xs text-muted-foreground">{item.email || item.id}</div></td>
-                  <td><Select value={item.role || 'user'} options={['user', 'support', 'admin']} disabled={updatingId === item.id || item.id === adminUserId} onChange={(role) => updateUser(item.id, { role })} /></td>
-                  <td><Select value={item.plan || 'free'} options={['free', 'paid', 'agency', 'admin']} disabled={updatingId === item.id} onChange={(plan) => updateUser(item.id, { plan, subscription_status: plan === 'free' ? 'inactive' : 'active' })} /></td>
-                  <td><Select value={item.subscriptionStatus || 'inactive'} options={['inactive', 'trialing', 'active', 'past_due', 'cancelled']} disabled={updatingId === item.id} onChange={(subscription_status) => updateUser(item.id, { subscription_status })} /></td>
-                  <td><div className="font-medium">{item.auditQuotaUsedDaily || 0} daily</div><div className="text-xs text-muted-foreground">{item.auditQuotaUsedMonthly || 0} monthly</div></td>
-                  <td><button disabled={updatingId === item.id} onClick={() => updateUser(item.id, { resetQuotas: true })} className="quiet-button min-h-9 px-3 py-1.5 text-xs">{updatingId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />} Reset quota</button></td>
-                </tr>
-              ))}
-              {!rows.length && <tr><td colSpan={6}><Empty text="No users match these filters." /></td></tr>}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Panel>
-  );
-}
-
-function AdminAudits({ adminUserId }: { adminUserId: string }) {
-  const audits = useAdminData(() => getAdminAudits(100), []);
-  const [query, setQuery] = useState('');
-  const [status, setStatus] = useState('all');
-  const rows = (audits.data || []).filter((item: any) => (status === 'all' || item.status === status) && `${item.normalizedUrl || ''} ${item.id || ''}`.toLowerCase().includes(query.toLowerCase()));
-  if (audits.loading) return <Loading />;
-  return (
-    <Panel title="Audit jobs" description="Inspect recent jobs, change queue priority, retry failures, or recover stale leases." icon={Database} action={<button type="button" onClick={audits.refresh} className="quiet-button min-h-9 px-3 py-1.5 text-xs"><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>}>
-      {audits.error && <Notice tone="danger" className="mb-4">{audits.error}</Notice>}
-      <div className="mb-4 grid gap-3 md:grid-cols-[minmax(240px,1fr)_200px]"><label className="relative"><span className="sr-only">Search audit jobs</span><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search URL or audit ID" className="suite-input pl-9" /></label><select value={status} onChange={(event) => setStatus(event.target.value)} className="suite-input"><option value="all">All statuses</option>{['queued', 'running', 'completed', 'completed_with_warnings', 'failed', 'cancelled', 'abandoned'].map((item) => <option key={item} value={item}>{item.replace(/_/g, ' ')}</option>)}</select></div>
-      <AuditTable rows={rows} adminUserId={adminUserId} refresh={audits.refresh} />
-    </Panel>
-  );
-}
-
-function AdminQueue({ adminUserId }: { adminUserId: string }) {
-  const audits = useAdminData(() => getAdminAudits(100), []);
-  const rows = (audits.data || [])
-    .filter((item: any) => item.status === 'queued' || item.status === 'running')
-    .sort((a: any, b: any) => (b.queuePriority - a.queuePriority) || String(a.createdAt).localeCompare(String(b.createdAt)));
-
-  if (audits.loading) return <Loading />;
-  return (
-    <Panel title="Priority queue" description="Only active jobs, sorted by queue priority and creation time." icon={SlidersHorizontal} action={<button type="button" onClick={audits.refresh} className="quiet-button min-h-9 px-3 py-1.5 text-xs"><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>}>
-      {audits.error && <Notice tone="danger" className="mb-4">{audits.error}</Notice>}
-      <AuditTable rows={rows} adminUserId={adminUserId} refresh={audits.refresh} />
-    </Panel>
-  );
-}
-
-function AuditTable({ rows, adminUserId, refresh }: { rows: any[]; adminUserId: string; refresh: () => void }) {
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const updateAudit = async (id: string, patch: any) => {
-    const reason = requestAdminReason('changing this audit job');
-    if (!reason) return;
-    setUpdatingId(id);
-    setError(null);
-    try {
-      await updateAuditAdminAction(id, patch, adminUserId, reason);
-      refresh();
-    } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : 'Audit update failed.');
-    } finally {
-      setUpdatingId(null);
-    }
-  };
-  return (
-    <div>
-      {error && <Notice tone="danger" className="mb-4">{error}</Notice>}
-      <div className="max-w-full overflow-x-auto rounded-lg border border-border">
-      <table className="suite-table min-w-[980px]">
-        <thead>
-          <tr><th>URL and phase</th><th>Status</th><th>Plan</th><th>Mode</th><th>Priority</th><th>Lease</th><th>Actions</th></tr>
-        </thead>
-        <tbody>
-          {rows.map((item) => (
-            <tr key={item.id}>
-              <td className="max-w-sm break-all">
-                <div className="font-semibold">{item.normalizedUrl}</div>
-                {duplicateAuditWarning(item, rows) && (
-                  <div className="mt-1 text-xs text-yellow-600 flex items-center gap-1">
-                    <AlertTriangle className="h-3 w-3 shrink-0" />
-                    {duplicateAuditWarning(item, rows)}
-                  </div>
-                )}
-                <div className="text-xs text-muted-foreground">{item.error || item.currentPhase}</div>
-              </td>
-              <td><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(item.status)}`}>{item.status}</span></td>
-              <td className="capitalize">{item.plan || 'free'}</td>
-              <td>{item.effectiveMode || item.requestedMode || 'quick'}</td>
-              <td><input type="number" defaultValue={item.queuePriority || 10} disabled={updatingId === item.id} className="w-20 rounded-lg border border-border bg-background px-2 py-1.5" onBlur={(event) => updateAudit(item.id, { queuePriority: Number(event.currentTarget.value) })} /></td>
-              <td className="text-xs"><div className="max-w-[150px] truncate">{item.lockedBy || 'Not locked'}</div><div className="mt-1 text-muted-foreground">{item.leaseExpiresAt ? new Date(item.leaseExpiresAt).toLocaleString() : 'No lease'}</div></td>
-              <td><div className="flex flex-wrap gap-2">
-                {updatingId === item.id && <Loader2 className="h-4 w-4 animate-spin text-accent" />}
-                {['queued', 'running'].includes(item.status) && <button disabled={updatingId === item.id} onClick={() => window.confirm('Cancel this audit job?') && updateAudit(item.id, { status: 'cancelled', currentPhase: 'Cancelled by admin', lockedBy: null, lockedAt: null, leaseExpiresAt: null })} className="quiet-button min-h-8 px-2.5 py-1 text-xs text-red-600">Cancel</button>}
-                {item.status === 'failed' && <button disabled={updatingId === item.id} onClick={() => updateAudit(item.id, { status: 'queued', currentPhase: 'Retry queued', error: null, lockedBy: null, lockedAt: null, leaseExpiresAt: null })} className="quiet-button min-h-8 px-2.5 py-1 text-xs">Retry</button>}
-                {item.leaseExpiresAt && new Date(item.leaseExpiresAt).getTime() < Date.now() && <button disabled={updatingId === item.id} onClick={() => updateAudit(item.id, { status: 'queued', currentPhase: 'Recovered by admin', lockedBy: null, lockedAt: null, leaseExpiresAt: null })} className="quiet-button min-h-8 px-2.5 py-1 text-xs">Recover</button>}
-              </div>
-              </td>
-            </tr>
-          ))}
-          {!rows.length && <tr><td colSpan={7}><Empty text="No audits found." /></td></tr>}
-        </tbody>
-      </table>
-      </div>
-    </div>
-  );
 }
 
 function AdminWorkers() {
@@ -456,20 +218,20 @@ function AdminSettings() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     if (settings.data) setDraft(settings.data);
   }, [settings.data]);
 
-  const save = async () => {
-    const reason = requestAdminReason('updating platform settings');
-    if (!reason) return;
+  const save = async ({ reason }: { reason: string; confirmation: string }) => {
     setSaving(true);
     setError(null);
     setMessage('');
     try {
       await updatePlatformSettings(draft, reason);
       setMessage('Platform settings saved.');
+      setConfirming(false);
       settings.refresh();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Settings could not be saved.');
@@ -495,7 +257,20 @@ function AdminSettings() {
         <Field label="Hard global queue limit" value={String(draft.value?.hardQueueLimit ?? 50)} onChange={(value) => setDraft({ ...draft, value: { ...(draft.value || {}), hardQueueLimit: Math.max(1, Number(value)) } })} />
         <fieldset className="rounded-lg border border-border p-3 md:col-span-2"><legend className="px-1 text-sm font-semibold">Temporarily disabled audit types</legend><div className="mt-2 flex flex-wrap gap-4">{['quick', 'standard', 'deep'].map((mode) => { const disabled = Array.isArray(draft.value?.disabledAuditModes) && draft.value.disabledAuditModes.includes(mode); return <label key={mode} className="flex items-center gap-2 text-sm capitalize"><input type="checkbox" checked={disabled} onChange={(event) => { const current = Array.isArray(draft.value?.disabledAuditModes) ? draft.value.disabledAuditModes : []; const disabledAuditModes = event.target.checked ? [...new Set([...current, mode])] : current.filter((item: string) => item !== mode); setDraft({ ...draft, value: { ...(draft.value || {}), disabledAuditModes } }); }} className="h-4 w-4 accent-[var(--accent)]" />{mode}</label>; })}</div></fieldset>
       </div>
-      <button onClick={save} disabled={saving} className="trust-button mt-5">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Settings className="h-4 w-4" />} Save settings</button>
+      <button onClick={() => setConfirming(true)} disabled={saving} className="trust-button mt-5">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Settings className="h-4 w-4" />} Save settings</button>
+      <AdminActionDialog
+        open={confirming}
+        title="Update platform settings"
+        description="Apply the current queue, maintenance, and audit-admission settings."
+        actionLabel="Save settings"
+        pending={saving}
+        error={error}
+        impact={draft.value?.maintenanceMode ? ['New audit starts will be blocked while maintenance mode is active.'] : []}
+        onCancel={() => {
+          if (!saving) setConfirming(false);
+        }}
+        onConfirm={save}
+      />
     </Panel>
   );
 }
@@ -504,14 +279,15 @@ function AdminPlans({ adminUserId }: { adminUserId: string }) {
   const plans = useAdminData(() => getPlanLimits(), []);
   const [updatingPlan, setUpdatingPlan] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const update = async (plan: string, key: string, value: number) => {
-    const reason = requestAdminReason(`changing the ${plan} plan`);
-    if (!reason) return;
-    setUpdatingPlan(plan);
+  const [pendingUpdate, setPendingUpdate] = useState<{ plan: string; key: string; value: number } | null>(null);
+  const update = async ({ reason }: { reason: string; confirmation: string }) => {
+    if (!pendingUpdate) return;
+    setUpdatingPlan(pendingUpdate.plan);
     setError(null);
     try {
-      await updatePlanLimit(plan, { [key]: value }, adminUserId, reason);
+      await updatePlanLimit(pendingUpdate.plan, { [pendingUpdate.key]: pendingUpdate.value }, adminUserId, reason);
       plans.refresh();
+      setPendingUpdate(null);
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : 'Plan limit update failed.');
     } finally {
@@ -529,18 +305,31 @@ function AdminPlans({ adminUserId }: { adminUserId: string }) {
             {(plans.data || []).map((plan: any) => (
               <tr key={plan.plan}>
                 <td className="font-semibold capitalize">{updatingPlan === plan.plan && <Loader2 className="mr-2 inline h-3.5 w-3.5 animate-spin text-accent" />}{plan.label || plan.plan}</td>
-                <td><NumberInput value={plan.dailyAudits} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'dailyAudits', value)} /></td>
-                <td><NumberInput value={plan.monthlyAudits} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'monthlyAudits', value)} /></td>
-                <td><NumberInput value={plan.maxPagesQuick} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'maxPagesQuick', value)} /></td>
-                <td><NumberInput value={plan.maxPagesStandard} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'maxPagesStandard', value)} /></td>
-                <td><NumberInput value={plan.maxPagesDeep} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'maxPagesDeep', value)} /></td>
-                <td><NumberInput value={plan.priority} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'priority', value)} /></td>
+                <td><NumberInput value={plan.dailyAudits} disabled={updatingPlan === plan.plan} onBlur={(value) => setPendingUpdate({ plan: plan.plan, key: 'dailyAudits', value })} /></td>
+                <td><NumberInput value={plan.monthlyAudits} disabled={updatingPlan === plan.plan} onBlur={(value) => setPendingUpdate({ plan: plan.plan, key: 'monthlyAudits', value })} /></td>
+                <td><NumberInput value={plan.maxPagesQuick} disabled={updatingPlan === plan.plan} onBlur={(value) => setPendingUpdate({ plan: plan.plan, key: 'maxPagesQuick', value })} /></td>
+                <td><NumberInput value={plan.maxPagesStandard} disabled={updatingPlan === plan.plan} onBlur={(value) => setPendingUpdate({ plan: plan.plan, key: 'maxPagesStandard', value })} /></td>
+                <td><NumberInput value={plan.maxPagesDeep} disabled={updatingPlan === plan.plan} onBlur={(value) => setPendingUpdate({ plan: plan.plan, key: 'maxPagesDeep', value })} /></td>
+                <td><NumberInput value={plan.priority} disabled={updatingPlan === plan.plan} onBlur={(value) => setPendingUpdate({ plan: plan.plan, key: 'priority', value })} /></td>
                 <td className="text-xs"><span className="block">PDF: {plan.pdfEnabled ? 'Yes' : 'No'}</span><span className="block text-muted-foreground">White label: {plan.whiteLabelEnabled ? 'Yes' : 'No'} / API: {plan.apiEnabled ? 'Yes' : 'No'}</span></td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      <AdminActionDialog
+        open={Boolean(pendingUpdate)}
+        title={`Update ${pendingUpdate?.plan || ''} plan limit`}
+        description={pendingUpdate ? `Change ${pendingUpdate.key.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`)} to ${pendingUpdate.value}.` : ''}
+        actionLabel="Update plan"
+        pending={Boolean(updatingPlan)}
+        error={error}
+        impact={['New audit starts will use this limit after the update.', 'Existing queued audits keep their recorded page limit.']}
+        onCancel={() => {
+          if (!updatingPlan) setPendingUpdate(null);
+        }}
+        onConfirm={update}
+      />
     </Panel>
   );
 }
@@ -580,10 +369,6 @@ function Loading() {
   return <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-accent" /></div>;
 }
 
-function Select({ value, options, onChange, disabled = false }: { value: string; options: string[]; onChange: (value: string) => void; disabled?: boolean }) {
-  return <select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} className="rounded-lg border border-border bg-background px-2.5 py-1.5 capitalize disabled:opacity-50">{options.map((option) => <option key={option} value={option}>{option}</option>)}</select>;
-}
-
 function Field({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return <label className="block text-sm"><span className="font-semibold">{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} className="suite-input mt-2" /></label>;
 }
@@ -601,11 +386,4 @@ function SimpleTable({ rows, columns }: { rows: any[]; columns: string[] }) {
       </table>
     </div>
   );
-}
-
-function statusClass(status: string) {
-  if (isCompletedAuditStatus(status)) return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
-  if (status === 'failed' || status === 'cancelled') return 'bg-red-500/10 text-red-700 dark:text-red-300';
-  if (status === 'running') return 'bg-violet-500/10 text-violet-700 dark:text-violet-300';
-  return 'bg-blue-500/10 text-blue-700 dark:text-blue-300';
 }

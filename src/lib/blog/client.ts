@@ -36,8 +36,12 @@ export async function saveAdminBlogPost(input: BlogPostInput, id?: string) {
   });
 }
 
-export async function archiveAdminBlogPost(id: string) {
-  return request<{ post: BlogPost }>(API_ROUTES.adminBlogPost(id), { method: 'DELETE', headers: await getAuthHeaders() });
+export async function archiveAdminBlogPost(id: string, reason: string) {
+  return request<{ post: BlogPost }>(API_ROUTES.adminBlogPost(id), {
+    method: 'DELETE',
+    headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ reason }),
+  });
 }
 
 export async function runAdminBlogWorkflow(id: string, input: { action: 'hold' | 'cancel' | 'publish_now' | 'reschedule' | 'convert_manual' | 'unschedule' | 'reset_recommended_time'; scheduledAt?: string | null; scheduleVersion?: number; reason: string }) {

@@ -345,10 +345,12 @@ export function SparklineChart({
   values,
   label,
   valueLabel,
+  detail = 'Based on live audit events',
 }: {
   values: number[];
   label: string;
   valueLabel?: string;
+  detail?: string;
 }) {
   const normalized = values.length > 1 ? values : [0, values[0] || 0];
   const max = Math.max(1, ...normalized);
@@ -363,7 +365,7 @@ export function SparklineChart({
       <div className="flex items-end justify-between gap-3">
         <div>
           <div className="text-sm font-semibold">{label}</div>
-          <div className="text-xs text-muted-foreground">Based on live audit events</div>
+          <div className="text-xs text-muted-foreground">{detail}</div>
         </div>
         {valueLabel && <div className="font-mono text-sm font-bold text-accent">{valueLabel}</div>}
       </div>

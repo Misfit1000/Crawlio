@@ -11,6 +11,7 @@ import BlogAutomationPanel from './BlogAutomationPanel';
 import BlogSectionRevisionPanel from './BlogSectionRevisionPanel';
 import BlogProviderFreeWorkspace from './BlogProviderFreeWorkspace';
 import BlogEditorialReviewPanel from './BlogEditorialReviewPanel';
+import AdminActionDialog from '../admin/AdminActionDialog';
 
 type Draft = BlogPostInput & {
   title: string;
@@ -80,12 +81,19 @@ export default function BlogAdmin() {
   const [search, setSearch] = useState('');
   const [editorialReviewed, setEditorialReviewed] = useState(false);
   const [imageImport, setImageImport] = useState({ sourceUrl: '', creator: '', publisher: '', licence: '', altText: '' });
+  const [confirmingArchive, setConfirmingArchive] = useState(false);
 
   const loadPosts = async () => {
     setLoading(true);
     try {
       const data = await getAdminBlogPosts();
       setPosts(data.posts);
+      const requestedPostId = new URLSearchParams(window.location.search).get('post');
+      const requestedPost = requestedPostId ? data.posts.find((post) => post.id === requestedPostId) : null;
+      if (requestedPost) {
+        setSelectedId(requestedPost.id);
+        setDraft(draftFromPost(requestedPost));
+      }
       setError(null);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Blog posts could not be loaded.');
@@ -157,15 +165,16 @@ export default function BlogAdmin() {
     }
   };
 
-  const archive = async () => {
-    if (!selectedId || !window.confirm('Archive this article? It will disappear from the public blog.')) return;
+  const archive = async ({ reason }: { reason: string; confirmation: string }) => {
+    if (!selectedId) return;
     setSaving(true);
     try {
-      await archiveAdminBlogPost(selectedId);
+      await archiveAdminBlogPost(selectedId, reason);
       setSelectedId(null);
       setDraft({ ...EMPTY_DRAFT });
       setEditorialReviewed(false);
       setError(null);
+      setConfirmingArchive(false);
       await loadPosts();
       setMessage('Article archived.');
     } catch (requestError) {
@@ -218,7 +227,7 @@ export default function BlogAdmin() {
             <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-center sm:justify-between">
               <div><h3 className="text-xl font-semibold">{selectedId ? 'Edit article' : 'New article'}</h3><p className="mt-1 text-sm text-muted-foreground">Drafts are private. Publication requires complete SEO fields and useful article content.</p></div>
               <div className="flex flex-wrap gap-2">
-                {selectedId && <button type="button" onClick={archive} disabled={saving} className="quiet-button text-red-600"><Archive className="h-4 w-4" /> Archive</button>}
+                {selectedId && <button type="button" onClick={() => setConfirmingArchive(true)} disabled={saving} className="quiet-button text-red-600"><Archive className="h-4 w-4" /> Archive</button>}
                 <button type="button" onClick={() => persist('draft')} disabled={saving} className="quiet-button"><Save className="h-4 w-4" /> Save draft</button>
                 <button type="button" onClick={() => persist('scheduled')} disabled={saving || !draft.publishedAt || !editorialReviewed || draft.fixtureTest} className="quiet-button"><CalendarDays className="h-4 w-4" /> Schedule</button>
                 <button type="button" onClick={() => persist('published', true)} disabled={saving || !editorialReviewed || draft.fixtureTest} className="trust-button">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe2 className="h-4 w-4" />} Publish now</button>
@@ -256,6 +265,20 @@ export default function BlogAdmin() {
           </Panel>
         </div>
       </div>
+      <AdminActionDialog
+        open={confirmingArchive}
+        title="Archive article"
+        description="Remove this article from the public blog while preserving its editorial record."
+        actionLabel="Archive article"
+        tone="danger"
+        pending={saving}
+        error={error}
+        impact={['The article disappears from the public blog and sitemap.', 'Editors can continue to inspect the archived record.']}
+        onCancel={() => {
+          if (!saving) setConfirmingArchive(false);
+        }}
+        onConfirm={archive}
+      />
     </div>
   );
 }
