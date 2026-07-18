@@ -34,10 +34,13 @@ for (const value of [provisional.overallScore, ...Object.values(provisional.cate
   if (value != null) assert.ok(Number.isFinite(value) && value >= 0 && value <= 100);
 }
 
-assert.equal(shouldPublishProvisionalScore({ pagesAnalysed: 4, lastPublishedPages: 0, nowMs: 2_000, lastPublishedAtMs: 0 }), false);
-assert.equal(shouldPublishProvisionalScore({ pagesAnalysed: 5, lastPublishedPages: 0, nowMs: 2_000, lastPublishedAtMs: 0 }), true);
-assert.equal(shouldPublishProvisionalScore({ pagesAnalysed: 10, lastPublishedPages: 5, nowMs: 3_000, lastPublishedAtMs: 2_000 }), false);
-assert.equal(shouldPublishProvisionalScore({ pagesAnalysed: 10, lastPublishedPages: 5, nowMs: 3_500, lastPublishedAtMs: 2_000 }), true);
+assert.equal(shouldPublishProvisionalScore({ pagesAnalysed: 0, lastPublishedPages: 0, nowMs: 500, lastPublishedAtMs: 0 }), false);
+assert.equal(shouldPublishProvisionalScore({ pagesAnalysed: 1, lastPublishedPages: 0, nowMs: 500, lastPublishedAtMs: 0 }), true);
+assert.equal(shouldPublishProvisionalScore({ pagesAnalysed: 5, lastPublishedPages: 1, nowMs: 2_000, lastPublishedAtMs: 500 }), false);
+assert.equal(shouldPublishProvisionalScore({ pagesAnalysed: 6, lastPublishedPages: 1, nowMs: 1_500, lastPublishedAtMs: 500 }), false);
+assert.equal(shouldPublishProvisionalScore({ pagesAnalysed: 6, lastPublishedPages: 1, nowMs: 2_000, lastPublishedAtMs: 500 }), true);
+assert.equal(shouldPublishProvisionalScore({ pagesAnalysed: 8, lastPublishedPages: 6, nowMs: 2_100, lastPublishedAtMs: 2_000, force: true }), true);
+assert.equal(shouldPublishProvisionalScore({ pagesAnalysed: 6, lastPublishedPages: 6, nowMs: 3_500, lastPublishedAtMs: 2_000, force: true }), false);
 
 function countScoreUpdates(pageCount: number) {
   let updates = 0;
@@ -97,6 +100,8 @@ const worker = await readFile('src/workers/audit-worker.ts', 'utf8');
 assert.match(worker, /buildProvisionalAuditScore/);
 assert.match(worker, /calculateTransparentAuditScore/);
 assert.match(worker, /type: 'score_updated'/);
+assert.match(worker, /maybePublishProvisionalScore\(\{ force: true \}\)/);
+assert.match(worker, /await writer\.flush\(false\)/);
 assert.doesNotMatch(worker, /estimatedScore/);
 
-console.log('Live audit scoring smoke test passed: 25 pages -> 5 updates; 75 pages -> 15 updates.');
+console.log('Live audit scoring smoke test passed: first score at page 1, then every 5 additional pages.');

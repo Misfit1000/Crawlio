@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import type { ResourceAuditDocument, ResourceAuditEvent, ResourceAuditIssue, ResourceAuditPage } from '../src/lib/audit/resource-types.ts';
+import { deriveAuditTerminalPresentation } from '../src/lib/audit/audit-terminal-presentation.ts';
 import { isTerminalAuditStatus } from '../src/lib/audit/audit-time.ts';
 import { AuditWriteBatch, type AuditWriteSink } from '../src/workers/audit-write-batch.ts';
 
@@ -20,4 +21,15 @@ assert.deepEqual(patches.map((patch) => patch.progress), [60, 60, 100], 'progres
 assert.equal(patches.at(-1)?.status, 'completed_with_warnings');
 for (const status of ['completed', 'completed_with_warnings', 'failed', 'cancelled'] as const) assert.equal(isTerminalAuditStatus(status), true);
 for (const status of ['queued', 'running'] as const) assert.equal(isTerminalAuditStatus(status), false);
+
+assert.equal(deriveAuditTerminalPresentation('queued'), 'none');
+assert.equal(deriveAuditTerminalPresentation('running'), 'none');
+assert.equal(deriveAuditTerminalPresentation('completed'), 'none');
+assert.equal(deriveAuditTerminalPresentation('completed_with_warnings'), 'none');
+assert.equal(deriveAuditTerminalPresentation('completed', true), 'preparing');
+assert.equal(deriveAuditTerminalPresentation('completed_with_warnings', true), 'preparing');
+assert.equal(deriveAuditTerminalPresentation('failed'), 'failed');
+assert.equal(deriveAuditTerminalPresentation('cancelled'), 'cancelled');
+assert.equal(deriveAuditTerminalPresentation('abandoned'), 'abandoned');
+
 console.log('Audit terminal-state smoke test passed.');

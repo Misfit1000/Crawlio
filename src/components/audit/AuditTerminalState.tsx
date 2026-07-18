@@ -2,7 +2,7 @@ import React from 'react';
 import { AlertTriangle, CheckCircle2, Clock3, History, LayoutDashboard, Loader2, RefreshCw, StopCircle } from 'lucide-react';
 import { Link } from 'react-router';
 import { customerSafeDiagnosticText } from '../../lib/audit/audit-failures';
-import { hasUsableAuditReport } from '../../lib/audit/audit-time';
+import { deriveAuditTerminalPresentation } from '../../lib/audit/audit-terminal-presentation';
 import type { ResourceAuditDocument } from '../../lib/audit/resource-types';
 import { SurfaceCard } from '../ui/visual-system';
 
@@ -29,9 +29,10 @@ function knownFailureCategory(failureCounts?: Record<string, number>) {
 }
 
 export function AuditTerminalState({ audit, reportPending, reportRetrying, onRetryReport, onRerun }: Props) {
-  if (hasUsableAuditReport(audit.status) && !reportPending) return null;
+  const presentation = deriveAuditTerminalPresentation(audit.status, reportPending);
+  if (presentation === 'none') return null;
 
-  if (hasUsableAuditReport(audit.status)) {
+  if (presentation === 'preparing') {
     return (
       <SurfaceCard className="border-blue-500/25 p-5 md:p-6" role="status" aria-live="polite">
         <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
@@ -56,16 +57,16 @@ export function AuditTerminalState({ audit, reportPending, reportRetrying, onRet
     );
   }
 
-  const failed = audit.status === 'failed' || audit.status === 'abandoned';
+  const failed = presentation === 'failed' || presentation === 'abandoned';
   const Icon = failed ? AlertTriangle : StopCircle;
-  const title = audit.status === 'cancelled'
+  const title = presentation === 'cancelled'
     ? 'Audit stopped'
-    : audit.status === 'abandoned'
+    : presentation === 'abandoned'
       ? 'Audit stopped after recovery attempts'
       : 'Audit could not be completed';
   const safeError = customerSafeDiagnosticText(audit.error);
   const failureCategory = knownFailureCategory(audit.failureCounts);
-  const description = audit.status === 'cancelled'
+  const description = presentation === 'cancelled'
     ? 'This audit was cancelled before the final report was created. You can run it again at any time.'
     : safeError || 'The audit engine stopped before it could create a complete report. Your previous audits remain available.';
 

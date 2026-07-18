@@ -9,10 +9,12 @@ export interface ProvisionalScoreCheckpoint {
   lastPublishedPages: number;
   nowMs: number;
   lastPublishedAtMs: number;
+  force?: boolean;
 }
 
 export function shouldPublishProvisionalScore(checkpoint: ProvisionalScoreCheckpoint) {
-  if (checkpoint.pagesAnalysed < PROVISIONAL_SCORE_PAGE_INTERVAL) return false;
+  if (checkpoint.pagesAnalysed < 1 || checkpoint.pagesAnalysed <= checkpoint.lastPublishedPages) return false;
+  if (checkpoint.force || checkpoint.lastPublishedPages === 0) return true;
   if (checkpoint.pagesAnalysed - checkpoint.lastPublishedPages < PROVISIONAL_SCORE_PAGE_INTERVAL) return false;
   if (checkpoint.lastPublishedAtMs && checkpoint.nowMs - checkpoint.lastPublishedAtMs < PROVISIONAL_SCORE_MIN_INTERVAL_MS) return false;
   return true;

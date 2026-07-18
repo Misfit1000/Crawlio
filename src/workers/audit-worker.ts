@@ -283,13 +283,14 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     });
     return writer.addIssue(issue);
   };
-  const maybePublishProvisionalScore = async () => {
+  const maybePublishProvisionalScore = async (options: { force?: boolean } = {}) => {
     const nowMs = Date.now();
     if (!shouldPublishProvisionalScore({
       pagesAnalysed: analysedPages,
       lastPublishedPages: lastProvisionalScorePages,
       nowMs,
       lastPublishedAtMs: lastProvisionalScoreAt,
+      force: options.force,
     })) return;
     const snapshot = buildProvisionalAuditScore({
       issues: provisionalIssues,
@@ -309,6 +310,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
       progress: Math.min(90, 20 + Math.floor((analysedPages / coverageTarget()) * 70)),
       data: snapshot,
     });
+    await writer.flush(false);
   };
 
   const recordFailure = async (failure: AuditFailure, item: QueueItem, storePage = true) => {
@@ -863,6 +865,8 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     }, { force: true });
     return;
   }
+  await maybePublishProvisionalScore({ force: true });
+
   const categoryCounts: Record<string, number> = issues.reduce((acc: Record<string, number>, issue) => {
     const key = String(issue.category || 'other').toLowerCase();
     acc[key] = (acc[key] || 0) + 1;
