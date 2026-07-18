@@ -40,7 +40,8 @@ const reportSectionForRoute: Partial<Record<AuditWorkspaceSection, ReturnType<ty
   security: 'security',
 };
 
-const sectionScoreKey: Partial<Record<AuditWorkspaceSection, 'seo' | 'technical' | 'crawlability' | 'performance' | 'security'>> = {
+const sectionScoreKey: Partial<Record<AuditWorkspaceSection, 'overall' | 'seo' | 'technical' | 'crawlability' | 'performance' | 'security'>> = {
+  overview: 'overall',
   seo: 'seo',
   technical: 'technical',
   crawlability: 'crawlability',
@@ -212,7 +213,34 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
         {sections.map((item) => {
           const scoreKey = sectionScoreKey[item.id];
           const score = scoreKey ? scores[scoreKey] : null;
-          return <NavLink key={item.id} to={auditWorkspacePath(auditId, item.id)} className={({ isActive }) => `flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition-colors ${isActive ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}><span>{item.label}</span><span className={`rounded-full px-1.5 py-0.5 text-[11px] ${score != null ? 'bg-current/10' : 'bg-muted'}`}>{score != null ? Math.round(score) : sectionCounts[item.id]}</span></NavLink>;
+          const value = score != null ? Math.round(score) : sectionCounts[item.id];
+          const valueKind = score != null ? 'score' : item.id === 'pages' ? 'pages' : 'findings';
+          return (
+            <NavLink
+              key={item.id}
+              to={auditWorkspacePath(auditId, item.id)}
+              className={({ isActive }) => `flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition-colors ${isActive ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+            >
+              {({ isActive }) => (
+                <>
+                  <span>{item.label}</span>
+                  <span
+                    className={`min-w-6 rounded-full px-1.5 py-0.5 text-center text-[11px] font-semibold tabular-nums ${
+                      isActive
+                        ? 'bg-white/20 text-white ring-1 ring-inset ring-white/25 dark:bg-black/10 dark:text-[var(--accent-foreground)] dark:ring-black/20'
+                        : score != null
+                          ? 'bg-accent/10 text-accent'
+                          : 'bg-muted text-muted-foreground'
+                    }`}
+                    aria-label={`${item.label} ${valueKind}: ${value}`}
+                    title={`${item.label} ${valueKind}: ${value}`}
+                  >
+                    {value}
+                  </span>
+                </>
+              )}
+            </NavLink>
+          );
         })}
       </nav>
 
