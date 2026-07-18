@@ -41,6 +41,7 @@ import {
   getDeploymentCompatibility,
   releaseAuditAdmission,
   requestNetworkHash,
+  resolveDomainDailyAuditLimit,
   verifyBotToken,
 } from '../lib/api/production-controls';
 import { publicVersionPayload } from '../lib/platform/version';
@@ -287,10 +288,12 @@ function sendEntitlementError(res: any, error: unknown) {
 }
 
 function admissionError(decision: { code: string; retryAfterSeconds?: number }) {
-  const retryAfterSeconds = Math.max(1, Number(decision.retryAfterSeconds || 60));
+  const retryAfterSeconds = decision.code === 'DOMAIN_DAILY_LIMIT'
+    ? Math.max(1, Math.ceil((new Date().setUTCHours(24, 0, 0, 0) - Date.now()) / 1000))
+    : Math.max(1, Number(decision.retryAfterSeconds || 60));
   const mapping: Record<string, [string, string, number]> = {
     DAILY_QUOTA_REACHED: ['DAILY_QUOTA_REACHED', 'You have reached today\'s audit limit.', 429],
-    DOMAIN_DAILY_LIMIT: ['DOMAIN_DAILY_LIMIT', 'This website has reached its audit limit for today.', 429],
+    DOMAIN_DAILY_LIMIT: ['DOMAIN_DAILY_LIMIT', 'You have reached today\'s repeat-audit limit for this website. Try another website or return after the daily reset.', 429],
     QUEUE_FULL: ['AUDIT_QUEUE_FULL', 'The audit queue is currently full. Please try again later.', 429],
     MAINTENANCE: ['AUDIT_MAINTENANCE', 'The audit service is temporarily unavailable for maintenance.', 503],
     FREE_SUBMISSIONS_PAUSED: ['FREE_AUDITS_PAUSED', 'New Free audits are temporarily paused.', 503],
@@ -1225,7 +1228,11 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
       auditMode: decision.effectiveMode,
       plan: decision.plan,
       dailyLimit: userId ? decision.limits.dailyAudits : Number(process.env.GUEST_DAILY_AUDIT_LIMIT || 2),
-      domainDailyLimit: Number(process.env.DOMAIN_DAILY_AUDIT_LIMIT || 2),
+      domainDailyLimit: resolveDomainDailyAuditLimit({
+        plan: decision.plan,
+        ownerDailyLimit: userId ? decision.limits.dailyAudits : Number(process.env.GUEST_DAILY_AUDIT_LIMIT || 2),
+        configuredFreeLimit: Number(process.env.DOMAIN_DAILY_AUDIT_LIMIT || 2),
+      }),
       activeLimit: decision.plan === 'free' ? 1 : Math.max(1, decision.limits.concurrency),
       globalActiveLimit: Number(process.env.GLOBAL_ACTIVE_AUDIT_LIMIT || 50),
       botVerified: await verifyBotToken(String(req.body?.botToken || '')),

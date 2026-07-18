@@ -6,7 +6,7 @@ Identifiers are authenticated user IDs, hashed guest sessions, and keyed one-way
 
 - `RATE_LIMIT_HASH_SECRET` with a random server-only value;
 - `GUEST_DAILY_AUDIT_LIMIT` (default 2);
-- `DOMAIN_DAILY_AUDIT_LIMIT` (default 2);
+- `DOMAIN_DAILY_AUDIT_LIMIT` (default 2 for guest and Free repeat audits of the same website; paid plans use their configured daily plan quota);
 - `GLOBAL_ACTIVE_AUDIT_LIMIT` (default 50).
 
 `consume_api_rate_limit` protects report exports, cancellation, deletion, blog generation, and administrator routes. HTTP 429 responses include `Retry-After`. The process-local limiter remains only an edge burst guard; it is not quota authority.

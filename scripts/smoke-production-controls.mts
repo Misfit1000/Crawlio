@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import { safeApiError } from '../src/lib/api/errors';
+import { resolveDomainDailyAuditLimit } from '../src/lib/api/production-controls';
 import { API_SCHEMA_VERSION, publicVersionPayload } from '../src/lib/platform/version';
 
 const root = new URL('../', import.meta.url);
@@ -60,6 +61,13 @@ async function auditAdmission() {
   const rows = await Promise.all(Array.from({ length: 10 }, () => harness.admit('guest-1', 'https://example.test/')));
   assert.equal(new Set(rows.map((row: any) => row.auditId)).size, 1);
   assert.equal(rows.filter((row: any) => !row.reused).length, 1);
+  assert.equal(resolveDomainDailyAuditLimit({ plan: 'free', ownerDailyLimit: 3, configuredFreeLimit: 2 }), 2);
+  assert.equal(resolveDomainDailyAuditLimit({ plan: 'paid', ownerDailyLimit: 25, configuredFreeLimit: 2 }), 25);
+  assert.equal(resolveDomainDailyAuditLimit({ plan: 'agency', ownerDailyLimit: 100, configuredFreeLimit: 2 }), 100);
+  assert.equal(resolveDomainDailyAuditLimit({ plan: 'admin', ownerDailyLimit: 1000, configuredFreeLimit: 2 }), 1000);
+  assert.equal(resolveDomainDailyAuditLimit({ plan: 'unknown', ownerDailyLimit: 3, configuredFreeLimit: 2 }), 2);
+  assert.match(api, /repeat-audit limit for this website/);
+  assert.match(api, /resolveDomainDailyAuditLimit/);
 }
 
 async function queueLimits() {

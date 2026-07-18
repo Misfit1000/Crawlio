@@ -14,7 +14,34 @@ export type AuditAdmissionDecision = {
   softQueueWarning: boolean;
 };
 
+const DEFAULT_DOMAIN_DAILY_AUDIT_LIMIT = 2;
+
 let lastApiVersionWriteAt = 0;
+
+function positiveInteger(value: number, fallback: number) {
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
+export function resolveDomainDailyAuditLimit(input: {
+  plan: string;
+  ownerDailyLimit: number;
+  configuredFreeLimit?: number;
+}) {
+  const ownerDailyLimit = positiveInteger(input.ownerDailyLimit, 1);
+  const configuredFreeLimit = positiveInteger(
+    Number(input.configuredFreeLimit),
+    DEFAULT_DOMAIN_DAILY_AUDIT_LIMIT,
+  );
+  const plan = String(input.plan || 'free').toLowerCase();
+
+  // Authenticated paid plans already have durable account quotas. Applying the
+  // guest/free repeat-target cap to them makes the advertised daily quota unusable.
+  if (plan === 'paid' || plan === 'agency' || plan === 'admin') {
+    return ownerDailyLimit;
+  }
+
+  return Math.min(ownerDailyLimit, configuredFreeLimit);
+}
 
 export function privacyHash(value: string) {
   const secret = process.env.RATE_LIMIT_HASH_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || 'crawlio-local-rate-limit';
