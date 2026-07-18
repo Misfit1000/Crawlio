@@ -33,6 +33,7 @@ export function startWorkerHealthServer(
       checkRegistryVersion: state.checkRegistryVersion,
       apiSchemaVersion: API_SCHEMA_VERSION,
       deepAuditEnabled: state.deepAuditEnabled,
+      sentryConfigured: state.sentryConfigured,
       planLimitsSummary: {
         free: { modes: ['quick'], maxPages: 5, priority: 10 },
         paid: { modes: ['quick', 'standard'], maxPages: 50, priority: 50 },

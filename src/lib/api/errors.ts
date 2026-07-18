@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 import { getSupabaseAdminClient } from '../supabase/server';
 import { getCommitIdentifier } from '../platform/version';
+import { captureApiException } from '../monitoring/sentry-node';
 
 export type SafeApiErrorShape = {
   code: string;
@@ -106,6 +107,14 @@ export function sendSafeApiError(req: Request, res: Response, error: unknown) {
   }
   if (!(error instanceof ApiError) || !error.expose) {
     void recordApiError(req, requestId, error);
+    captureApiException(error, {
+      status: mapped.status,
+      expected: mapped.status < 500,
+      apiRoute: String(req.route?.path || req.path || ''),
+      httpMethod: req.method,
+      operation: 'api-request',
+      requestId,
+    });
   }
   return res.status(mapped.status).json(mapped.body);
 }

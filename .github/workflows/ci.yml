@@ -30,6 +30,7 @@ jobs:
         env:
           BUILD_TIMESTAMP: ${{ github.event.head_commit.timestamp || github.event.pull_request.updated_at }}
           GIT_COMMIT_SHA: ${{ github.sha }}
+      - run: npm run verify:sentry-assets
       - run: npm run smoke:universal-domain
       - run: npm run smoke:audit-resilience
       - run: npm run smoke:audit-terminal-state

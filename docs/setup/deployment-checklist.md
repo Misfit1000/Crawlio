@@ -1,5 +1,17 @@
 # Deployment Checklist
 
+## Optional Sentry monitoring
+
+- Create the Sentry project; do not invent a DSN or token.
+- Add `VITE_SENTRY_DSN` and `SENTRY_DSN` to Vercel Production and Preview.
+- Add build-only `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and `SENTRY_PROJECT` to Vercel when readable production source maps are required.
+- Add only `SENTRY_DSN` to the audit worker provider.
+- Redeploy Vercel and the worker, then verify the safe status cards in **Admin > Diagnostics**.
+- Send one administrator-authorized API test event and confirm release/environment tags and readable stack traces.
+- Keep Replay, Profiling, Logs, and development reporting disabled.
+
+See `docs/operations/sentry.md` for the ordered setup and privacy checks.
+
 Apply migrations in numeric order through `019_finding_workflow_and_operations.sql`. Verify RLS, server-only audit admission, finding-workflow ownership, alert-state secrecy, the Vercel blog claim/complete/recovery RPCs, review thresholds, section revisions, image variants, approved sources, and fixture publication guards before deploying code.
 
 ## Pre-Deploy

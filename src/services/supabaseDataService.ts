@@ -276,6 +276,20 @@ export const getAdminDiagnostics = async () => {
   return response.data.data || response.data;
 };
 
+export const sendAdminSentryTestEvent = async () => {
+  const response = await safeJsonFetch<any>('/api/tools/admin/diagnostics/sentry-test', {
+    method: 'POST',
+    headers: {
+      ...(await getAuthHeaders()),
+      'Content-Type': 'application/json',
+    },
+    credentials: 'same-origin',
+    body: JSON.stringify({}),
+  });
+  if (response.success === false) throw new Error(response.error);
+  return response.data.data || response.data;
+};
+
 export const logAdminAction = async (adminUserId: string | undefined, action: string, targetType?: string, targetId?: string, metadata: any = {}) => {
   const client = clientOrNull();
   if (!client || !adminUserId) return;

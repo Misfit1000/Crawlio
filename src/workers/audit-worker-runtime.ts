@@ -2,6 +2,7 @@ import { AUDIT_LIMITS } from '../lib/audit/audit-config';
 import { normalizeSupabaseProjectUrl } from '../lib/supabase/url';
 import type { WorkerHeartbeat, WorkerHeartbeatStatus } from '../lib/supabase/audit-repository';
 import { AUDIT_ENGINE_VERSION, CHECK_REGISTRY_VERSION, SCORING_VERSION } from '../lib/platform/version';
+import { isNodeMonitoringConfigured } from '../lib/monitoring/sentry-node';
 
 export { type WorkerHeartbeatStatus };
 
@@ -22,6 +23,7 @@ export interface AuditWorkerConfig {
   runtime: string;
   supportedModes: Array<'quick' | 'standard' | 'deep'>;
   deepAuditEnabled: boolean;
+  sentryConfigured: boolean;
 }
 
 export interface AuditWorkerRuntimeState {
@@ -37,6 +39,7 @@ export interface AuditWorkerRuntimeState {
   runtime: string;
   supportedModes: Array<'quick' | 'standard' | 'deep'>;
   deepAuditEnabled: boolean;
+  sentryConfigured: boolean;
   queuePollingStatus: 'starting' | 'active' | 'error' | 'stopped';
   databaseConnected: boolean;
   lastCompletedAuditId: string | null;
@@ -76,6 +79,7 @@ export function loadWorkerConfig(env: WorkerEnv = process.env): AuditWorkerConfi
     checkRegistryVersion: CHECK_REGISTRY_VERSION,
     supportedModes: env.DEEP_AUDIT_ENABLED === 'true' ? ['quick', 'standard', 'deep'] : ['quick', 'standard'],
     deepAuditEnabled: env.DEEP_AUDIT_ENABLED === 'true',
+    sentryConfigured: isNodeMonitoringConfigured(env),
   };
 }
 
@@ -93,6 +97,7 @@ export function createInitialWorkerState(config: AuditWorkerConfig): AuditWorker
     checkRegistryVersion: config.checkRegistryVersion,
     supportedModes: config.supportedModes,
     deepAuditEnabled: config.deepAuditEnabled,
+    sentryConfigured: config.sentryConfigured,
     queuePollingStatus: 'starting',
     databaseConnected: true,
     lastCompletedAuditId: null,
@@ -138,5 +143,6 @@ export function buildWorkerHeartbeat(state: AuditWorkerRuntimeState): WorkerHear
     lastCompletedAuditAt: state.lastCompletedAuditAt,
     lastFatalWorkerError: state.lastFatalWorkerError,
     maintenanceMode: state.maintenanceMode,
+    sentryConfigured: state.sentryConfigured,
   };
 }

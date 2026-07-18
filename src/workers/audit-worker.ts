@@ -40,6 +40,13 @@ import {
   failureProgressMessage,
   type AuditFailure,
 } from '../lib/audit/audit-failures';
+import {
+  captureWorkerException,
+  flushNodeMonitoring,
+  initializeWorkerMonitoring,
+} from '../lib/monitoring/sentry-node';
+
+initializeWorkerMonitoring();
 
 type QueueItem = { url: string; depth: number; discoveredFrom?: string; sourceUrls: string[]; anchorTexts: string[] };
 const NO_QUEUED_LOG_INTERVAL_MS = 30_000;
@@ -1017,6 +1024,14 @@ function createLeaseRefresher(auditId: string, workerId: string) {
   const timer = setInterval(() => {
     auditRepository.refreshAuditLease(auditId, workerId).catch((error) => {
       console.error(`Audit ${auditId} lease refresh failed: ${error instanceof Error ? error.message : String(error)}`);
+      captureWorkerException(error, {
+        jobStage: 'lease-renewal',
+        failureCategory: 'LEASE_RENEWAL_SYSTEM_FAILURE',
+        auditId,
+        workerVersion: process.env.RENDER_GIT_COMMIT || process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_COMMIT_SHA,
+        engineVersion: AUDIT_ENGINE_VERSION,
+        scoringVersion: SCORING_VERSION,
+      });
     });
   }, refreshEveryMs);
   timer.unref?.();
@@ -1097,6 +1112,16 @@ export async function runOneAudit(
       return true;
     }
     const failure = classifyAuditFailure(error, { affectedUrl: audit.currentUrl || audit.normalizedUrl });
+    captureWorkerException(error, {
+      jobStage: 'audit-processing',
+      failureCategory: failure.code,
+      auditId: audit.id,
+      auditMode: audit.effectiveMode,
+      workerVersion: process.env.RENDER_GIT_COMMIT || process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_COMMIT_SHA,
+      engineVersion: AUDIT_ENGINE_VERSION,
+      scoringVersion: SCORING_VERSION,
+      attemptNumber: failure.attemptCount,
+    });
     const safeMessage = `${failure.safeTitle}. ${failure.safeExplanation}`;
     try {
       await auditRepository.addInternalDiagnostic({
@@ -1110,6 +1135,14 @@ export async function runOneAudit(
       });
     } catch (diagnosticError) {
       console.error(`Audit ${audit.id} diagnostic storage failed: ${diagnosticError instanceof Error ? diagnosticError.message : String(diagnosticError)}`);
+      captureWorkerException(diagnosticError, {
+        jobStage: 'diagnostic-write',
+        failureCategory: 'DATABASE_WRITE_FAILURE',
+        auditId: audit.id,
+        auditMode: audit.effectiveMode,
+        engineVersion: AUDIT_ENGINE_VERSION,
+        scoringVersion: SCORING_VERSION,
+      });
     }
     const failed = await auditRepository.updateAuditForWorker(audit.id, workerId, {
       status: 'failed',
@@ -1161,8 +1194,16 @@ export async function runAuditWorkerLoop() {
       await writeWorkerHeartbeat(state, { status: 'stopped', currentAuditId: null });
     } catch (error) {
       console.error(`Audit worker shutdown cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
+      captureWorkerException(error, {
+        jobStage: 'worker-shutdown',
+        failureCategory: 'SHUTDOWN_CLEANUP_FAILURE',
+        workerVersion: config.version,
+        engineVersion: config.auditEngineVersion,
+        scoringVersion: config.scoringVersion,
+      });
     } finally {
       healthServer?.close();
+      await flushNodeMonitoring(1_500);
       process.exit(0);
     }
   };
@@ -1190,6 +1231,13 @@ export async function runAuditWorkerLoop() {
       const detail = error instanceof Error ? error.message : String(error || 'Worker polling failure');
       updateWorkerState(state, { status: 'idle', currentAuditId: null, queuePollingStatus: 'error', databaseConnected: false, lastFatalWorkerError: detail });
       console.error(`Worker queue polling failed: ${detail}`);
+      captureWorkerException(error, {
+        jobStage: 'queue-polling',
+        failureCategory: 'JOB_CLAIM_SYSTEM_FAILURE',
+        workerVersion: config.version,
+        engineVersion: config.auditEngineVersion,
+        scoringVersion: config.scoringVersion,
+      });
       await wait(Math.max(config.pollIntervalMs, 2_000));
     }
   }
@@ -1205,6 +1253,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     } else {
       console.error('Audit worker crashed', error);
     }
-    process.exit(1);
+    captureWorkerException(error, {
+      jobStage: 'worker-startup',
+      failureCategory: 'WORKER_STARTUP_FAILURE',
+      workerVersion: process.env.RENDER_GIT_COMMIT || process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_COMMIT_SHA,
+      engineVersion: AUDIT_ENGINE_VERSION,
+      scoringVersion: SCORING_VERSION,
+    });
+    void flushNodeMonitoring(1_500).finally(() => process.exit(1));
   });
 }

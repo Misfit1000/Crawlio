@@ -41,6 +41,7 @@ export interface WorkerHeartbeat {
   lastCompletedAuditAt?: string | null;
   lastFatalWorkerError?: string | null;
   maintenanceMode?: boolean;
+  sentryConfigured?: boolean;
 }
 
 export interface AuditDiagnosticRow {
@@ -126,6 +127,7 @@ function toWorkerHeartbeat(row: DbRow): WorkerHeartbeat {
     lastCompletedAuditAt: value.lastCompletedAuditAt ?? null,
     lastFatalWorkerError: value.lastFatalWorkerError ?? null,
     maintenanceMode: Boolean(value.maintenanceMode),
+    sentryConfigured: Boolean(value.sentryConfigured),
   };
 }
 

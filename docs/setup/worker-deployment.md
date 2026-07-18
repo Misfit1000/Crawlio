@@ -21,9 +21,12 @@ SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 AUDIT_WORKER_ID=worker-production-1
 AUDIT_POLL_INTERVAL_MS=4000
+SENTRY_DSN=
 ```
 
 `AUDIT_WORKER_ID` is optional but useful in logs and lock fields. The worker must use the Supabase service role key because it claims jobs and writes progress/results.
+
+`SENTRY_DSN` is optional. When present, the worker reports unexpected Crawlio system failures with `runtime=audit-worker` and `service=crawlio-worker`. Normal target-site failures remain audit evidence and are not Sentry errors. Do not add `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, or `SENTRY_PROJECT` to the worker; Vercel owns browser source-map upload.
 
 ## Deployment Targets
 
@@ -47,6 +50,7 @@ Check worker logs for:
 - fetch/crawl failures
 - Supabase credential or network errors
 - uncaught worker crashes
+- unexpected job-claim, lease, database-write, scoring, or report-generation failures in Sentry when configured
 
 If the live audit page says `Audit is queued. The audit worker has not picked it up yet`, either the worker is not running, it cannot reach Supabase, or its service role environment variable is invalid.
 
@@ -68,3 +72,5 @@ The cancel API marks an audit as `cancelled` and writes a cancellation event. Th
 ## Stale Lock Recovery
 
 Workers claim jobs with `locked_by`, `locked_at`, and `lease_expires_at`. If a worker dies, another worker can reclaim queued work after the configured lock lease/stale recovery window in `src/lib/audit/audit-config.ts`.
+
+Graceful `SIGINT`/`SIGTERM` shutdown keeps the existing stop-claiming and lease cleanup sequence, then gives Sentry at most 1.5 seconds to flush before exit.

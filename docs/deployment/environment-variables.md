@@ -7,6 +7,8 @@ Use independent secrets for each purpose. Never copy a service-role or provider 
 - `VITE_SUPABASE_URL`: Supabase project URL.
 - `VITE_SUPABASE_ANON_KEY`: Supabase anonymous/publishable browser key.
 - `VITE_UPGRADE_URL`: optional external upgrade destination.
+- `VITE_SENTRY_DSN`: optional public browser event-routing DSN. This is not an auth token.
+- `VITE_SENTRY_ENABLE_DEVELOPMENT`: local-only opt-in; keep false or absent in deployments.
 
 ## Vercel server-only
 
@@ -19,6 +21,9 @@ Use independent secrets for each purpose. Never copy a service-role or provider 
 - `GUEST_DAILY_AUDIT_LIMIT`, `DOMAIN_DAILY_AUDIT_LIMIT`, `GLOBAL_ACTIVE_AUDIT_LIMIT`, `API_JSON_BODY_LIMIT`: optional server limits.
 - `TURNSTILE_SECRET_KEY`: optional server-side verification; enable only with a matching browser widget and platform setting.
 - `OPERATIONS_ALERTS_ENABLED`, `OPERATIONS_ALERT_WEBHOOK_URL`, `OPERATIONS_ALERT_COOLDOWN_MINUTES`: optional server-only aggregate health alerts. Keep disabled until an HTTPS webhook has been tested with safe fixture data.
+- `SENTRY_DSN`: optional server-side error monitoring DSN.
+- `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`: optional Vercel build-only source-map upload configuration. The auth token is sensitive and must never use a `VITE_` prefix.
+- `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE`: optional overrides. Prefer Vercel's deployment environment and Git commit SHA.
 
 ## Vercel blog-only
 
@@ -31,10 +36,13 @@ Use independent secrets for each purpose. Never copy a service-role or provider 
 
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
 - `AUDIT_WORKER_ID`, `AUDIT_POLL_INTERVAL_MS`, `WORKER_RUNTIME`, `DEEP_AUDIT_ENABLED`.
+- `SENTRY_DSN`: optional provider-neutral worker error monitoring. Do not copy `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, or `SENTRY_PROJECT` to the worker.
 - Render injects `PORT`; do not define `WORKER_HEALTH_PORT` there. `WORKER_HEALTH_PORT` is an optional override for local or non-Render hosts only.
 - `AUDIT_MAX_HTML_BYTES` is optional. `SEOINTEL_ALLOW_PRIVATE_TEST_TARGETS` is local-test-only and must never be deployed.
 
-Do not add `GROQ_*`, `BLOG_*`, `CRON_SECRET`, `RATE_LIMIT_HASH_SECRET`, or browser `VITE_*` variables to Render.
+Do not add `GROQ_*`, `BLOG_*`, `CRON_SECRET`, `RATE_LIMIT_HASH_SECRET`, build-only Sentry credentials, or browser `VITE_*` variables to Render.
+
+See `docs/operations/sentry.md` for the exact Vercel/worker placement table, privacy boundary, and verification workflow.
 
 ## CI and local verification
 

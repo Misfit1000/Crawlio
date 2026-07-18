@@ -1,24 +1,31 @@
 import React from 'react';
 import { AlertTriangle, Home, RefreshCw } from 'lucide-react';
 import { BrandMark } from './ui/visual-system';
+import { captureReactRenderError } from '../lib/monitoring/sentry-browser';
 
 interface State {
   failed: boolean;
 }
 
-interface Props {
+export interface AppErrorBoundaryProps {
   children: React.ReactNode;
+  onCapture?: (error: unknown, componentStack: string) => void;
 }
 
-export default class AppErrorBoundary extends React.Component<Props, State> {
+export default class AppErrorBoundary extends React.Component<AppErrorBoundaryProps, State> {
   state: State = { failed: false };
 
   static getDerivedStateFromError(): State {
     return { failed: true };
   }
 
-  componentDidCatch(error: Error) {
-    console.error('Crawlio render recovery boundary', error);
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    if (this.props.onCapture) {
+      this.props.onCapture(error, errorInfo.componentStack || '');
+    } else {
+      captureReactRenderError(error, errorInfo.componentStack || '');
+    }
+    console.error('Crawlio render recovery boundary');
   }
 
   private retry = () => {

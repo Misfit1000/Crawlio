@@ -1,5 +1,9 @@
 import express from 'express';
 import {
+  flushNodeMonitoring,
+  initializeApiMonitoring,
+} from '../lib/monitoring/sentry-node';
+import {
   apiErrorHandler,
   apiSecurityHeaders,
   createRateLimiter,
@@ -12,6 +16,8 @@ import { ApiError, requestIdMiddleware, sendSafeApiError } from '../lib/api/erro
 import { publicVersionPayload } from '../lib/platform/version';
 
 let cachedApp: express.Express | null = null;
+
+initializeApiMonitoring();
 
 function rewriteVercelPath(req: any) {
   const requestUrl = new URL(req.url || '/', 'http://localhost');
@@ -65,10 +71,21 @@ async function getApp() {
 export default async function handler(req: any, res: any) {
   try {
     const app = await getApp();
-    return app(req, res);
+    await new Promise<void>((resolve, reject) => {
+      const finish = () => resolve();
+      res.once('finish', finish);
+      res.once('close', finish);
+      try {
+        app(req, res);
+      } catch (error) {
+        reject(error);
+      }
+    });
   } catch (error: any) {
     if (!res.headersSent) {
-      return sendSafeApiError(req, res, error);
+      sendSafeApiError(req, res, error);
     }
+  } finally {
+    await flushNodeMonitoring(1_200);
   }
 }

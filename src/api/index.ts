@@ -53,6 +53,11 @@ import {
   isFindingPriorityOverride,
   isFindingWorkflowStatus,
 } from '../lib/audit/finding-workflow';
+import {
+  captureAdminSentryTestEvent,
+  flushNodeMonitoring,
+} from '../lib/monitoring/sentry-node';
+import { resolveSentryBuildConfiguration } from '../lib/monitoring/sentry-build';
 
 const DUPLICATE_AUDIT_WINDOW_MS = 10 * 60 * 1000;
 
@@ -69,6 +74,7 @@ function asyncJsonRoute(handler: any) {
 export const apiRouter = Router();
 
 apiRouter.use('/admin', durableRateLimit({ namespace: 'admin-api', limit: 120, windowSeconds: 60 }));
+apiRouter.use('/admin/diagnostics/sentry-test', durableRateLimit({ namespace: 'sentry-test', limit: 3, windowSeconds: 3600 }));
 apiRouter.use('/admin/blog/jobs', durableRateLimit({ namespace: 'blog-jobs', limit: 20, windowSeconds: 3600 }));
 apiRouter.use('/admin/blog/batches', durableRateLimit({ namespace: 'blog-batches', limit: 5, windowSeconds: 3600 }));
 apiRouter.use('/admin/blog/images/import', durableRateLimit({ namespace: 'blog-images', limit: 10, windowSeconds: 3600 }));
@@ -381,6 +387,8 @@ apiRouter.get('/admin/diagnostics', asyncJsonRoute(async (req, res) => {
   const failureGroups: Record<string, number> = {};
   rows.forEach((row: any) => Object.entries(row.failure_counts || {}).forEach(([code, count]) => { failureGroups[code] = (failureGroups[code] || 0) + Number(count || 0); }));
   const operations = buildOperationalHealth({ audits: rows, workers: workersResult.data || [], plans: plansResult.data || [], compatibility });
+  const sentryBuild = resolveSentryBuildConfiguration(process.env, process.env.NODE_ENV || 'production');
+  const workerSentryConfigured = (workersResult.data || []).some((row: any) => row.value?.sentryConfigured === true);
   void maybeSendOperationalAlert(operations, client).catch(() => undefined);
   res.setHeader('Cache-Control', 'private, no-store');
   res.json({ success: true, data: {
@@ -405,7 +413,31 @@ apiRouter.get('/admin/diagnostics', asyncJsonRoute(async (req, res) => {
     recentAuditDiagnostics: diagnosticsResult.data || [],
     adminActions: actionsResult.data || [],
     usageAvailability: { databaseStorage: 'provider-dashboard-only', realtime: 'provider-dashboard-only' },
+    monitoring: {
+      browserConfigured: Boolean(process.env.VITE_SENTRY_DSN),
+      apiConfigured: Boolean(process.env.SENTRY_DSN),
+      workerConfigured: workerSentryConfigured,
+      sourceMapsConfigured: sentryBuild.sourceMapsConfigured,
+      environment: sentryBuild.environment,
+    },
   }});
+}));
+
+apiRouter.post('/admin/diagnostics/sentry-test', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const initiated = captureAdminSentryTestEvent();
+  if (initiated) await flushNodeMonitoring(1_500);
+  const client = requireSupabaseAdminClient();
+  await client.from('admin_actions').insert({
+    admin_user_id: requester.userId,
+    action: 'sentry_api_test',
+    target_type: 'monitoring',
+    target_id: 'crawlio-api',
+    metadata: { initiated },
+  });
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: { initiated, service: 'crawlio-api' } });
 }));
 
 apiRouter.post('/admin/audits/:id/action', asyncJsonRoute(async (req, res) => {
