@@ -25,7 +25,7 @@ For migration 020:
 2. Apply the complete `020_admin_control_center.sql` file in the Supabase SQL Editor or normal CLI migration pipeline.
 3. Run the verification queries at the bottom of the migration.
 4. Confirm RLS is enabled on `admin_user_notes`, `account_deletion_requests`, and `admin_operation_previews`, with no anon or authenticated browser policies.
-5. Confirm `admin_resource_inventory()`, `admin_operations_timeseries(24)`, and `admin_bulk_audit_operation(...)` execute only through the service role.
+5. Confirm `admin_resource_inventory()`, `admin_operations_timeseries(24)`, `admin_user_plan_distribution()`, and `admin_bulk_audit_operation(...)` execute only through the service role.
 6. Deploy the same validated commit to Vercel and Render. The worker contract remains API schema 13.
 7. Open Admin > Resources and confirm database and worker versions, table inventory, and service readiness.
 8. Open Admin > Users and verify the self/last-admin protections plus durable failed-deletion visibility without suspending the production owner account.

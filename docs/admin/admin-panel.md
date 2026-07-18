@@ -62,6 +62,8 @@ Admins can:
 
 Bulk state validation and updates run in one locked database transaction, so a worker completion cannot be overwritten between validation and update.
 
+Pagination totals are query-planner estimates rather than full-table counts. Cursor pagination remains authoritative; the estimate is display-only.
+
 ## Inspect Queue
 
 The queue page shows queued/running audits ordered by:
@@ -115,6 +117,8 @@ The Resources page shows:
 Supabase billing, storage quota, Realtime quota, and Vercel usage remain provider-dashboard-only. Retention is a two-step action: create a preview, then apply the same fingerprint within ten minutes using a reason and the exact confirmation `APPLY RETENTION`.
 
 Database readiness compares the stored audit API schema to the application contract. Application and audit-engine deployments compare Git commit identifiers. Resource links reject credentials and credential-like query parameters even on allowlisted provider hosts.
+
+Read-heavy administrator snapshots use private in-process caching: 10 seconds for operations and worker health, 30 seconds for content health, and 60 seconds for plans, settings, and resource inventory. Concurrent identical reads share one request. Responses remain `private, no-store`, and successful mutations invalidate the affected cache immediately.
 
 ## Activity History
 

@@ -17,6 +17,10 @@ import {
   type AdminUserRole,
 } from '../../lib/admin/control-center';
 import {
+  invalidateAdminReadCache,
+  readCachedAdminData,
+} from '../../lib/admin/read-cache';
+import {
   ensureUserProfileFromAuthUser,
   getAuthenticatedUserFromRequest,
 } from '../../lib/billing/entitlements';
@@ -32,6 +36,14 @@ const router = Router();
 const USER_LIST_FIELDS = 'id,email,username,display_name,full_name,role,plan,subscription_status,audit_quota_used_daily,audit_quota_used_monthly,quota_reset_daily_at,quota_reset_monthly_at,disabled,disabled_at,disabled_by,disabled_reason,deletion_requested_at,created_at,updated_at';
 const AUDIT_LIST_FIELDS = 'id,user_id,guest_key_hash,normalized_url,status,plan,requested_mode,effective_mode,queue_priority,current_phase,pages_discovered,pages_crawled,checks_total,checks_completed,issues_found,critical_count,high_count,medium_count,low_count,locked_by,lease_expires_at,error,created_at,updated_at,started_at,completed_at';
 const ACTIVE_BLOG_JOB_STATES = ['queued', 'discovering', 'researching', 'briefing', 'drafting', 'validating', 'checking_originality', 'optimising', 'sourcing_images', 'prerendering', 'publishing'];
+const ADMIN_CACHE_TTL = {
+  overview: 10_000,
+  workers: 10_000,
+  plans: 60_000,
+  settings: 60_000,
+  contentHealth: 30_000,
+  resources: 60_000,
+} as const;
 
 function asyncAdminRoute(handler: (req: any, res: any, requester: AdminRequester) => Promise<void>) {
   return async (req: any, res: any, next: any) => {
@@ -70,6 +82,17 @@ function requiredReason(value: unknown) {
 function integerRange(value: unknown, min: number, max: number, fallback: number) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(min, Math.min(max, Math.floor(number))) : fallback;
+}
+
+async function cachedAdminResponse<T>(
+  res: any,
+  key: string,
+  ttlMs: number,
+  loader: () => Promise<T>,
+) {
+  const result = await readCachedAdminData(key, ttlMs, loader);
+  res.setHeader('X-Crawlio-Admin-Cache', result.status);
+  return result.value;
 }
 
 async function logAdminAction(
@@ -162,107 +185,109 @@ function failureCategory(row: any) {
 }
 
 router.get('/overview', asyncAdminRoute(async (req, res) => {
-  const client = requireSupabaseAdminClient();
   const range = ['24h', '7d', '30d'].includes(String(req.query.range)) ? String(req.query.range) : '24h';
   const hours = range === '30d' ? 720 : range === '7d' ? 168 : 24;
-  const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
-  const planNames = ['free', 'paid', 'agency', 'admin'];
+  const data = await cachedAdminResponse(res, `overview:${range}`, ADMIN_CACHE_TTL.overview, async () => {
+    const client = requireSupabaseAdminClient();
+    const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+    const planNames = ['free', 'paid', 'agency', 'admin'];
+    const [timeSeriesResult, recentAuditsResult, workersResult, deploymentsResult, planUseResult] = await Promise.all([
+      client.rpc('admin_operations_timeseries', { p_window_hours: hours }),
+      client.from('audits').select('status,current_phase,error').gte('created_at', since).order('created_at', { ascending: false }).limit(1000),
+      client.from('platform_settings').select('id,key,value,updated_at').like('key', 'audit_worker:%').order('updated_at', { ascending: false }).limit(20),
+      client.from('deployment_versions').select('component,application_version,commit_identifier,api_schema_version,audit_engine_version,scoring_version,updated_at'),
+      client.rpc('admin_user_plan_distribution'),
+    ]);
 
-  const [
-    timeSeriesResult,
-    recentAuditsResult,
-    workersResult,
-    deploymentsResult,
-    usersResult,
-    ...planCountResults
-  ] = await Promise.all([
-    client.rpc('admin_operations_timeseries', { p_window_hours: hours }),
-    client.from('audits').select('status,current_phase,error').gte('created_at', since).order('created_at', { ascending: false }).limit(1000),
-    client.from('platform_settings').select('id,key,value,updated_at').like('key', 'audit_worker:%').order('updated_at', { ascending: false }).limit(20),
-    client.from('deployment_versions').select('component,application_version,commit_identifier,api_schema_version,audit_engine_version,scoring_version,updated_at'),
-    client.from('user_profiles').select('id', { count: 'exact', head: true }).eq('disabled', false),
-    ...planNames.map((plan) => client.from('user_profiles').select('id', { count: 'exact', head: true }).eq('plan', plan).eq('disabled', false)),
-  ]);
+    const error = [
+      timeSeriesResult.error,
+      recentAuditsResult.error,
+      workersResult.error,
+      deploymentsResult.error,
+      planUseResult.error,
+    ].find(Boolean);
+    if (error) throw error;
 
-  const error = [
-    timeSeriesResult.error,
-    recentAuditsResult.error,
-    workersResult.error,
-    deploymentsResult.error,
-    usersResult.error,
-    ...planCountResults.map((result) => result.error),
-  ].find(Boolean);
-  if (error) throw error;
+    const failures: Record<string, number> = {};
+    (recentAuditsResult.data || [])
+      .filter((row: any) => ['failed', 'abandoned', 'cancelled'].includes(row.status))
+      .forEach((row: any) => {
+        const category = failureCategory(row);
+        failures[category] = (failures[category] || 0) + 1;
+      });
 
-  const recentAudits = recentAuditsResult.data || [];
-  const failures: Record<string, number> = {};
-  recentAudits
-    .filter((row: any) => ['failed', 'abandoned', 'cancelled'].includes(row.status))
-    .forEach((row: any) => {
-      const category = failureCategory(row);
-      failures[category] = (failures[category] || 0) + 1;
-    });
+    const series = (timeSeriesResult.data || []).map((row: any) => ({
+      bucket: row.bucket,
+      queued: Number(row.queued || 0),
+      running: Number(row.running || 0),
+      completed: Number(row.completed || 0),
+      failed: Number(row.failed || 0),
+      averageDurationSeconds: row.average_duration_seconds == null ? null : Number(row.average_duration_seconds),
+      pagesCrawled: Number(row.pages_crawled || 0),
+    }));
+    const totals = series.reduce((summary: any, row: any) => ({
+      queued: summary.queued + row.queued,
+      running: summary.running + row.running,
+      completed: summary.completed + row.completed,
+      failed: summary.failed + row.failed,
+      pagesCrawled: summary.pagesCrawled + row.pagesCrawled,
+    }), { queued: 0, running: 0, completed: 0, failed: 0, pagesCrawled: 0 });
+    const finished = totals.completed + totals.failed;
+    const planUse = Object.fromEntries(planNames.map((plan) => [plan, 0]));
+    for (const row of planUseResult.data || []) {
+      if (planNames.includes(row.plan)) planUse[row.plan] = Number(row.account_count || 0);
+    }
 
-  const series = (timeSeriesResult.data || []).map((row: any) => ({
-    bucket: row.bucket,
-    queued: Number(row.queued || 0),
-    running: Number(row.running || 0),
-    completed: Number(row.completed || 0),
-    failed: Number(row.failed || 0),
-    averageDurationSeconds: row.average_duration_seconds == null ? null : Number(row.average_duration_seconds),
-    pagesCrawled: Number(row.pages_crawled || 0),
-  }));
-  const totals = series.reduce((summary: any, row: any) => ({
-    queued: summary.queued + row.queued,
-    running: summary.running + row.running,
-    completed: summary.completed + row.completed,
-    failed: summary.failed + row.failed,
-    pagesCrawled: summary.pagesCrawled + row.pagesCrawled,
-  }), { queued: 0, running: 0, completed: 0, failed: 0, pagesCrawled: 0 });
-  const finished = totals.completed + totals.failed;
-
-  res.json({
-    success: true,
-    data: {
+    return {
       range,
       totals: {
         ...totals,
-        activeUsers: usersResult.count || 0,
+        activeUsers: Object.values(planUse).reduce((sum: number, count) => sum + Number(count), 0),
         completionRate: finished ? Math.round((totals.completed / finished) * 1000) / 10 : null,
       },
-      planUse: Object.fromEntries(planNames.map((plan, index) => [plan, planCountResults[index].count || 0])),
+      planUse,
       failureCategories: Object.entries(failures).map(([category, count]) => ({ category, count })),
       timeSeries: series,
       workers: workersResult.data || [],
       deployments: deploymentsResult.data || [],
-    },
+    };
   });
+  res.json({ success: true, data });
 }));
 
 router.get('/workers', asyncAdminRoute(async (_req, res) => {
-  const client = requireSupabaseAdminClient();
-  const { data, error } = await client
-    .from('platform_settings')
-    .select('id,key,value,updated_at')
-    .like('key', 'audit_worker:%')
-    .order('updated_at', { ascending: false })
-    .limit(50);
-  if (error) throw error;
-  res.json({ success: true, data: { items: data || [] } });
+  const data = await cachedAdminResponse(res, 'workers', ADMIN_CACHE_TTL.workers, async () => {
+    const client = requireSupabaseAdminClient();
+    const result = await client
+      .from('platform_settings')
+      .select('id,key,value,updated_at')
+      .like('key', 'audit_worker:%')
+      .order('updated_at', { ascending: false })
+      .limit(50);
+    if (result.error) throw result.error;
+    return { items: result.data || [] };
+  });
+  res.json({ success: true, data });
 }));
 
 router.get('/plans', asyncAdminRoute(async (_req, res) => {
-  const client = requireSupabaseAdminClient();
-  const { data, error } = await client.from('plan_limits').select('*').order('priority', { ascending: true });
-  if (error) throw error;
-  res.json({ success: true, data: { items: data || [] } });
+  const data = await cachedAdminResponse(res, 'plans', ADMIN_CACHE_TTL.plans, async () => {
+    const client = requireSupabaseAdminClient();
+    const result = await client.from('plan_limits').select('*').order('priority', { ascending: true });
+    if (result.error) throw result.error;
+    return { items: result.data || [] };
+  });
+  res.json({ success: true, data });
 }));
 
 router.get('/platform-settings', asyncAdminRoute(async (_req, res) => {
-  const client = requireSupabaseAdminClient();
-  const { data, error } = await client.from('platform_settings').select('id,key,platform_name,support_email,require_email_verification,public_registration,value,updated_at').eq('id', 'settings').maybeSingle();
-  if (error) throw error;
-  res.json({ success: true, data: { settings: data || null } });
+  const data = await cachedAdminResponse(res, 'platform-settings', ADMIN_CACHE_TTL.settings, async () => {
+    const client = requireSupabaseAdminClient();
+    const result = await client.from('platform_settings').select('id,key,platform_name,support_email,require_email_verification,public_registration,value,updated_at').eq('id', 'settings').maybeSingle();
+    if (result.error) throw result.error;
+    return { settings: result.data || null };
+  });
+  res.json({ success: true, data });
 }));
 
 router.get('/users', asyncAdminRoute(async (req, res) => {
@@ -274,7 +299,7 @@ router.get('/users', asyncAdminRoute(async (req, res) => {
   const plan = ['free', 'paid', 'agency', 'admin'].includes(String(req.query.plan)) ? String(req.query.plan) : '';
   const status = ['active', 'suspended', 'deletion_requested'].includes(String(req.query.status)) ? String(req.query.status) : '';
 
-  let query = client.from('user_profiles').select(USER_LIST_FIELDS, { count: 'exact' });
+  let query = client.from('user_profiles').select(USER_LIST_FIELDS, { count: 'planned' });
   if (search) query = query.or(`email.ilike.%${search}%,username.ilike.%${search}%,display_name.ilike.%${search}%,full_name.ilike.%${search}%`);
   if (role) query = query.eq('role', role);
   if (plan) query = query.eq('plan', plan);
@@ -287,22 +312,27 @@ router.get('/users', asyncAdminRoute(async (req, res) => {
   const rows = data || [];
   const hasMore = rows.length > limit;
   const page = rows.slice(0, limit);
-  const { data: deletionRequests, error: deletionError } = await client
-    .from('account_deletion_requests')
-    .select('id,user_id,requester_email,status,request_source,failure_code,requested_at,updated_at')
-    .eq('request_source', 'self_service')
-    .in('status', ['requested', 'processing', 'failed'])
-    .order('requested_at', { ascending: false })
-    .limit(20);
-  if (deletionError) throw deletionError;
+  let deletionRequests;
+  if (!cursor) {
+    const deletionResult = await client
+      .from('account_deletion_requests')
+      .select('id,user_id,requester_email,status,request_source,failure_code,requested_at,updated_at')
+      .eq('request_source', 'self_service')
+      .in('status', ['requested', 'processing', 'failed'])
+      .order('requested_at', { ascending: false })
+      .limit(20);
+    if (deletionResult.error) throw deletionResult.error;
+    deletionRequests = deletionResult.data || [];
+  }
 
   res.json({
     success: true,
     data: {
       items: page.map(mapUser),
       total: count || 0,
+      totalIsEstimate: true,
       nextCursor: hasMore ? nextCursor(page) : null,
-      deletionRequests: deletionRequests || [],
+      ...(deletionRequests ? { deletionRequests } : {}),
     },
   });
 }));
@@ -405,6 +435,7 @@ router.post('/users/:id/action', asyncAdminRoute(async (req, res, requester) => 
         status: 'completed',
         completed_at: new Date().toISOString(),
       }).eq('id', deletionRequest.id);
+      invalidateAdminReadCache('overview:', 'resources');
       await logAdminAction(requester.userId, 'process_account_deletion', 'user', req.params.id, reason, { requestId: deletionRequest.id }, { completed: true });
       res.json({ success: true, data: { userId: req.params.id, requestId: deletionRequest.id, completed: true } });
     } catch (error) {
@@ -476,6 +507,7 @@ router.post('/users/:id/action', asyncAdminRoute(async (req, res, requester) => 
     const before = { role: target.role, plan: target.plan, subscription_status: target.subscription_status };
     const { error } = await client.from('user_profiles').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', target.id);
     if (error) throw error;
+    invalidateAdminReadCache('overview:');
     await logAdminAction(requester.userId, 'update_user_access', 'user', target.id, reason, before, patch);
     res.json({ success: true, data: { userId: target.id, before, after: patch } });
     return;
@@ -493,6 +525,7 @@ router.post('/users/:id/action', asyncAdminRoute(async (req, res, requester) => 
       await client.auth.admin.updateUserById(target.id, { ban_duration: suspend ? 'none' : '876000h' });
       throw error;
     }
+    invalidateAdminReadCache('overview:');
     await logAdminAction(requester.userId, suspend ? 'suspend_user' : 'restore_user', 'user', target.id, reason, { disabled: target.disabled }, patch);
     res.json({ success: true, data: { userId: target.id, disabled: suspend } });
     return;
@@ -508,7 +541,7 @@ router.get('/audits', asyncAdminRoute(async (req, res) => {
   const status = String(req.query.status || '');
   const plan = String(req.query.plan || '');
   const mode = String(req.query.mode || '');
-  let query = client.from('audits').select(AUDIT_LIST_FIELDS, { count: 'exact' });
+  let query = client.from('audits').select(AUDIT_LIST_FIELDS, { count: 'planned' });
   if (search) query = query.ilike('normalized_url', `%${search}%`);
   if (['queued', 'running', 'completed', 'completed_with_warnings', 'failed', 'cancelled', 'abandoned'].includes(status)) query = query.eq('status', status);
   if (['free', 'paid', 'agency', 'admin'].includes(plan)) query = query.eq('plan', plan);
@@ -524,6 +557,7 @@ router.get('/audits', asyncAdminRoute(async (req, res) => {
     data: {
       items: page.map(mapAudit),
       total: count || 0,
+      totalIsEstimate: true,
       nextCursor: hasMore ? nextCursor(page) : null,
       bulkLimit: ADMIN_BULK_AUDIT_MAX,
     },
@@ -570,6 +604,7 @@ router.post('/audits/bulk-action', asyncAdminRoute(async (req, res, requester) =
     throw operation.error;
   }
   const updated = Array.isArray(operation.data?.updated) ? operation.data.updated : [];
+  invalidateAdminReadCache('overview:', 'resources');
   await logAdminAction(requester.userId, `bulk_audit_${action}`, 'audit_batch', selection.ids.join(','), reason, {
     audits: (audits || []).map((audit: any) => ({ id: audit.id, status: audit.status, queuePriority: audit.queue_priority })),
   }, { patch: { ...patch, updated_at: now }, count: updated.length });
@@ -577,66 +612,69 @@ router.post('/audits/bulk-action', asyncAdminRoute(async (req, res, requester) =
 }));
 
 router.get('/content-health', asyncAdminRoute(async (_req, res) => {
-  const client = requireSupabaseAdminClient();
-  const [postsResult, jobsResult] = await Promise.all([
-    client.from('blog_posts').select('id,title,slug,status,seo_title,meta_description,robots_directive,quality_status,originality_status,source_status,prerender_status,image_status,scheduled_at,published_at,updated_at,created_at').order('updated_at', { ascending: false }).limit(500),
-    client.from('blog_generation_jobs').select('id,article_id,state,topic,attempt_count,max_attempts,error,lease_expires_at,scheduled_for,created_at,updated_at').order('updated_at', { ascending: false }).limit(300),
-  ]);
-  const error = postsResult.error || jobsResult.error;
-  if (error) throw error;
-  const now = Date.now();
-  const items: any[] = [];
+  const data = await cachedAdminResponse(res, 'content-health', ADMIN_CACHE_TTL.contentHealth, async () => {
+    const client = requireSupabaseAdminClient();
+    const [postsResult, jobsResult] = await Promise.all([
+      client.from('blog_posts').select('id,title,slug,status,seo_title,meta_description,robots_directive,quality_status,originality_status,source_status,prerender_status,image_status,scheduled_at,published_at,updated_at,created_at').order('updated_at', { ascending: false }).limit(500),
+      client.from('blog_generation_jobs').select('id,article_id,state,topic,attempt_count,max_attempts,error,lease_expires_at,scheduled_for,created_at,updated_at').order('updated_at', { ascending: false }).limit(300),
+    ]);
+    const error = postsResult.error || jobsResult.error;
+    if (error) throw error;
+    const now = Date.now();
+    const items: any[] = [];
 
-  for (const post of postsResult.data || []) {
-    const ageDays = Math.floor((now - new Date(post.updated_at).getTime()) / 86_400_000);
-    if (['draft', 'review', 'needs_review'].includes(post.status) && ageDays >= 7) {
-      items.push({ kind: 'draft_review', severity: 'review', entity: 'post', id: post.id, title: post.title, detail: `Waiting for review for ${ageDays} days.`, action: 'open_post' });
+    for (const post of postsResult.data || []) {
+      const ageDays = Math.floor((now - new Date(post.updated_at).getTime()) / 86_400_000);
+      if (['draft', 'review', 'needs_review'].includes(post.status) && ageDays >= 7) {
+        items.push({ kind: 'draft_review', severity: 'review', entity: 'post', id: post.id, title: post.title, detail: `Waiting for review for ${ageDays} days.`, action: 'open_post' });
+      }
+      if (post.status === 'scheduled' && post.scheduled_at && new Date(post.scheduled_at).getTime() < now) {
+        items.push({ kind: 'overdue_schedule', severity: 'high', entity: 'post', id: post.id, title: post.title, detail: 'Scheduled publication time has passed.', action: 'hold_publication' });
+      }
+      const missing = [
+        !String(post.slug || '').trim() && 'slug',
+        !String(post.seo_title || '').trim() && 'SEO title',
+        !String(post.meta_description || '').trim() && 'meta description',
+      ].filter(Boolean);
+      if (missing.length) {
+        items.push({ kind: 'missing_seo', severity: 'high', entity: 'post', id: post.id, title: post.title, detail: `Missing ${missing.join(', ')}.`, action: 'open_post' });
+      }
+      const blocked = ['quality_status', 'originality_status', 'source_status', 'prerender_status'].filter((field) => ['blocked', 'needs_review'].includes(String((post as any)[field])));
+      if (blocked.length) {
+        items.push({ kind: 'publication_gate', severity: 'high', entity: 'post', id: post.id, title: post.title, detail: `Publication gates require review: ${blocked.map((field) => field.replace(/_/g, ' ')).join(', ')}.`, action: 'validate_post' });
+      }
+      if (['blocked', 'needs_review'].includes(post.image_status)) {
+        items.push({ kind: 'image_licence', severity: 'review', entity: 'post', id: post.id, title: post.title, detail: 'Image or licence details require editorial review.', action: 'open_post' });
+      }
+      if (post.status === 'published' && post.published_at && now - new Date(post.published_at).getTime() > 180 * 86_400_000) {
+        items.push({ kind: 'stale_article', severity: 'review', entity: 'post', id: post.id, title: post.title, detail: 'Published more than 180 days ago. Review accuracy and sources.', action: 'open_post' });
+      }
     }
-    if (post.status === 'scheduled' && post.scheduled_at && new Date(post.scheduled_at).getTime() < now) {
-      items.push({ kind: 'overdue_schedule', severity: 'high', entity: 'post', id: post.id, title: post.title, detail: 'Scheduled publication time has passed.', action: 'hold_publication' });
-    }
-    const missing = [
-      !String(post.slug || '').trim() && 'slug',
-      !String(post.seo_title || '').trim() && 'SEO title',
-      !String(post.meta_description || '').trim() && 'meta description',
-    ].filter(Boolean);
-    if (missing.length) {
-      items.push({ kind: 'missing_seo', severity: 'high', entity: 'post', id: post.id, title: post.title, detail: `Missing ${missing.join(', ')}.`, action: 'open_post' });
-    }
-    const blocked = ['quality_status', 'originality_status', 'source_status', 'prerender_status'].filter((field) => ['blocked', 'needs_review'].includes(String((post as any)[field])));
-    if (blocked.length) {
-      items.push({ kind: 'publication_gate', severity: 'high', entity: 'post', id: post.id, title: post.title, detail: `Publication gates require review: ${blocked.map((field) => field.replace(/_/g, ' ')).join(', ')}.`, action: 'validate_post' });
-    }
-    if (['blocked', 'needs_review'].includes(post.image_status)) {
-      items.push({ kind: 'image_licence', severity: 'review', entity: 'post', id: post.id, title: post.title, detail: 'Image or licence details require editorial review.', action: 'open_post' });
-    }
-    if (post.status === 'published' && post.published_at && now - new Date(post.published_at).getTime() > 180 * 86_400_000) {
-      items.push({ kind: 'stale_article', severity: 'review', entity: 'post', id: post.id, title: post.title, detail: 'Published more than 180 days ago. Review accuracy and sources.', action: 'open_post' });
-    }
-  }
 
-  for (const job of jobsResult.data || []) {
-    const stale = ACTIVE_BLOG_JOB_STATES.includes(job.state) && now - new Date(job.updated_at).getTime() > 30 * 60_000;
-    if (stale || job.state === 'failed') {
-      items.push({
-        kind: stale ? 'stalled_job' : 'failed_job',
-        severity: 'high',
-        entity: 'job',
-        id: job.id,
-        articleId: job.article_id,
-        title: job.topic || 'Blog generation job',
-        detail: stale ? 'No progress has been recorded for more than 30 minutes.' : 'The content job failed and may be eligible for recovery.',
-        action: 'recover_job',
-        recoverable: Number(job.attempt_count || 0) < Number(job.max_attempts || 0),
-      });
+    for (const job of jobsResult.data || []) {
+      const stale = ACTIVE_BLOG_JOB_STATES.includes(job.state) && now - new Date(job.updated_at).getTime() > 30 * 60_000;
+      if (stale || job.state === 'failed') {
+        items.push({
+          kind: stale ? 'stalled_job' : 'failed_job',
+          severity: 'high',
+          entity: 'job',
+          id: job.id,
+          articleId: job.article_id,
+          title: job.topic || 'Blog generation job',
+          detail: stale ? 'No progress has been recorded for more than 30 minutes.' : 'The content job failed and may be eligible for recovery.',
+          action: 'recover_job',
+          recoverable: Number(job.attempt_count || 0) < Number(job.max_attempts || 0),
+        });
+      }
     }
-  }
 
-  const counts = items.reduce((result: Record<string, number>, item) => {
-    result[item.kind] = (result[item.kind] || 0) + 1;
-    return result;
-  }, {});
-  res.json({ success: true, data: { counts, items: items.slice(0, 150), inspected: { posts: postsResult.data?.length || 0, jobs: jobsResult.data?.length || 0 } } });
+    const counts = items.reduce((result: Record<string, number>, item) => {
+      result[item.kind] = (result[item.kind] || 0) + 1;
+      return result;
+    }, {});
+    return { counts, items: items.slice(0, 150), inspected: { posts: postsResult.data?.length || 0, jobs: jobsResult.data?.length || 0 } };
+  });
+  res.json({ success: true, data });
 }));
 
 router.post('/content-health/action', asyncAdminRoute(async (req, res, requester) => {
@@ -653,6 +691,7 @@ router.post('/content-health/action', asyncAdminRoute(async (req, res, requester
     const after = { status: 'needs_review', robots_directive: 'noindex,nofollow' };
     const { error } = await client.from('blog_posts').update({ ...after, updated_at: new Date().toISOString() }).eq('id', id);
     if (error) throw error;
+    invalidateAdminReadCache('content-health');
     await logAdminAction(requester.userId, 'hold_blog_publication', 'blog_post', id, reason, before, after);
     res.json({ success: true, data: { id, ...after } });
     return;
@@ -669,6 +708,7 @@ router.post('/content-health/action', asyncAdminRoute(async (req, res, requester
     const after = { state: 'queued', locked_by: null, locked_at: null, lease_expires_at: null, error: '', scheduled_for: new Date().toISOString() };
     const { error } = await client.from('blog_generation_jobs').update({ ...after, updated_at: new Date().toISOString() }).eq('id', id);
     if (error) throw error;
+    invalidateAdminReadCache('content-health');
     await logAdminAction(requester.userId, 'recover_blog_job', 'blog_job', id, reason, before, after);
     res.json({ success: true, data: { id, ...after } });
     return;
@@ -696,24 +736,23 @@ router.post('/content-health/action', asyncAdminRoute(async (req, res, requester
 }));
 
 router.get('/resources', asyncAdminRoute(async (_req, res) => {
-  const client = requireSupabaseAdminClient();
-  const [inventoryResult, settingsResult, workersResult, deploymentsResult] = await Promise.all([
-    client.rpc('admin_resource_inventory'),
-    client.from('platform_settings').select('value,updated_at').eq('id', 'admin_resources').maybeSingle(),
-    client.from('platform_settings').select('key,value,updated_at').like('key', 'audit_worker:%').order('updated_at', { ascending: false }).limit(10),
-    client.from('deployment_versions').select('component,commit_identifier,application_version,api_schema_version,updated_at'),
-  ]);
-  const error = inventoryResult.error || settingsResult.error || workersResult.error || deploymentsResult.error;
-  if (error) throw error;
-  const currentCommit = getCommitIdentifier();
-  const workerRows = workersResult.data || [];
-  const latestWorker = workerRows[0];
-  const databaseDeployment = (deploymentsResult.data || []).find((row: any) => row.component === 'database');
-  const workerCommit = latestWorker?.value?.commitIdentifier || latestWorker?.value?.commit || null;
+  const data = await cachedAdminResponse(res, 'resources', ADMIN_CACHE_TTL.resources, async () => {
+    const client = requireSupabaseAdminClient();
+    const [inventoryResult, settingsResult, workersResult, deploymentsResult] = await Promise.all([
+      client.rpc('admin_resource_inventory'),
+      client.from('platform_settings').select('value,updated_at').eq('id', 'admin_resources').maybeSingle(),
+      client.from('platform_settings').select('key,value,updated_at').like('key', 'audit_worker:%').order('updated_at', { ascending: false }).limit(10),
+      client.from('deployment_versions').select('component,commit_identifier,application_version,api_schema_version,updated_at'),
+    ]);
+    const error = inventoryResult.error || settingsResult.error || workersResult.error || deploymentsResult.error;
+    if (error) throw error;
+    const currentCommit = getCommitIdentifier();
+    const workerRows = workersResult.data || [];
+    const latestWorker = workerRows[0];
+    const databaseDeployment = (deploymentsResult.data || []).find((row: any) => row.component === 'database');
+    const workerCommit = latestWorker?.value?.commitIdentifier || latestWorker?.value?.commit || null;
 
-  res.json({
-    success: true,
-    data: {
+    return {
       inventory: (inventoryResult.data || []).map((row: any) => ({
         resourceName: row.resource_name,
         approximateRows: Number(row.approximate_rows || 0),
@@ -746,8 +785,9 @@ router.get('/resources', asyncAdminRoute(async (_req, res) => {
         realtimeQuota: 'provider-dashboard-only',
         deploymentUsage: 'provider-dashboard-only',
       },
-    },
+    };
   });
+  res.json({ success: true, data });
 }));
 
 router.post('/resources/links', asyncAdminRoute(async (req, res, requester) => {
@@ -765,6 +805,7 @@ router.post('/resources/links', asyncAdminRoute(async (req, res, requester) => {
   };
   const { error } = await client.from('platform_settings').upsert(row, { onConflict: 'id' });
   if (error) throw error;
+  invalidateAdminReadCache('resources');
   await logAdminAction(requester.userId, 'update_admin_resource_links', 'platform_settings', 'admin_resources', reason, before?.value || {}, links);
   res.json({ success: true, data: { links } });
 }));
@@ -826,6 +867,7 @@ router.post('/retention/apply', asyncAdminRoute(async (req, res, requester) => {
     throw result.error;
   }
   await client.from('admin_operation_previews').update({ apply_result: result.data }).eq('id', preview.id);
+  invalidateAdminReadCache('resources', 'overview:');
   await logAdminAction(requester.userId, 'apply_data_retention', 'retention', preview.id, reason, preview.preview, result.data);
   res.json({ success: true, data: { previewId: preview.id, appliedAt: claimedAt, result: result.data } });
 }));
@@ -835,7 +877,7 @@ router.get('/actions', asyncAdminRoute(async (req, res) => {
   const limit = boundedPageSize(req.query.limit);
   const cursor = decodeAdminCursor(req.query.cursor);
   const search = normalizedSearch(req.query.query);
-  let query = client.from('admin_actions').select('id,admin_user_id,action,target_type,target_id,metadata,created_at', { count: 'exact' });
+  let query = client.from('admin_actions').select('id,admin_user_id,action,target_type,target_id,metadata,created_at', { count: 'planned' });
   if (search) query = query.or(`action.ilike.%${search}%,target_type.ilike.%${search}%,target_id.ilike.%${search}%`);
   if (cursor) query = query.or(`created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`);
   const { data, error, count } = await query.order('created_at', { ascending: false }).order('id', { ascending: false }).limit(limit + 1);
@@ -855,7 +897,7 @@ router.get('/actions', asyncAdminRoute(async (req, res) => {
     },
     createdAt: row.created_at,
   }));
-  res.json({ success: true, data: { items: page, total: count || 0, nextCursor: hasMore ? nextCursor(rows.slice(0, limit)) : null } });
+  res.json({ success: true, data: { items: page, total: count || 0, totalIsEstimate: true, nextCursor: hasMore ? nextCursor(rows.slice(0, limit)) : null } });
 }));
 
 router.get('/exports/:dataset', asyncAdminRoute(async (req, res) => {

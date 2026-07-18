@@ -215,6 +215,23 @@ begin
 end;
 $$;
 
+create or replace function public.admin_user_plan_distribution()
+returns table (
+  plan text,
+  account_count bigint
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(user_profiles.plan, 'free')::text, count(*)::bigint
+  from public.user_profiles
+  where disabled = false
+  group by coalesce(user_profiles.plan, 'free')
+  order by 1;
+$$;
+
 create or replace function public.admin_resource_inventory()
 returns table (
   resource_name text,
@@ -517,10 +534,12 @@ grant all on table public.admin_operation_previews to service_role;
 
 revoke all on function public.is_active_user(uuid) from public, anon, authenticated;
 revoke all on function public.admin_operations_timeseries(integer) from public, anon, authenticated;
+revoke all on function public.admin_user_plan_distribution() from public, anon, authenticated;
 revoke all on function public.admin_resource_inventory() from public, anon, authenticated;
 revoke all on function public.admin_bulk_audit_operation(uuid[], text, integer) from public, anon, authenticated;
 grant execute on function public.is_active_user(uuid) to authenticated, service_role;
 grant execute on function public.admin_operations_timeseries(integer) to service_role;
+grant execute on function public.admin_user_plan_distribution() to service_role;
 grant execute on function public.admin_resource_inventory() to service_role;
 grant execute on function public.admin_bulk_audit_operation(uuid[], text, integer) to service_role;
 

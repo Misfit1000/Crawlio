@@ -60,6 +60,7 @@ import {
 import { resolveSentryBuildConfiguration } from '../lib/monitoring/sentry-build';
 import { adminControlCenterRouter } from './admin/control-center';
 import { getUserActionGuard } from '../lib/admin/control-center';
+import { invalidateAdminReadCache } from '../lib/admin/read-cache';
 
 const DUPLICATE_AUDIT_WINDOW_MS = 10 * 60 * 1000;
 
@@ -89,6 +90,14 @@ apiRouter.use('/audit/export', durableRateLimit({ namespace: 'report-export', li
 apiRouter.use('/audit/cancel', durableRateLimit({ namespace: 'audit-cancel', limit: 10, windowSeconds: 300 }));
 apiRouter.use('/domain/link-signals', createRateLimiter({ namespace: 'public-link-signals', windowMs: 60 * 60 * 1000, maxRequests: 20 }));
 apiRouter.use('/admin/control-center', adminControlCenterRouter);
+apiRouter.use('/admin/blog', (req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.on('finish', () => {
+      if (res.statusCode >= 200 && res.statusCode < 400) invalidateAdminReadCache('content-health');
+    });
+  }
+  next();
+});
 
 function firstHeaderValue(value: unknown) {
   return Array.isArray(value) ? String(value[0] || '') : String(value || '');
@@ -395,6 +404,7 @@ apiRouter.post('/me/delete', durableRateLimit({ namespace: 'account-delete', lim
       status: 'completed',
       completed_at: new Date().toISOString(),
     }).eq('id', requestResult.data.id);
+    invalidateAdminReadCache('overview:', 'resources');
     res.setHeader('Clear-Site-Data', '"cache", "cookies", "storage"');
     res.json({ success: true, data });
   } catch (error) {
@@ -512,6 +522,7 @@ apiRouter.post('/admin/audits/:id/action', asyncJsonRoute(async (req, res) => {
   await auditRepository.updateAudit(audit.id, patch);
   const client = requireSupabaseAdminClient();
   await client.from('admin_actions').insert({ admin_user_id: requester.userId, action: `audit_${action}`, target_type: 'audit', target_id: audit.id, metadata: { reason, before, after: patch } });
+  invalidateAdminReadCache('overview:', 'resources');
   res.json({ success: true, data: { auditId: audit.id, action, before, after: patch } });
 }));
 
@@ -566,6 +577,7 @@ apiRouter.post('/admin/users/:id/update', asyncJsonRoute(async (req, res) => {
   if (!guard.allowed) throw new ApiError(guard.code, guard.message, 409);
   const { error } = await client.from('user_profiles').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', req.params.id);
   if (error) throw error;
+  invalidateAdminReadCache('overview:');
   await client.from('admin_actions').insert({ admin_user_id: requester.userId, action: 'update_user_access', target_type: 'user', target_id: req.params.id, metadata: { reason, before, after: patch } });
   res.json({ success: true, data: { userId: req.params.id, before, after: patch } });
 }));
@@ -584,6 +596,7 @@ apiRouter.post('/admin/plans/:plan', asyncJsonRoute(async (req, res) => {
   if (!before) throw new ApiError('PLAN_NOT_FOUND', 'Plan not found.', 404);
   const { error } = await client.from('plan_limits').update({ ...patch, updated_at: new Date().toISOString() }).eq('plan', req.params.plan);
   if (error) throw error;
+  invalidateAdminReadCache('plans');
   await client.from('admin_actions').insert({ admin_user_id: requester.userId, action: 'update_plan_limits', target_type: 'plan', target_id: req.params.plan, metadata: { reason, before, after: patch } });
   res.json({ success: true, data: { plan: req.params.plan, after: patch } });
 }));
@@ -609,6 +622,7 @@ apiRouter.post('/admin/platform/settings', asyncJsonRoute(async (req, res) => {
   };
   const { error } = await client.from('platform_settings').upsert(row, { onConflict: 'id' });
   if (error) throw error;
+  invalidateAdminReadCache('platform-settings');
   await client.from('admin_actions').insert({ admin_user_id: requester.userId, action: 'update_platform_settings', target_type: 'platform_setting', target_id: 'settings', metadata: { reason, before: before || null, after: row } });
   res.json({ success: true, data: row });
 }));
@@ -629,6 +643,7 @@ apiRouter.post('/admin/platform/control', asyncJsonRoute(async (req, res) => {
   const nextValue = { ...(row?.value || {}), [key]: value };
   const { error } = await client.from('platform_settings').upsert({ id: 'settings', key: 'settings', value: nextValue, updated_at: new Date().toISOString() }, { onConflict: 'id' });
   if (error) throw error;
+  invalidateAdminReadCache('platform-settings');
   await client.from('admin_actions').insert({ admin_user_id: requester.userId, action: 'update_platform_control', target_type: 'platform_setting', target_id: key, metadata: { reason, before, after: value } });
   res.json({ success: true, data: { key, value } });
 }));

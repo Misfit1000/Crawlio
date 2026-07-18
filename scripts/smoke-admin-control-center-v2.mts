@@ -10,6 +10,11 @@ import {
   rowsToCsv,
   validateBulkAuditSelection,
 } from '../src/lib/admin/control-center';
+import {
+  invalidateAdminReadCache,
+  readCachedAdminData,
+  resetAdminReadCacheForTests,
+} from '../src/lib/admin/read-cache';
 
 const mode = process.argv[2] || 'all';
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -148,7 +153,64 @@ function resourceInventoryContract() {
   assert.match(routeSource, /provider-dashboard-only/);
   assert.match(routeSource, /normalizeAdminResourceLinks/);
   assert.match(routeSource, /databaseDeployment\?\.api_schema_version === API_SCHEMA_VERSION/);
+  assert.match(routeSource, /cachedAdminResponse/);
+  assert.match(routeSource, /from\('user_profiles'\)\.select\(USER_LIST_FIELDS, \{ count: 'planned' \}\)/);
+  assert.match(routeSource, /from\('audits'\)\.select\(AUDIT_LIST_FIELDS, \{ count: 'planned' \}\)/);
+  assert.match(routeSource, /from\('admin_actions'\)\.select\([^;]+count: 'planned'/);
+  assert.match(routeSource, /role', 'admin'\)\.eq\('disabled', false\)/);
+  assert.match(clientSource, /pendingAdminGets/);
+  assert.match(clientSource, /authHeaders\.Authorization \|\| 'anonymous'/);
   assert.doesNotMatch(routeSource, /serviceRoleKey\s*:/i);
+}
+
+async function loadEfficiencyContract() {
+  resetAdminReadCacheForTests();
+  let loads = 0;
+  const first = await readCachedAdminData('overview:24h', 100, async () => {
+    loads += 1;
+    return { value: 1 };
+  }, 1_000);
+  const second = await readCachedAdminData('overview:24h', 100, async () => {
+    loads += 1;
+    return { value: 2 };
+  }, 1_050);
+  assert.equal(first.status, 'miss');
+  assert.equal(second.status, 'hit');
+  assert.equal(second.value.value, 1);
+  assert.equal(loads, 1);
+
+  resetAdminReadCacheForTests();
+  let release!: (value: number) => void;
+  const deferred = new Promise<number>((resolve) => { release = resolve; });
+  const pendingFirst = readCachedAdminData('resources', 100, () => deferred, 2_000);
+  const pendingSecond = readCachedAdminData('resources', 100, async () => 99, 2_000);
+  release(42);
+  const [loaded, shared] = await Promise.all([pendingFirst, pendingSecond]);
+  assert.equal(loaded.status, 'miss');
+  assert.equal(shared.status, 'shared');
+  assert.equal(shared.value, 42);
+
+  invalidateAdminReadCache('resources');
+  const afterInvalidation = await readCachedAdminData('resources', 100, async () => 7, 2_010);
+  assert.equal(afterInvalidation.status, 'miss');
+  assert.equal(afterInvalidation.value, 7);
+
+  resetAdminReadCacheForTests();
+  let releaseStale!: (value: number) => void;
+  const staleLoad = readCachedAdminData(
+    'overview:24h',
+    100,
+    () => new Promise<number>((resolve) => { releaseStale = resolve; }),
+    3_000,
+  );
+  invalidateAdminReadCache('overview:');
+  const freshAfterInvalidation = readCachedAdminData('overview:24h', 100, async () => 12, 3_010);
+  assert.equal((await freshAfterInvalidation).value, 12);
+  releaseStale(11);
+  assert.equal((await staleLoad).value, 11);
+  const cachedFreshLoad = await readCachedAdminData('overview:24h', 100, async () => 13, 3_020);
+  assert.equal(cachedFreshLoad.status, 'hit');
+  assert.equal(cachedFreshLoad.value, 12);
 }
 
 function migrationContract() {
@@ -163,11 +225,13 @@ function migrationContract() {
   assert.match(migration, /pg_advisory_xact_lock/);
   assert.match(migration, /if auth\.uid\(\) = old\.id then/);
   assert.match(migration, /create or replace function public\.admin_bulk_audit_operation/);
+  assert.match(migration, /create or replace function public\.admin_user_plan_distribution/);
   assert.match(migration, /for update/);
   assert.match(migration, /role = 'admin'\s+and disabled = false/);
   assert.match(migration, /as restrictive/);
   assert.match(migration, /grant execute on function public\.admin_resource_inventory\(\) to service_role/);
   assert.match(migration, /grant execute on function public\.admin_bulk_audit_operation\(uuid\[\], text, integer\) to service_role/);
+  assert.match(migration, /grant execute on function public\.admin_user_plan_distribution\(\) to service_role/);
   assert.match(migration, /Migration 016 intentionally removed all browser audit writes/);
   assert.doesNotMatch(migration, /create policy "browser clients can enqueue own audits only"/);
   assert.doesNotMatch(migration, /or public\.is_admin_user\(auth\.uid\(\)\)/);
@@ -179,22 +243,23 @@ function migrationContract() {
   assert.doesNotMatch(migration, /api_schema_version = 14/);
 }
 
-const tests: Record<string, () => void> = {
+const tests: Record<string, () => void | Promise<void>> = {
   api: adminApiContract,
   guardrails: userGuardrails,
   exports: exportAndLinkSafety,
   retention: retentionSafety,
   content: contentHealthContract,
   resources: resourceInventoryContract,
+  load: loadEfficiencyContract,
   migration: migrationContract,
 };
 
 if (mode === 'all') {
-  Object.values(tests).forEach((test) => test());
+  for (const test of Object.values(tests)) await test();
 } else {
   const test = tests[mode];
   assert.ok(test, `Unknown admin smoke mode: ${mode}`);
-  test();
+  await test();
 }
 
 console.log(`Admin control center V2 smoke passed: ${mode}`);

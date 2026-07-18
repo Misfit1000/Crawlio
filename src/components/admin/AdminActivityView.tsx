@@ -15,6 +15,7 @@ export default function AdminActivityView() {
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
+  const [totalIsEstimate, setTotalIsEstimate] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -25,6 +26,7 @@ export default function AdminActivityView() {
       const page = await getAdminActivity({ query, cursor, limit: 30 });
       setItems((current) => append ? [...current, ...page.items] : page.items);
       setTotal(page.total);
+      setTotalIsEstimate(Boolean(page.totalIsEstimate));
       setNextCursor(page.nextCursor);
       setError('');
     } catch (loadError) {
@@ -65,7 +67,7 @@ export default function AdminActivityView() {
 
       {error && <AdminError message={error} />}
       <Panel className="overflow-hidden p-0">
-        <div className="flex items-center gap-2 border-b border-border px-4 py-3 text-sm text-muted-foreground"><History className="h-4 w-4" /><span><strong className="text-foreground">{total}</strong> logged actions</span></div>
+        <div className="flex items-center gap-2 border-b border-border px-4 py-3 text-sm text-muted-foreground"><History className="h-4 w-4" /><span><strong className="text-foreground">{totalIsEstimate ? 'About ' : ''}{total}</strong> logged actions</span></div>
         {loading && items.length === 0 ? <AdminLoading /> : items.length === 0 ? (
           <AdminEmpty title="No matching administrator actions" detail="Adjust the search text or wait for a privileged action to be recorded." />
         ) : (

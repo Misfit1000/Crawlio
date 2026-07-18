@@ -6,6 +6,7 @@ export type AdminRange = '24h' | '7d' | '30d';
 export interface AdminPage<T> {
   items: T[];
   total: number;
+  totalIsEstimate?: boolean;
   nextCursor: string | null;
 }
 
@@ -69,6 +70,7 @@ export interface AdminAuditSummary {
 }
 
 type QueryValue = string | number | boolean | null | undefined;
+const pendingAdminGets = new Map<string, Promise<unknown>>();
 
 function queryString(values: Record<string, QueryValue>) {
   const params = new URLSearchParams();
@@ -79,8 +81,12 @@ function queryString(values: Record<string, QueryValue>) {
   return query ? `?${query}` : '';
 }
 
-async function adminRequest<T>(path: string, init: RequestInit = {}) {
-  const headers = await getAuthHeaders(init.body ? { 'Content-Type': 'application/json' } : {});
+async function executeAdminRequest<T>(
+  path: string,
+  init: RequestInit = {},
+  authHeaders?: Record<string, string>,
+) {
+  const headers = authHeaders || await getAuthHeaders(init.body ? { 'Content-Type': 'application/json' } : {});
   const response = await safeJsonFetch<{ success: boolean; data: T; error?: unknown }>(path, {
     ...init,
     headers: { ...headers, ...(init.headers || {}) },
@@ -89,6 +95,26 @@ async function adminRequest<T>(path: string, init: RequestInit = {}) {
   if (response.success === false) throw new Error(response.error);
   if (response.data.success === false) throw new Error('The administrator request was rejected.');
   return response.data.data;
+}
+
+async function adminRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const method = String(init.method || 'GET').toUpperCase();
+  const authHeaders = await getAuthHeaders(init.body ? { 'Content-Type': 'application/json' } : {});
+  if (method !== 'GET') return executeAdminRequest<T>(path, init, authHeaders);
+
+  const requestKey = `${authHeaders.Authorization || 'anonymous'}:${path}`;
+  const existing = pendingAdminGets.get(requestKey);
+  if (existing) return existing as Promise<T>;
+
+  const request = (async () => {
+    try {
+      return await executeAdminRequest<T>(path, init, authHeaders);
+    } finally {
+      pendingAdminGets.delete(requestKey);
+    }
+  })();
+  pendingAdminGets.set(requestKey, request);
+  return request;
 }
 
 export function getAdminControlOverview(range: AdminRange) {
@@ -103,7 +129,7 @@ export function getAdminControlUsers(filters: {
   cursor?: string | null;
   limit?: number;
 }) {
-  return adminRequest<AdminPage<AdminUserSummary> & { deletionRequests: AdminDeletionRequestSummary[] }>(`/api/tools/admin/control-center/users${queryString(filters)}`);
+  return adminRequest<AdminPage<AdminUserSummary> & { deletionRequests?: AdminDeletionRequestSummary[] }>(`/api/tools/admin/control-center/users${queryString(filters)}`);
 }
 
 export function getAdminControlUser(userId: string) {

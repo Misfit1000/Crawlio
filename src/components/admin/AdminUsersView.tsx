@@ -29,6 +29,7 @@ export default function AdminUsersView({ currentAdminId }: { currentAdminId: str
   const [users, setUsers] = useState<AdminUserSummary[]>([]);
   const [deletionRequests, setDeletionRequests] = useState<AdminDeletionRequestSummary[]>([]);
   const [total, setTotal] = useState(0);
+  const [totalIsEstimate, setTotalIsEstimate] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,9 +49,10 @@ export default function AdminUsersView({ currentAdminId }: { currentAdminId: str
       const page = await getAdminControlUsers({ ...filters, cursor: requestedCursor, limit: 25 });
       setUsers((current) => append ? [...current, ...page.items] : page.items);
       setTotal(page.total);
+      setTotalIsEstimate(Boolean(page.totalIsEstimate));
       setNextCursor(page.nextCursor);
       setCursor(requestedCursor);
-      setDeletionRequests(page.deletionRequests);
+      if (page.deletionRequests) setDeletionRequests(page.deletionRequests);
       setError('');
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Users could not be loaded.');
@@ -165,7 +167,7 @@ export default function AdminUsersView({ currentAdminId }: { currentAdminId: str
       {error && <AdminError message={error} />}
       <Panel className="overflow-hidden p-0">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <div className="text-sm text-muted-foreground"><span className="font-semibold text-foreground">{total}</span> accounts match</div>
+          <div className="text-sm text-muted-foreground"><span className="font-semibold text-foreground">{totalIsEstimate ? 'About ' : ''}{total}</span> accounts match</div>
           <button type="button" onClick={() => void load(false, null)} className="icon-button h-9 w-9" aria-label="Refresh users"><RefreshCw className="h-4 w-4" /></button>
         </div>
         {loading && users.length === 0 ? <AdminLoading /> : users.length === 0 ? (

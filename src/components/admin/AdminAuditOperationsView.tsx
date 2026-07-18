@@ -30,6 +30,7 @@ export default function AdminAuditOperationsView() {
   const [filters, setFilters] = useState<AuditFilters>(EMPTY_FILTERS);
   const [audits, setAudits] = useState<AdminAuditSummary[]>([]);
   const [total, setTotal] = useState(0);
+  const [totalIsEstimate, setTotalIsEstimate] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [bulkLimit, setBulkLimit] = useState(25);
   const [selected, setSelected] = useState<string[]>([]);
@@ -47,6 +48,7 @@ export default function AdminAuditOperationsView() {
       const page = await getAdminControlAudits({ ...filters, cursor, limit: 25 });
       setAudits((current) => append ? [...current, ...page.items] : page.items);
       setTotal(page.total);
+      setTotalIsEstimate(Boolean(page.totalIsEstimate));
       setNextCursor(page.nextCursor);
       setBulkLimit(page.bulkLimit);
       if (!append) setSelected([]);
@@ -154,7 +156,7 @@ export default function AdminAuditOperationsView() {
 
       <Panel className="overflow-hidden p-0">
         <div className="flex flex-col gap-3 border-b border-border px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="text-sm text-muted-foreground"><span className="font-semibold text-foreground">{total}</span> audits match / <span className="font-semibold text-foreground">{selected.length}</span> selected</div>
+          <div className="text-sm text-muted-foreground"><span className="font-semibold text-foreground">{totalIsEstimate ? 'About ' : ''}{total}</span> audits match / <span className="font-semibold text-foreground">{selected.length}</span> selected</div>
           <div className="flex flex-wrap gap-2">
             <button type="button" disabled={!selected.length} onClick={() => setPendingAction('cancel')} className="quiet-button min-h-9 px-3"><XCircle className="h-4 w-4" />Cancel</button>
             <button type="button" disabled={!selected.length} onClick={() => setPendingAction('retry')} className="quiet-button min-h-9 px-3"><RotateCcw className="h-4 w-4" />Retry</button>
