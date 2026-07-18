@@ -13,6 +13,7 @@ const productionMigrationSql = readFileSync(resolve('supabase/migrations/011_pro
 const admissionLockdownSql = readFileSync(resolve('supabase/migrations/016_server_only_audit_admission.sql'), 'utf8');
 const fullAuditLimitSql = readFileSync(resolve('supabase/migrations/018_full_audit_50_page_limit.sql'), 'utf8');
 const workflowOperationsSql = readFileSync(resolve('supabase/migrations/019_finding_workflow_and_operations.sql'), 'utf8');
+const adminControlCenterSql = readFileSync(resolve('supabase/migrations/020_admin_control_center.sql'), 'utf8');
 
 for (const table of ['audits', 'audit_events', 'audit_pages', 'audit_issues', 'audit_reports']) {
   assert.match(sql, new RegExp(`create table if not exists public\\.${table}\\b`, 'i'), `${table} table is missing`);
@@ -78,6 +79,14 @@ assert.match(workflowOperationsSql, /set search_path = ''/i, 'finding validation
 assert.match(workflowOperationsSql, /audit owners can update finding workflow/i, 'finding workflow owner update policy is missing');
 assert.match(workflowOperationsSql, /operations_alert_state.*no anon\/authenticated policies/is, 'service-only alert-state policy note is missing');
 assert.match(workflowOperationsSql, /api_schema_version = 13/i, 'Database compatibility version must advance to 13');
+for (const table of ['admin_user_notes', 'account_deletion_requests', 'admin_operation_previews']) {
+  assert.match(adminControlCenterSql, new RegExp(`create table if not exists public\\.${table}\\b`, 'i'), `${table} admin-control table is missing`);
+  assert.match(adminControlCenterSql, new RegExp(`alter table public\\.${table} enable row level security`, 'i'), `${table} admin-control RLS is missing`);
+}
+assert.match(adminControlCenterSql, /create or replace function public\.admin_resource_inventory\(\)/i, 'admin resource inventory RPC is missing');
+assert.match(adminControlCenterSql, /create or replace function public\.admin_operations_timeseries/i, 'admin operations aggregate RPC is missing');
+assert.match(adminControlCenterSql, /api_schema_version = 13/i, 'admin-only migration must preserve audit API schema version 13');
+assert.equal(/api_schema_version = 14/i.test(adminControlCenterSql), false, 'admin-only migration must not bump the worker contract');
 for (const bannedTerm of ['fire' + 'base', 'fire' + 'store']) {
   assert.equal(sql.toLowerCase().includes(bannedTerm), false, `migration should not contain ${bannedTerm} references`);
 }

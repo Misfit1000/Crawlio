@@ -60,10 +60,14 @@ assert.match(migration, /public\.is_admin_user/i);
 assert.match(migration, /audits_status_priority_created_at_idx/i);
 
 const adminPanel = readFileSync(join(root, 'src/components/AdminDashboard.tsx'), 'utf8');
+const adminUsers = readFileSync(join(root, 'src/components/admin/AdminUsersView.tsx'), 'utf8');
+const adminRoutes = readFileSync(join(root, 'src/api/admin/control-center.ts'), 'utf8');
 assert.match(adminPanel, /user\.role !== 'admin'/);
-assert.match(adminPanel, /updateUserAdminFields/);
+assert.match(adminUsers, /runAdminUserAction/);
 assert.match(adminPanel, /updatePlanLimit/);
 assert.match(adminPanel, /getAdminWorkers/);
+assert.match(adminRoutes, /ADMIN_SELF_PROTECTION|ADMIN_REASON_REQUIRED/);
+assert.match(adminRoutes, /last active administrator|activeAdminCount/i);
 
 const worker = readFileSync(join(root, 'src/workers/audit-worker.ts'), 'utf8');
 assert.match(worker, /plan=\$\{audit\.plan\}/);

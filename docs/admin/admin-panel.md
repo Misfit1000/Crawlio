@@ -7,8 +7,13 @@ Admin routes live under `/admin`:
 - `/admin/audits`
 - `/admin/queue`
 - `/admin/workers`
+- `/admin/content-health`
+- `/admin/resources`
+- `/admin/activity`
+- `/admin/diagnostics`
 - `/admin/settings`
 - `/admin/plans`
+- `/admin/blog`
 
 ## Assign Admin
 
@@ -30,13 +35,17 @@ Do not expose `ADMIN_EMAILS` to browser code.
 
 Admins can:
 
-- Search users by email.
+- Search and paginate users by email, name, username, role, plan, and status.
+- Open an account drawer with quota use, projects, recent audits, notes, and deletion status.
 - Change role: `user`, `support`, `admin`.
 - Change plan: `free`, `paid`, `agency`, `admin`.
 - Change subscription status.
 - Reset quotas.
+- Suspend or restore an account with a Supabase Auth ban and restrictive RLS enforcement.
+- Process only a durable deletion request created by the user.
+- Retry a failed self-service deletion even when its profile row was already removed.
 
-All user changes are logged in `admin_actions`.
+Administrators cannot suspend or demote themselves, and the last active administrator cannot be removed. The final-admin invariant is also enforced transactionally in Postgres. All changes require a recorded reason and are logged in `admin_actions`.
 
 ## Manage Audits
 
@@ -48,6 +57,10 @@ Admins can:
 - Retry failed audits.
 - Recover stale locked audits.
 - Raise or lower queue priority.
+- Select up to 25 explicit audit IDs for a guarded bulk action.
+- Save filters and export bounded CSV data.
+
+Bulk state validation and updates run in one locked database transaction, so a worker completion cannot be overwritten between validation and update.
 
 ## Inspect Queue
 
@@ -85,6 +98,28 @@ Safe settings include:
 
 Secrets are never displayed or editable in the admin panel.
 
+## Content Health
+
+Content Health reports drafts waiting for review, overdue schedules, stalled or failed generation jobs, missing SEO fields, publication-gate failures, stale articles, and source or image review requirements. It links to the existing editor and can hold publication, recover eligible jobs, or rerun deterministic checks. It never claims indexing, rankings, traffic, or search performance.
+
+## Resources and Retention
+
+The Resources page shows:
+
+- allowlisted table size and approximate row counts
+- oldest records, retention policy, and cleanup eligibility
+- service configuration as configured/not configured only
+- application, database, and audit-engine versions
+- optional allowlisted HTTPS links for Supabase, Vercel, Render, Sentry, and GitHub
+
+Supabase billing, storage quota, Realtime quota, and Vercel usage remain provider-dashboard-only. Retention is a two-step action: create a preview, then apply the same fingerprint within ten minutes using a reason and the exact confirmation `APPLY RETENTION`.
+
+Database readiness compares the stored audit API schema to the application contract. Application and audit-engine deployments compare Git commit identifiers. Resource links reject credentials and credential-like query parameters even on allowlisted provider hosts.
+
+## Activity History
+
+The Activity page searches administrator actions and displays bounded before/after summaries. CSV exports escape spreadsheet formulas and do not contain provider credentials, raw IP addresses, tokens, or environment values.
+
 ## Plans
 
 The plans page edits `plan_limits`:
@@ -95,4 +130,4 @@ The plans page edits `plan_limits`:
 - priority
 - export/PDF/white-label/embed/API flags
 
-Run every migration through `019_finding_workflow_and_operations.sql` before using the complete panel.
+Run every migration through `020_admin_control_center.sql` before using Control Center V2.
