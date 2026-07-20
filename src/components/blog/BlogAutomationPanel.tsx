@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarClock, Clock3, FileStack, Loader2, Newspaper, Play, RefreshCw, Save, Settings2, Sparkles } from 'lucide-react';
+import { CalendarClock, CheckCircle2, Clock3, FileStack, Loader2, Newspaper, Play, RefreshCw, Save, Settings2, Sparkles } from 'lucide-react';
 import { getBlogAutomationDashboard, getBlogAutomationSettings, queueBlogBatch, queueBlogJob, runAdminBlogWorkflow, saveBlogAutomationSettings, testAdminBlogProvider } from '../../lib/blog/client';
 import type { BlogAdminOverview, BlogGenerationJob, BlogPost } from '../../lib/blog/types';
 import { FormField, Notice, Panel } from '../ui/page-system';
@@ -99,6 +99,7 @@ export default function BlogAutomationPanel({ posts, onChanged }: { posts: BlogP
   const sourceUrls = sourceUrlsText.split('\n').map((item) => item.trim()).filter(Boolean).slice(0, 12);
   const competitorUrls = competitorUrlsText.split('\n').map((item) => item.trim()).filter(Boolean).slice(0, 5);
   const liveGenerationAvailable = provider.enabled && provider.configured;
+  const oneClickJob = jobs.find((job) => job.origin === 'trend_autopilot');
   const workflow = (post: BlogPost, action: 'hold' | 'cancel' | 'publish_now' | 'convert_manual') => run(
     () => runAdminBlogWorkflow(post.id, { action, reason: action === 'hold' ? 'Held for administrator review.' : action === 'cancel' ? 'Administrator cancelled scheduled publication.' : action === 'publish_now' ? 'Administrator approved immediate publication.' : 'Converted to the manual publication workflow.' }),
     action === 'hold' ? 'Article held for review.' : action === 'cancel' ? 'Scheduled publication cancelled.' : action === 'publish_now' ? 'Article published.' : 'Article converted to manual scheduling.',
@@ -114,7 +115,51 @@ export default function BlogAutomationPanel({ posts, onChanged }: { posts: BlogP
       {error && <div className="mt-5"><Notice tone="danger" title="Content operation failed">{error}</Notice></div>}
       {message && <div className="mt-5"><Notice tone="success">{message}</Notice></div>}
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{counters.map(([label, value, detail]) => <div key={String(label)} className="rounded-lg border border-border bg-muted/25 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold text-foreground">{value}</p><p className="mt-1 text-xs text-muted-foreground">{detail}</p></div>)}</div>
+      <section className="mt-5 rounded-lg border border-accent/30 bg-accent/5 p-5 sm:p-6" aria-labelledby="one-click-blog-title">
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <div>
+            <div className="flex items-center gap-2">
+              <Newspaper className="h-5 w-5 text-accent" />
+              <h4 id="one-click-blog-title" className="text-lg font-semibold text-foreground">Publish a useful SEO update</h4>
+            </div>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Crawlio checks approved and built-in official feeds, selects one recent relevant update, writes a sourced article, fills every SEO field, and publishes only when all quality gates pass.</p>
+          </div>
+          <button
+            type="button"
+            disabled={Boolean(busy) || !liveGenerationAvailable}
+            title={liveGenerationAvailable ? '' : 'Connect and enable Groq before using one-click publishing.'}
+            onClick={() => void run(
+              () => queueBlogJob({ mode: 'one_click', articleType: 'news_analysis', lengthMode: 'automatic', requestId: crypto.randomUUID() }),
+              'One-click article started. It will publish after every source, content, link, and HTML check passes.',
+              'one-click',
+            )}
+            className="trust-button min-h-12 justify-center px-5"
+          >
+            {busy === 'one-click' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            Research, write and publish
+          </button>
+        </div>
+        <div className="mt-5 grid gap-3 border-t border-accent/15 pt-4 sm:grid-cols-3">
+          {[
+            ['Current evidence', 'Uses recent official or administrator-approved sources.'],
+            ['Complete article', 'Creates the title, slug, sections, citations, links, tags, and search metadata.'],
+            ['Guarded publishing', 'Publishes only after substance, originality, source, link, and rendering checks pass.'],
+          ].map(([label, detail]) => <div key={label} className="flex gap-2 text-xs leading-5 text-muted-foreground"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /><span><strong className="font-semibold text-foreground">{label}.</strong> {detail}</span></div>)}
+        </div>
+        {oneClickJob && <div className="mt-4 rounded-lg border border-border bg-card p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div><p className="text-sm font-semibold text-foreground">Latest one-click article</p><p className="mt-1 text-xs text-muted-foreground">{oneClickJob.statusMessage}</p></div>
+            <StatusBadge tone={jobTone(oneClickJob.state)}>{oneClickJob.workflowStage.replaceAll('_', ' ')}</StatusBadge>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-accent transition-[width] duration-500" style={{ width: `${oneClickJob.stageProgress}%` }} /></div>
+          {oneClickJob.error && <p className="mt-2 text-xs text-red-600 dark:text-red-300">{oneClickJob.error}</p>}
+        </div>}
+      </section>
+
+      <details className="mt-5 rounded-lg border border-border bg-card">
+        <summary className="cursor-pointer px-4 py-4 text-sm font-semibold text-foreground">Advanced content controls <span className="ml-2 font-normal text-muted-foreground">Manual topics, batches, sources, schedules, and automation settings</span></summary>
+        <div className="border-t border-border p-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{counters.map(([label, value, detail]) => <div key={String(label)} className="rounded-lg border border-border bg-muted/25 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold text-foreground">{value}</p><p className="mt-1 text-xs text-muted-foreground">{detail}</p></div>)}</div>
 
       <div className="mt-6 rounded-lg border border-border p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h4 className="font-semibold text-foreground">Groq on Vercel</h4><p className="mt-1 text-xs text-muted-foreground">Structured: {provider.structuredModel} · Writer: {provider.writerModel} · {provider.baseUrlHost}. The key stays in Vercel server configuration.</p></div><div className="flex flex-wrap items-center gap-2"><StatusBadge tone={liveGenerationAvailable ? 'success' : provider.enabled ? 'warning' : 'neutral'}>{liveGenerationAvailable ? 'Ready' : provider.enabled ? 'Not configured' : 'Disabled'}</StatusBadge><button type="button" disabled={Boolean(busy)} onClick={() => void run(() => testAdminBlogProvider(), 'Provider connectivity test completed.', 'provider-test')} className="quiet-button">Test provider</button></div></div><div className="mt-3 grid gap-3 text-xs text-muted-foreground sm:grid-cols-2"><p><span className="font-semibold text-foreground">Execution:</span> Vercel server workflow with durable Supabase stages.</p><p><span className="font-semibold text-foreground">Available now:</span> manual writing, sources, calendar, images, review, and static publishing.</p><p><span className="font-semibold text-foreground">Requires provider:</span> live drafting, live section revision, and automatic drafting.</p><p><span className="font-semibold text-foreground">Dispatcher:</span> {overview.stalledVercelJobs ? `${overview.stalledVercelJobs} stalled job` : 'No stalled jobs'}.</p></div><p className="mt-3 text-xs text-muted-foreground">Review rollout: {overview.automaticApproved} approved of {settings.required_reviewed_articles_before_autopublish || 30} required. Strict Autopilot is {overview.strictAutopilotUnlocked ? 'available' : 'locked'}.</p></div>
       <label className="mt-3 flex items-start gap-3 text-sm"><input type="checkbox" checked={Boolean(settings.provider_enabled)} disabled={!provider.configured && !settings.provider_enabled} onChange={(event) => setSettings((value) => ({ ...value, provider_enabled: event.target.checked }))} className="mt-1 h-4 w-4" /><span><span className="font-semibold text-foreground">Enable Groq jobs after Vercel configuration</span><span className="block text-xs text-muted-foreground">Unavailable until Vercel has a valid key and `GROQ_BLOG_ENABLED=true`.</span></span></label>
@@ -148,6 +193,8 @@ export default function BlogAutomationPanel({ posts, onChanged }: { posts: BlogP
       {scheduled.length > 0 && <div className="mt-6 rounded-lg border border-border p-4"><h4 className="flex items-center gap-2 font-semibold text-foreground"><CalendarClock className="h-4 w-4 text-accent" /> Scheduled article controls</h4><div className="mt-4 space-y-3">{scheduled.map((post) => <div key={post.id} className="flex flex-col gap-3 rounded-lg bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold text-foreground">{post.title}</p><p className="mt-1 text-xs text-muted-foreground">{formatDate(post.scheduledAt)} · {post.origin.replaceAll('_', ' ')}</p></div><div className="flex flex-wrap gap-2"><button type="button" disabled={Boolean(busy)} onClick={() => void workflow(post, 'hold')} className="quiet-button">Hold for review</button><button type="button" disabled={Boolean(busy)} onClick={() => void workflow(post, 'cancel')} className="quiet-button">Cancel schedule</button><button type="button" disabled={Boolean(busy)} onClick={() => void workflow(post, 'convert_manual')} className="quiet-button">Make manual</button><button type="button" disabled={Boolean(busy)} onClick={() => void workflow(post, 'publish_now')} className="trust-button">Publish now</button></div></div>)}</div></div>}
       <div className="mt-6 rounded-lg border border-border p-4"><h4 className="font-semibold text-foreground">Review-first publishing controls</h4><div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={Boolean(settings.strict_autopilot_enabled)} disabled={!overview.strictAutopilotUnlocked} onChange={(event) => setSettings((value) => ({ ...value, strict_autopilot_enabled: event.target.checked }))} className="mt-1 h-4 w-4" /><span><span className="font-semibold text-foreground">Strict Autopilot</span><span className="block text-xs text-muted-foreground">Locked until the review threshold.</span></span></label><label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={Boolean(settings.emergency_pause)} onChange={(event) => setSettings((value) => ({ ...value, emergency_pause: event.target.checked }))} className="mt-1 h-4 w-4" /><span className="font-semibold text-foreground">Emergency pause</span></label><label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={Boolean(settings.pause_all_publication)} onChange={(event) => setSettings((value) => ({ ...value, pause_all_publication: event.target.checked }))} className="mt-1 h-4 w-4" /><span className="font-semibold text-foreground">Pause publication</span></label><FormField label="Review threshold" htmlFor="review-threshold"><input id="review-threshold" type="number" min="30" max="50" value={settings.required_reviewed_articles_before_autopublish ?? 30} onChange={(event) => setSettings((value) => ({ ...value, required_reviewed_articles_before_autopublish: Number(event.target.value) }))} className="suite-input" /></FormField></div><button type="button" disabled={Boolean(busy)} onClick={() => void run(() => saveBlogAutomationSettings(settings), 'Publishing controls saved.', 'rollout-settings')} className="quiet-button mt-4"><Save className="h-4 w-4" /> Save publishing controls</button></div>
       <div className="mt-6"><BlogContentCalendar posts={posts} settings={settings} onChanged={() => { void load(); onChanged(); }} /></div>
+        </div>
+      </details>
     </Panel>
   );
 }

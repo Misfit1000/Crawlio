@@ -60,7 +60,7 @@ export async function saveBlogAutomationSettings(settings: Record<string, unknow
   });
 }
 
-export async function queueBlogJob(input: { mode: 'manual' | 'custom_headline' | 'discover' | 'fixture'; topic?: string; headline?: string; audience?: string; keywords?: string; feedUrls?: string[]; sourceUrls?: string[]; competitorUrls?: string[]; requestId?: string; articleType?: string; lengthMode?: string; customMinimum?: number; customMaximum?: number; fixtureScenario?: BlogFixtureScenario }) {
+export async function queueBlogJob(input: { mode: 'manual' | 'custom_headline' | 'discover' | 'one_click' | 'fixture'; topic?: string; headline?: string; audience?: string; keywords?: string; feedUrls?: string[]; sourceUrls?: string[]; competitorUrls?: string[]; requestId?: string; articleType?: string; lengthMode?: string; customMinimum?: number; customMaximum?: number; fixtureScenario?: BlogFixtureScenario }) {
   return request<{ job: BlogGenerationJob }>(API_ROUTES.adminBlogJobs, {
     method: 'POST', headers: await getAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(input),
   });

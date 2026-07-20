@@ -43,6 +43,7 @@ export interface SafePublicFetchOptions {
   maxRedirects?: number;
   maxBytes?: number;
   allowedContentTypes?: string[];
+  allowMissingContentType?: boolean;
   userAgent?: string;
   allowPrivateForTesting?: boolean;
   allowNonStandardPortsForTesting?: boolean;
@@ -298,6 +299,7 @@ export async function safePublicFetch(value: string, input: SafePublicFetchOptio
     maxRedirects: input.maxRedirects ?? 5,
     maxBytes: input.maxBytes ?? 2_000_000,
     allowedContentTypes: input.allowedContentTypes ?? ['text/html', 'application/xhtml+xml'],
+    allowMissingContentType: input.allowMissingContentType ?? false,
     userAgent: input.userAgent ?? 'CrawlioBot/1.0 (+https://keywordsintel.vercel.app/)',
     allowPrivateForTesting: input.allowPrivateForTesting ?? false,
     allowNonStandardPortsForTesting: input.allowNonStandardPortsForTesting ?? false,
@@ -337,7 +339,11 @@ export async function safePublicFetch(value: string, input: SafePublicFetchOptio
     }
 
     const contentType = response.headers['content-type'] || '';
-    if (response.body && !contentTypeAllowed(contentType, options.allowedContentTypes)) {
+    if (
+      response.body
+      && !(options.allowMissingContentType && !contentType)
+      && !contentTypeAllowed(contentType, options.allowedContentTypes)
+    ) {
       throw new PublicFetchError('UNSUPPORTED_CONTENT_TYPE', `Unsupported response content type: ${contentType || 'unknown'}.`);
     }
     return {

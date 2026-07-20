@@ -87,7 +87,9 @@ export function publicationBlockers(input: {
   imageStatus: string;
   prerenderStatus: string;
 }) {
-  const blockers = [...input.qualityReport.blockedReasons];
+  const blockers = input.qualityReport.checks
+    .filter((item) => item.critical && !item.passed)
+    .map((item) => `${item.label}: ${item.detail}`);
   if (input.originalityStatus !== 'passed') blockers.push('Originality review has not passed');
   if (input.sourceStatus !== 'passed') blockers.push('Source verification has not passed');
   if (!['passed', 'not_required'].includes(input.imageStatus)) blockers.push('Image validation has not passed');

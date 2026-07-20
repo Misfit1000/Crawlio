@@ -830,13 +830,24 @@ apiRouter.post('/admin/blog/trends/:id/action', asyncJsonRoute(async (req, res) 
   if (!discovery) throw new ApiError('BLOG_TREND_NOT_FOUND', 'Trend discovery not found.', 404);
   let job = null;
   if (action === 'create_draft') {
-    requireBlogFixtureProvider();
+    const [providerConfiguration, settings] = await Promise.all([Promise.resolve(getGroqBlogConfiguration()), blogAutomationRepository.getSettings()]);
+    if (!providerConfiguration.enabled || !providerConfiguration.configured || settings.provider_enabled !== true) {
+      throw new ApiError('BLOG_PROVIDER_NOT_READY', 'Creating a sourced trend draft requires a connected Groq provider.', 503);
+    }
     job = await blogAutomationRepository.createJob({
-      origin: 'admin_manual', topic: String(discovery.source_title || ''), requestedBy: requester.userId,
-      provider: BLOG_FIXTURE_PROVIDER, model: BLOG_FIXTURE_MODEL,
-      payload: { jobType: 'generate_article', fixtureScenario: 'news', articleType: 'urgent_news', topicCluster: discovery.topic_cluster, discoveryId: discovery.id },
-      idempotencyKey: blogJobIdempotencyKey({ origin: 'admin_manual', topic: `fixture-trend:${discovery.id}`, dateBucket: new Date().toISOString().slice(0, 13) }),
+      origin: 'trend_autopilot', topic: String(discovery.source_title || ''), requestedBy: requester.userId,
+      provider: 'groq', model: GROQ_DEFAULT_STRUCTURED_MODEL,
+      payload: {
+        jobType: 'generate_article',
+        articleType: Number(discovery.age_hours || 999) <= 48 ? 'urgent_news' : 'news_analysis',
+        lengthMode: 'automatic',
+        topicCluster: discovery.topic_cluster,
+        discoveryId: discovery.id,
+        sourceUrls: [String(discovery.source_url || '')].filter(Boolean),
+      },
+      idempotencyKey: blogJobIdempotencyKey({ origin: 'trend_autopilot', topic: `trend:${discovery.id}`, dateBucket: new Date().toISOString().slice(0, 13) }),
     });
+    requestImmediateBlogDispatch(req, job.id);
   }
   await logBlogAction(requester.userId, `blog_trend_${action}`, req.params.id, { jobId: job?.id || null });
   res.json({ success: true, data: { discovery, job } });
@@ -917,18 +928,33 @@ apiRouter.post('/admin/blog/jobs', asyncJsonRoute(async (req, res) => {
   const requester = await requireAdminRequester(req, res);
   if (!requester) return;
   const mode = String(req.body?.mode || 'manual');
-  if (!['manual', 'custom_headline', 'discover', 'fixture'].includes(mode)) throw new ApiError('BLOG_JOB_MODE_INVALID', 'Choose a supported blog job type.', 400);
+  if (!['manual', 'custom_headline', 'discover', 'one_click', 'fixture'].includes(mode)) throw new ApiError('BLOG_JOB_MODE_INVALID', 'Choose a supported blog job type.', 400);
   if (mode === 'fixture') requireBlogFixtureProvider();
-  const origin = mode === 'custom_headline' ? 'admin_custom_headline' : mode === 'discover' ? 'autopilot' : 'admin_manual';
+  if (mode === 'one_click') {
+    const [providerConfiguration, settings] = await Promise.all([Promise.resolve(getGroqBlogConfiguration()), blogAutomationRepository.getSettings()]);
+    if (!providerConfiguration.enabled || !providerConfiguration.configured || settings.provider_enabled !== true) {
+      throw new ApiError('BLOG_PROVIDER_NOT_READY', 'One-click publishing requires a connected Groq provider enabled in Blog Studio.', 503);
+    }
+    if (settings.pause_all_publication === true || settings.emergency_pause === true || settings.maintenance_mode === true) {
+      throw new ApiError('BLOG_PUBLICATION_PAUSED', 'Blog publication is currently paused in advanced controls.', 409);
+    }
+  }
+  const origin = mode === 'custom_headline'
+    ? 'admin_custom_headline'
+    : mode === 'one_click'
+      ? 'trend_autopilot'
+      : mode === 'discover'
+        ? 'autopilot'
+        : 'admin_manual';
   const topic = String(req.body?.topic || '').replace(/\s+/g, ' ').trim().slice(0, 240);
   const headline = String(req.body?.headline || '').replace(/\s+/g, ' ').trim().slice(0, 140);
-  if (mode !== 'discover' && (mode === 'custom_headline' ? headline.length < 8 : topic.length < 5)) throw new ApiError('BLOG_JOB_INPUT_REQUIRED', mode === 'custom_headline' ? 'Enter a specific headline.' : 'Enter a specific topic.', 400);
+  if (!['discover', 'one_click'].includes(mode) && (mode === 'custom_headline' ? headline.length < 8 : topic.length < 5)) throw new ApiError('BLOG_JOB_INPUT_REQUIRED', mode === 'custom_headline' ? 'Enter a specific headline.' : 'Enter a specific topic.', 400);
   if (mode === 'custom_headline') {
     const duplicate = (await blogRepository.listAdmin(200)).find((post) => post.title.toLowerCase() === headline.toLowerCase());
     if (duplicate && req.body?.allowDuplicate !== true) throw new ApiError('DUPLICATE_BLOG_HEADLINE', `A post already uses this headline: ${duplicate.title}`, 409);
   }
   const current = new Date();
-  const dateBucket = mode === 'discover'
+  const dateBucket = mode === 'discover' || mode === 'one_click'
     ? current.toISOString().slice(0, 13)
     : `${current.toISOString().slice(0, 13)}:${Math.floor(current.getUTCMinutes() / 10)}`;
   const job = await blogAutomationRepository.createJob({
@@ -939,15 +965,16 @@ apiRouter.post('/admin/blog/jobs', asyncJsonRoute(async (req, res) => {
     provider: mode === 'fixture' ? BLOG_FIXTURE_PROVIDER : 'groq',
     model: mode === 'fixture' ? BLOG_FIXTURE_MODEL : GROQ_DEFAULT_STRUCTURED_MODEL,
     payload: {
-      jobType: mode === 'discover' ? 'discover_trends' : 'generate_article',
+      jobType: mode === 'discover' ? 'discover_trends' : mode === 'one_click' ? 'one_click_trend' : 'generate_article',
       manualDiscovery: mode === 'discover',
+      publishWhenReady: mode === 'one_click',
       audience: String(req.body?.audience || '').slice(0, 240),
       keywords: String(req.body?.keywords || '').slice(0, 300),
       feedUrls: Array.isArray(req.body?.feedUrls) ? req.body.feedUrls.slice(0, 20) : undefined,
       sources: Array.isArray(req.body?.sources) ? req.body.sources.slice(0, 12) : undefined,
       sourceUrls: Array.isArray(req.body?.sourceUrls) ? req.body.sourceUrls.slice(0, 12).map(String) : undefined,
       competitorUrls: Array.isArray(req.body?.competitorUrls) ? req.body.competitorUrls.slice(0, 5).map(String) : undefined,
-      articleType: normalizeBlogArticleType(req.body?.articleType, mode === 'discover' ? 'news_analysis' : 'evergreen_guide'),
+      articleType: normalizeBlogArticleType(req.body?.articleType, mode === 'discover' || mode === 'one_click' ? 'news_analysis' : 'evergreen_guide'),
       lengthMode: ['automatic', 'brief', 'standard', 'detailed', 'custom'].includes(String(req.body?.lengthMode)) ? String(req.body.lengthMode) : 'automatic',
       customMinimum: Math.max(500, Math.min(3500, Number(req.body?.customMinimum) || 0)),
       customMaximum: Math.max(500, Math.min(4000, Number(req.body?.customMaximum) || 0)),

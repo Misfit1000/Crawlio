@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { blogAutomationRepository } from '../automation-repository';
 import { publicationBlockers } from '../automation';
-import { discoverApprovedFeedItems } from '../discovery';
+import { resolvedBlogFeedUrls } from '../default-sources';
+import { discoverApprovedFeedItems, selectBestBlogTrend } from '../discovery';
 import { BLOG_FIXTURE_PROVIDER, generateBlogFixture, regenerateFixtureSection } from '../fixture-provider';
 import { cleanupOrphanedBlogImageVariants, importBlogImage } from '../images';
+import { resolveBlogLengthRange } from '../length-policy';
 import { evaluateBlogQuality } from '../quality';
 import { renderBlogArticleHtml } from '../render';
 import { buildCompetitorGapBrief, researchCompetitorReferences, researchSourceUrls } from '../research';
@@ -62,6 +64,33 @@ function sourcesFromJob(job: BlogGenerationJob) {
   return (Array.isArray(job.stageOutputs.sources) ? job.stageOutputs.sources : Array.isArray(job.payload.sources) ? job.payload.sources : []) as BlogSource[];
 }
 
+function articleTopic(job: BlogGenerationJob, outputs: Record<string, unknown>) {
+  const trend = outputs.selectedTrend as Record<string, unknown> | undefined;
+  return job.customHeadline || job.topic || String(trend?.sourceTitle || trend?.source_title || '');
+}
+
+function escapeArticleText(value: unknown) {
+  return String(value || '').replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[character] || character);
+}
+
+export function completeGeneratedArticleLinks(contentHtml: string, sources: BlogSource[]) {
+  let html = sanitizeBlogHtml(contentHtml);
+  const hrefs = () => [...html.matchAll(/href=["']([^"']+)/gi)].map((match) => match[1]);
+  const missingSources = sources.filter((source) => !hrefs().includes(source.url));
+  const internalLinks = hrefs().filter((href) => /^\/(?!\/)/.test(href));
+  const additions: string[] = [];
+  if (missingSources.length) {
+    additions.push(`<p>Review the original evidence from ${missingSources.map((source) => `<a href="${escapeArticleText(source.url)}">${escapeArticleText(source.title)}</a>`).join(' and ')}.</p>`);
+  }
+  if (!internalLinks.includes('/blog')) additions.push('<p>Browse more practical guidance in the <a href="/blog">Crawlio SEO article library</a>.</p>');
+  if (internalLinks.length + Number(!internalLinks.includes('/blog')) < 2 && !internalLinks.includes('/#start-audit')) {
+    additions.push('<p>Apply these checks to a public website with the <a href="/#start-audit">Crawlio website audit</a>.</p>');
+  }
+  return additions.length ? `${html}<h2>Sources and next steps</h2>${additions.join('')}` : html;
+}
+
 async function runStructured<T>(job: BlogGenerationJob, stage: BlogWorkflowStage, prompt: string, validate: (value: unknown) => value is T) {
   if (job.provider === BLOG_FIXTURE_PROVIDER) return { data: { fixture: true, stage, topic: job.topic } as T, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, model: 'deterministic-fixture' };
   return generateGroqStructured({
@@ -94,6 +123,26 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
       const discovery = await processDiscovery(job);
       return { output: { discovery }, next: 'ready_for_review', state: 'ready_for_review', message: `Source discovery completed (${discovery.discovered} items)` };
     }
+    if (jobType === 'one_click_trend') {
+      const settings = await blogAutomationRepository.getSettings();
+      const feedUrls = resolvedBlogFeedUrls(Array.isArray(job.payload.feedUrls) ? job.payload.feedUrls : settings.approved_feed_urls);
+      const posts = await blogRepository.listAdmin(300);
+      const opportunities = await discoverApprovedFeedItems({ feedUrls, existingTitles: posts.map((post) => post.title) });
+      const stored = [];
+      for (const opportunity of opportunities) {
+        stored.push(await blogAutomationRepository.upsertDiscovery({
+          ...opportunity,
+          status: opportunity.existingCoverage ? 'covered' : opportunity.freshnessStatus === 'high' ? 'high_priority' : 'monitor',
+          priorityLabel: opportunity.existingCoverage ? 'Already covered' : 'One-click candidate',
+        }));
+      }
+      const selectedTrend = selectBestBlogTrend(opportunities);
+      if (!selectedTrend) throw new Error('No recent, relevant SEO update passed the freshness and source-quality checks. Try again when an official source publishes a suitable update.');
+      const sources = await researchSourceUrls([selectedTrend.sourceUrl]);
+      const selectedRow = stored.find((item) => item.source_url === selectedTrend.sourceUrl);
+      if (selectedRow?.id) await blogAutomationRepository.updateDiscovery(selectedRow.id, { status: 'selected' });
+      return { output: { sources, competitors: [], selectedTrend }, message: `Selected a timely update from ${selectedTrend.publisher}` };
+    }
     const supplied = Array.isArray(job.payload.sourceUrls) ? job.payload.sourceUrls.map(String).slice(0, 12) : [];
     const sources = supplied.length ? await researchSourceUrls(supplied) : sourcesFromJob(job);
     const competitorUrls = Array.isArray(job.payload.competitorUrls) ? job.payload.competitorUrls.map(String).slice(0, 5) : [];
@@ -105,7 +154,7 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
     return { output: { sourceValidation: { count: sources.length, verified: sources.filter((source) => source.citationStatus === 'verified').length, requiresReview: sources.length === 0 } }, message: sources.length ? 'Source records validated' : 'No external source supplied; review required' };
   }
   if (stage === 'topic_evaluation') {
-    const result = await runStructured(job, stage, `Evaluate this article topic and return {"mainQuestion":"","audience":"","searchIntent":"","safeToDraft":true}. Topic: ${safeEvidence({ topic: job.topic, headline: job.customHeadline, audience: job.payload.audience })}.`, (value): value is any => hasStrings(value, ['mainQuestion', 'audience', 'searchIntent']) && typeof (value as any).safeToDraft === 'boolean');
+    const result = await runStructured(job, stage, `Evaluate this article topic and return {"mainQuestion":"","audience":"","searchIntent":"","safeToDraft":true}. Topic: ${safeEvidence({ topic: articleTopic(job, outputs), trend: outputs.selectedTrend, audience: job.payload.audience })}.`, (value): value is any => hasStrings(value, ['mainQuestion', 'audience', 'searchIntent']) && typeof (value as any).safeToDraft === 'boolean');
     return { output: { topicEvaluation: result.data, providerUsage: result.usage, structuredModel: result.model }, message: 'Topic and audience evaluated' };
   }
   if (stage === 'research_organisation') {
@@ -113,12 +162,12 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
     return { output: { research: result.data, providerUsage: result.usage, structuredModel: result.model }, message: 'Research notes organised' };
   }
   if (stage === 'content_gap_analysis') {
-    const deterministic = buildCompetitorGapBrief((outputs.competitors as any[]) || [], [job.customHeadline || job.topic]);
+    const deterministic = buildCompetitorGapBrief((outputs.competitors as any[]) || [], [articleTopic(job, outputs)]);
     const result = await runStructured(job, stage, `Return {"coveredSubtopics":[],"contentGaps":[],"proposedOriginalAngle":""}. Evidence: ${safeEvidence({ deterministic, research: outputs.research })}.`, (value): value is any => isObject(value) && Array.isArray(value.coveredSubtopics) && Array.isArray(value.contentGaps) && typeof value.proposedOriginalAngle === 'string');
     return { output: { contentGap: result.data }, message: 'Content gaps identified' };
   }
   if (stage === 'brief_generation') {
-    const result = await runStructured(job, stage, `Return {"title":"","tagline":"","summary":"","articleType":"","focusKeyword":""}. Preserve this exact headline when present: ${safeEvidence(job.customHeadline)}. Context: ${safeEvidence({ topic: job.topic, research: outputs.research, contentGap: outputs.contentGap, articleType: job.payload.articleType })}.`, (value): value is any => hasStrings(value, ['title', 'tagline', 'summary', 'articleType', 'focusKeyword']));
+    const result = await runStructured(job, stage, `Return {"title":"","tagline":"","summary":"","articleType":"","focusKeyword":""}. Preserve this exact headline when present: ${safeEvidence(job.customHeadline)}. Context: ${safeEvidence({ topic: articleTopic(job, outputs), trend: outputs.selectedTrend, research: outputs.research, contentGap: outputs.contentGap, articleType: job.payload.articleType })}.`, (value): value is any => hasStrings(value, ['title', 'tagline', 'summary', 'articleType', 'focusKeyword']));
     return { output: { brief: result.data }, message: 'Editorial brief created' };
   }
   if (stage === 'outline_generation') {
@@ -141,13 +190,16 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
       const fixture = generateBlogFixture({ topic: job.topic, headline: job.customHeadline, articleType: String(job.payload.articleType || 'evergreen_guide') as any, scenario: String(job.payload.fixtureScenario || 'evergreen') as any });
       return { output: { draft: fixture, fixtureLabel: fixture.fixtureLabel }, message: 'Fixture draft assembled' };
     }
-    const result = await runStructured(job, stage, `Draft the article and return {"title":"","excerpt":"","tagline":"","summary":"","contentHtml":"","focusKeyword":"","tags":[]}. Do not include an H1 in contentHtml. Use semantic p,h2,h3,ul,ol,li,strong,em,blockquote,pre,code,a elements. Include only verified external references supplied here and useful internal links to /blog pages. Brief: ${safeEvidence(outputs.brief)}. Outline: ${safeEvidence(outputs.outline)}. Sources: ${safeEvidence(sourcesFromJob(job))}.`, (value): value is any => hasStrings(value, ['title', 'excerpt', 'tagline', 'summary', 'contentHtml', 'focusKeyword']) && Array.isArray((value as any).tags));
+    const length = resolveBlogLengthRange({ articleType: job.payload.articleType, mode: String(job.payload.lengthMode || 'automatic'), customMinimum: Number(job.payload.customMinimum), customMaximum: Number(job.payload.customMaximum) });
+    const result = await runStructured(job, stage, `Draft the article and return {"title":"","excerpt":"","tagline":"","summary":"","contentHtml":"","focusKeyword":"","tags":[]}. Write ${length.minimum}-${length.maximum} useful words without filler. Do not include an H1 in contentHtml. Use semantic p,h2,h3,ul,ol,li,strong,em,blockquote,pre,code,a elements. Link every supplied source URL with descriptive anchor text. Include useful internal links to /blog and /#start-audit. Clearly distinguish verified facts from practical interpretation. Brief: ${safeEvidence(outputs.brief)}. Outline: ${safeEvidence(outputs.outline)}. Trend: ${safeEvidence(outputs.selectedTrend)}. Sources: ${safeEvidence(sourcesFromJob(job))}.`, (value): value is any => hasStrings(value, ['title', 'excerpt', 'tagline', 'summary', 'contentHtml', 'focusKeyword'])
+      && Array.isArray((value as any).tags)
+      && blogTextFromHtml(String((value as any).contentHtml)).split(/\s+/).filter(Boolean).length >= length.minimum);
     return { output: { draft: result.data, providerUsage: result.usage, writerModel: result.model }, message: 'Article sections drafted' };
   }
   if (stage === 'article_assembly') {
     const draft = outputs.draft as any;
     if (!draft?.contentHtml) throw new Error('The drafting stage did not produce article content.');
-    const contentHtml = sanitizeBlogHtml(String(draft.contentHtml));
+    const contentHtml = completeGeneratedArticleLinks(String(draft.contentHtml), sourcesFromJob(job));
     return { output: { assembled: { ...draft, title: job.customHeadline || draft.title, contentHtml, suggestedSlug: createBlogSlug(job.customHeadline || draft.title), contentText: blogTextFromHtml(contentHtml) } }, message: 'Article assembled and sanitized' };
   }
   if (stage === 'editorial_review') return { output: { editorialReview: { mode: 'review_first', reviewedByHuman: false } }, message: 'Draft prepared for review-first workflow' };
@@ -192,12 +244,15 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
       title: String(draft.title), slug: String(draft.suggestedSlug), excerpt: String(draft.excerpt), tagline: String(draft.tagline), summary: String(draft.summary),
       contentHtml: String(draft.contentHtml), focusKeyword: String(draft.focusKeyword), tags: Array.isArray(draft.tags) ? draft.tags.map(String) : [],
       seoTitle: String(metadata.seoTitle || draft.title), metaDescription: String(metadata.metaDescription || draft.excerpt), status: fixture ? 'draft' : 'needs_review',
-      origin: fixture ? 'admin_manual' : job.origin, articleType: String(job.payload.articleType || 'evergreen_guide'), topicCluster: String(job.payload.topicCluster || draft.focusKeyword),
-      freshnessStatus: job.origin === 'trend_autopilot' ? 'high' : 'evergreen', sources, sourceStatus: sources.length ? 'passed' : 'needs_review',
+      origin: fixture ? 'admin_manual' : job.origin, articleType: String(job.payload.articleType || 'evergreen_guide'), topicCluster: String(job.payload.topicCluster || (outputs.selectedTrend as any)?.topicCluster || draft.focusKeyword),
+      freshnessStatus: job.origin === 'trend_autopilot'
+        ? ((outputs.selectedTrend as any)?.freshnessStatus || 'unverified')
+        : 'evergreen',
+      sources, sourceStatus: sources.length ? 'passed' : 'needs_review',
       originalityStatus: (outputs.originality as any)?.passed === false ? 'blocked' : 'passed', imageStatus: (outputs.image as any)?.status || 'not_required',
       prerenderStatus: 'pending', generationJobId: job.id, batchId: job.batchId, publicationReason: fixture ? 'Fixture test content. Private and noindex.' : 'Vercel staged workflow; human review required.', fixtureTest: fixture,
     };
-    const quality = evaluateBlogQuality(input, { requireSources: sources.length > 0 });
+    const quality = evaluateBlogQuality(input, { requireSources: Boolean(job.payload.publishWhenReady) || sources.length > 0 });
     input.qualityStatus = quality.status;
     input.qualityResults = quality;
     const blockers = publicationBlockers({ qualityReport: quality, originalityStatus: input.originalityStatus || 'pending', sourceStatus: input.sourceStatus || 'pending', imageStatus: input.imageStatus || 'not_required', prerenderStatus: 'passed' });
@@ -216,9 +271,27 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
     const html = renderBlogArticleHtml(post, canonicalSiteOrigin());
     if ((html.match(/<h1>/g) || []).length !== 1 || !html.includes('application/ld+json')) throw new Error('Initial article HTML validation failed.');
     post = (await blogRepository.update(post.id, { prerender_status: 'passed', robots_directive: fixture ? 'noindex,nofollow' : post.robotsDirective })) || post;
+    const claimValidationPassed = (outputs.claimValidation as any)?.claimsSupported === true;
+    const publishNow = job.payload.publishWhenReady === true && blockers.length === 0 && claimValidationPassed && !fixture;
+    if (publishNow) {
+      const publishedRow = prepareBlogPost({
+        ...post,
+        status: 'published',
+        publishedAt: new Date().toISOString(),
+        sourceStatus: 'passed',
+        originalityStatus: 'passed',
+        prerenderStatus: 'passed',
+        imageStatus: post.imageStatus || 'not_required',
+        publicationReason: 'Administrator requested guarded one-click publication; all automated evidence and quality gates passed.',
+      }, { publishing: true });
+      post = (await blogRepository.update(post.id, { ...publishedRow, reviewer_id: job.requestedBy, updated_by: job.requestedBy })) || post;
+      await blogAutomationRepository.recordAutomaticReview(true);
+    }
     await blogRepository.syncEditorialRecords(post, job.requestedBy, '');
-    await blogAutomationRepository.updateJob(job.id, { articleId: post.id, result: { articleId: post.id, blockers, qualityStatus: quality.status }, inputTokens: Number((outputs.providerUsage as any)?.inputTokens || 0), outputTokens: Number((outputs.providerUsage as any)?.outputTokens || 0), completedAt: new Date().toISOString() });
-    return { output: { articleId: post.id, blockers }, next: 'ready_for_review', state: 'ready_for_review', message: 'Draft is ready for editorial review' };
+    await blogAutomationRepository.updateJob(job.id, { articleId: post.id, result: { articleId: post.id, blockers, qualityStatus: quality.status, published: publishNow }, inputTokens: Number((outputs.providerUsage as any)?.inputTokens || 0), outputTokens: Number((outputs.providerUsage as any)?.outputTokens || 0), completedAt: new Date().toISOString() });
+    return publishNow
+      ? { output: { articleId: post.id, blockers: [] }, next: 'published', state: 'published', message: 'Article passed every gate and was published' }
+      : { output: { articleId: post.id, blockers }, next: 'ready_for_review', state: 'ready_for_review', message: blockers.length ? 'Draft saved for review because publication checks need attention' : 'Draft is ready for editorial review' };
   }
   return { output: {}, next: 'ready_for_review', state: 'ready_for_review', message: 'Workflow is ready for editorial review' };
 }

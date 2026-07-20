@@ -45,13 +45,19 @@ export async function discoverApprovedFeedItems(input: {
   const opportunities: BlogTrendOpportunity[] = [];
 
   for (const feedUrl of [...new Set(input.feedUrls)].slice(0, 20)) {
-    const response = await safePublicFetch(feedUrl, {
-      timeoutMs: 8_000,
-      maxRedirects: 3,
-      maxBytes: 1_500_000,
-      allowedContentTypes: ['application/rss+xml', 'application/atom+xml', 'application/xml', 'text/xml', 'text/rss+xml'],
-      userAgent: 'CrawlioEditorialBot/1.0 (+https://keywordsintel.vercel.app/)',
-    });
+    let response: Awaited<ReturnType<typeof safePublicFetch>>;
+    try {
+      response = await safePublicFetch(feedUrl, {
+        timeoutMs: 8_000,
+        maxRedirects: 3,
+        maxBytes: 1_500_000,
+        allowedContentTypes: ['application/rss+xml', 'application/atom+xml', 'application/xml', 'text/xml', 'text/rss+xml'],
+        allowMissingContentType: true,
+        userAgent: 'CrawlioEditorialBot/1.0 (+https://keywordsintel.vercel.app/)',
+      });
+    } catch {
+      continue;
+    }
     if (response.status < 200 || response.status >= 300) continue;
     const $ = load(response.body, { xmlMode: true });
     const publisher = $('channel > title').first().text().trim() || $('feed > title').first().text().trim() || new URL(response.finalUrl).hostname;
@@ -99,4 +105,30 @@ export async function discoverApprovedFeedItems(input: {
     }
   }
   return opportunities;
+}
+
+export function selectBestBlogTrend(opportunities: BlogTrendOpportunity[]) {
+  const freshnessWeight: Record<string, number> = { high: 4, medium: 3, low: 2, evergreen: 1, unverified: 0, expired: -1 };
+  return opportunities
+    .filter((item) => !item.existingCoverage)
+    .filter((item) => (
+      item.freshnessStatus === 'high'
+      || item.freshnessStatus === 'medium'
+      || (item.freshnessStatus === 'low' && item.ageHours != null && item.ageHours <= 45 * 24)
+    ))
+    .filter((item) => item.audienceRelevance >= 0.48 && item.sourceAuthority >= 0.7)
+    .sort((left, right) => {
+      const leftScore = (freshnessWeight[left.freshnessStatus || 'unverified'] || 0) * 10
+        + left.audienceRelevance * 5
+        + left.sourceAuthority * 3
+        + left.novelty * 2
+        + (left.primarySource ? 2 : 0);
+      const rightScore = (freshnessWeight[right.freshnessStatus || 'unverified'] || 0) * 10
+        + right.audienceRelevance * 5
+        + right.sourceAuthority * 3
+        + right.novelty * 2
+        + (right.primarySource ? 2 : 0);
+      if (rightScore !== leftScore) return rightScore - leftScore;
+      return new Date(right.publishedAt).getTime() - new Date(left.publishedAt).getTime();
+    })[0] || null;
 }

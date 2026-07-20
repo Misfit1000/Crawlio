@@ -64,6 +64,7 @@ export default function BlogProviderFreeWorkspace() {
   );
   const [jobs, setJobs] = useState<Array<Record<string, any>>>([]);
   const [fixtureAvailable, setFixtureAvailable] = useState(false);
+  const [liveProviderAvailable, setLiveProviderAvailable] = useState(false);
   const [draft, setDraft] = useState<Partial<BlogApprovedSource>>(EMPTY_SOURCE);
   const [editingId, setEditingId] = useState("");
   const [busy, setBusy] = useState("");
@@ -83,6 +84,7 @@ export default function BlogProviderFreeWorkspace() {
       setOperations(operationData.snapshot);
       setJobs(operationData.jobs);
       setFixtureAvailable(Boolean(dashboard.provider.fixtureAvailable));
+      setLiveProviderAvailable(Boolean(dashboard.provider.enabled && dashboard.provider.configured));
       setError("");
     } catch (requestError) {
       setError(
@@ -606,7 +608,7 @@ export default function BlogProviderFreeWorkspace() {
                 </div>
                 <div className="flex flex-wrap gap-2 lg:max-w-72 lg:justify-end">
                   {[
-                    ["create_draft", "Create fixture draft"],
+                    ["create_draft", "Create sourced draft"],
                     ["add_to_calendar", "Add to calendar"],
                     ["add_to_research", "Add to research"],
                     ["link_existing", "Link to article"],
@@ -618,10 +620,10 @@ export default function BlogProviderFreeWorkspace() {
                     <button
                       key={action}
                       type="button"
-                      disabled={action === "create_draft" && !fixtureAvailable}
+                      disabled={action === "create_draft" && !liveProviderAvailable}
                       title={
-                        action === "create_draft" && !fixtureAvailable
-                          ? "Fixture generation is disabled in this environment."
+                        action === "create_draft" && !liveProviderAvailable
+                          ? "Connect and enable Groq to create a sourced draft."
                           : ""
                       }
                       onClick={() =>

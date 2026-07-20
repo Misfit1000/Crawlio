@@ -120,6 +120,11 @@ assert.equal(blogJobIdempotencyKey({ origin: 'autopilot', topic: 'same', dateBuc
 assert.ok(publicationBlockers({ qualityReport: quality, originalityStatus: 'blocked', sourceStatus: 'passed', imageStatus: 'not_required', prerenderStatus: 'passed' }).some((item) => /Originality/.test(item)));
 assert.ok(publicationBlockers({ qualityReport: quality, originalityStatus: 'passed', sourceStatus: 'blocked', imageStatus: 'not_required', prerenderStatus: 'passed' }).some((item) => /Source/.test(item)));
 assert.ok(publicationBlockers({ qualityReport: quality, originalityStatus: 'passed', sourceStatus: 'passed', imageStatus: 'not_required', prerenderStatus: 'blocked' }).some((item) => /prerender/.test(item)));
+const incompleteQuality = evaluateBlogQuality({ ...input, contentHtml: '<h2>Short draft</h2><p>Not ready.</p>', sources: [] }, { requireSources: true, now });
+const incompleteBlockers = publicationBlockers({ qualityReport: incompleteQuality, originalityStatus: 'passed', sourceStatus: 'passed', imageStatus: 'not_required', prerenderStatus: 'passed' });
+assert.ok(incompleteBlockers.some((item) => /Article contains enough useful substance: \d+ words found; at least 500 are required\./.test(item)));
+assert.ok(incompleteBlockers.some((item) => /Required research sources are recorded: 0 research sources recorded; add a source URL, title, and publisher\./.test(item)));
+assert.ok(incompleteBlockers.some((item) => /At least two internal links are crawlable: 0 internal links checked; add at least two relative links/.test(item)));
 
 const png = Buffer.alloc(33);
 Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(png, 0);

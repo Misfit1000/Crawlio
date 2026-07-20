@@ -82,7 +82,7 @@ for (const requirement of [
   /og:site_name/,
   /twitter:title/,
   /\/blog\/topic\/technical-seo/,
-  /Reviewed for clarity, source use, and practical value/,
+  /Checked for source links, structure, originality signals, and practical value/,
   /Start free audit/,
 ]) assert.match(article, requirement);
 assert.doesNotMatch(listing + article, /GROQ_API_KEY|SUPABASE_SERVICE_ROLE_KEY|fixture test/i);
