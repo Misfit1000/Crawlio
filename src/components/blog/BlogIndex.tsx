@@ -69,6 +69,15 @@ export default function BlogIndex() {
             </label>
             <button type="submit" className="trust-button">Search articles</button>
           </form>
+          {result?.topics?.length ? (
+            <nav aria-label="Article topics" className="mt-4 flex gap-2 overflow-x-auto border-t border-border pt-4">
+              {result.topics.slice(0, 12).map((topic) => (
+                <a key={topic.slug} href={`/blog/topic/${topic.slug}`} className="shrink-0 rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:border-accent hover:text-accent">
+                  {topic.name} <span className="tabular-nums">({topic.articleCount})</span>
+                </a>
+              ))}
+            </nav>
+          ) : null}
         </Panel>
 
         {error && <Notice tone="danger" title="Blog unavailable">{error}</Notice>}

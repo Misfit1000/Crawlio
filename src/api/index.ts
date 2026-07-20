@@ -24,6 +24,7 @@ import { normalizeBlogSlug } from '../lib/blog/slug';
 import { BlogValidationError, prepareBlogPost } from '../lib/blog/validation';
 import { canonicalSiteOrigin, renderBlogNewsSitemap, renderBlogRss, renderBlogSitemap } from '../lib/blog/sitemap';
 import { renderBlogArticleHtml } from '../lib/blog/render';
+import { renderBlogListingHtml } from '../lib/blog/public-render';
 import { blogAutomationRepository } from '../lib/blog/automation-repository';
 import { blogJobIdempotencyKey, validateManualBatch } from '../lib/blog/automation';
 import { importBlogImage } from '../lib/blog/images';
@@ -577,9 +578,55 @@ apiRouter.post('/admin/platform/control', asyncJsonRoute(async (req, res) => {
 }));
 
 apiRouter.get('/blog/posts', asyncJsonRoute(async (req, res) => {
-  const result = await blogRepository.listPublished({ query: String(req.query.q || ''), limit: Number(req.query.limit || 12), offset: Number(req.query.offset || 0) });
+  const [result, topics] = await Promise.all([
+    blogRepository.listPublished({ query: String(req.query.q || ''), limit: Number(req.query.limit || 12), offset: Number(req.query.offset || 0) }),
+    blogRepository.listPublishedTopics(),
+  ]);
   res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
-  res.json({ success: true, data: result });
+  res.json({ success: true, data: { ...result, topics } });
+}));
+
+apiRouter.get('/blog/index.html', asyncJsonRoute(async (req, res) => {
+  const pageSize = 10;
+  const page = Math.max(1, Math.min(500, Number.parseInt(String(req.query.page || '1'), 10) || 1));
+  const query = String(req.query.q || '').replace(/\s+/g, ' ').trim().slice(0, 100);
+  const [result, topics] = await Promise.all([
+    blogRepository.listPublished({ query, limit: pageSize, offset: (page - 1) * pageSize }),
+    blogRepository.listPublishedTopics(),
+  ]);
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+  res.status(200).send(renderBlogListingHtml({
+    origin: canonicalSiteOrigin(req),
+    posts: result.posts,
+    topics,
+    total: result.total,
+    page,
+    pageSize,
+    query,
+  }));
+}));
+
+apiRouter.get('/blog/topic/:topic', asyncJsonRoute(async (req, res) => {
+  const pageSize = 10;
+  const page = Math.max(1, Math.min(500, Number.parseInt(String(req.query.page || '1'), 10) || 1));
+  const topics = await blogRepository.listPublishedTopics();
+  const selectedTopic = topics.find((topic) => topic.slug === normalizeBlogSlug(req.params.topic));
+  if (!selectedTopic) {
+    return res.status(404).type('html').send('<!doctype html><html><head><meta name="robots" content="noindex"></head><body><h1>Topic not found</h1><p><a href="/blog">Browse all articles</a></p></body></html>');
+  }
+  const result = await blogRepository.listPublished({ topic: selectedTopic.name, limit: pageSize, offset: (page - 1) * pageSize });
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+  res.status(200).send(renderBlogListingHtml({
+    origin: canonicalSiteOrigin(req),
+    posts: result.posts,
+    topics,
+    total: result.total,
+    page,
+    pageSize,
+    selectedTopic,
+  }));
 }));
 
 apiRouter.get('/blog/sitemap.xml', asyncJsonRoute(async (req, res) => {

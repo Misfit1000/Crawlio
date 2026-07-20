@@ -6,11 +6,13 @@ import { inspectBlogLinks } from './quality';
 import type { CompetitorReferenceSnapshot } from './research';
 import type { BlogSectionRevision } from './types';
 import { replaceSelectedBlogSection, selectBlogSection } from './section-regeneration';
+import { buildBlogTopics } from './publication';
 
 type BlogPostRow = Record<string, any>;
 
 const memoryPosts = new Map<string, BlogPostRow>();
 const memorySectionRevisions = new Map<string, Record<string, any>>();
+const PUBLIC_POST_FIELDS = 'id,slug,title,excerpt,tagline,summary,focus_keyword,tags,seo_title,meta_description,canonical_url,og_image_url,og_title,og_description,og_image_alt,og_image_attribution,status,origin,article_type,topic_cluster,language,robots_directive,freshness_status,sources,related_articles,author_id,published_at,created_at,updated_at,content_text';
 
 function toPost(row: BlogPostRow): BlogPost {
   const contentText = String(row.content_text ?? row.contentText ?? '');
@@ -81,19 +83,23 @@ function publicMemoryRows() {
 }
 
 export const blogRepository = {
-  async listPublished({ query = '', limit = 12, offset = 0 } = {}): Promise<BlogListResult> {
+  async listPublished({ query = '', topic = '', limit = 12, offset = 0 } = {}): Promise<BlogListResult> {
     const safeLimit = Math.max(1, Math.min(30, Number(limit) || 12));
     const safeOffset = Math.max(0, Number(offset) || 0);
     const search = String(query || '').replace(/[^\p{L}\p{N}\s'"-]/gu, ' ').trim().slice(0, 100);
+    const safeTopic = String(topic || '').replace(/[^\p{L}\p{N}\s&+.'/-]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
     const client = getSupabaseAdminClient();
     if (!client) {
-      const filtered = publicMemoryRows().filter((row) => !search || `${row.title} ${row.excerpt} ${row.content_text}`.toLowerCase().includes(search.toLowerCase()));
+      const filtered = publicMemoryRows().filter((row) => (
+        (!safeTopic || String(row.topic_cluster || 'SEO guides') === safeTopic)
+        && (!search || `${row.title} ${row.excerpt} ${row.content_text}`.toLowerCase().includes(search.toLowerCase()))
+      ));
       return { posts: filtered.slice(safeOffset, safeOffset + safeLimit).map(toPost), total: filtered.length, limit: safeLimit, offset: safeOffset };
     }
 
     let request = client
       .from('blog_posts')
-      .select('id,slug,title,excerpt,tagline,summary,focus_keyword,tags,seo_title,meta_description,canonical_url,og_image_url,og_title,og_description,og_image_alt,og_image_attribution,status,origin,article_type,topic_cluster,language,robots_directive,freshness_status,sources,related_articles,author_id,published_at,created_at,updated_at,content_text', { count: 'exact' })
+      .select(PUBLIC_POST_FIELDS, { count: 'exact' })
       .eq('status', 'published')
       .eq('fixture_test', false)
       .like('robots_directive', 'index%')
@@ -102,9 +108,32 @@ export const blogRepository = {
       .order('published_at', { ascending: false })
       .range(safeOffset, safeOffset + safeLimit - 1);
     if (search) request = request.textSearch('search_vector', search, { config: 'english', type: 'websearch' });
+    if (safeTopic === 'SEO guides') request = request.or('topic_cluster.is.null,topic_cluster.eq.');
+    else if (safeTopic) request = request.eq('topic_cluster', safeTopic);
     const { data, error, count } = await request;
     if (error) throw error;
     return { posts: (data || []).map(toPost), total: count || 0, limit: safeLimit, offset: safeOffset };
+  },
+
+  async listPublishedTopics() {
+    const client = getSupabaseAdminClient();
+    if (!client) return buildBlogTopics(publicMemoryRows().map(toPost));
+    const { data, error } = await client
+      .from('blog_posts')
+      .select('topic_cluster,tags,published_at')
+      .eq('status', 'published')
+      .eq('fixture_test', false)
+      .like('robots_directive', 'index%')
+      .not('published_at', 'is', null)
+      .lte('published_at', new Date().toISOString())
+      .order('published_at', { ascending: false })
+      .limit(300);
+    if (error) throw error;
+    return buildBlogTopics((data || []).map((row) => ({
+      topicCluster: String(row.topic_cluster || ''),
+      tags: Array.isArray(row.tags) ? row.tags.map(String) : [],
+      publishedAt: row.published_at ? String(row.published_at) : null,
+    })));
   },
 
   async getPublishedBySlug(slug: string) {

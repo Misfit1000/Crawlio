@@ -90,6 +90,7 @@
     "smoke:sentry": "tsx scripts/smoke-sentry-monitoring.mts",
     "verify:sentry-assets": "node scripts/verify-sentry-assets.mjs",
     "smoke:blog": "tsx scripts/smoke-blog-cms.mts",
+    "smoke:blog-discovery": "tsx scripts/smoke-blog-discovery.mts",
     "smoke:blog-article-origins": "tsx scripts/smoke-blog-automation.mts article-origins",
     "smoke:blog-separate-counts": "tsx scripts/smoke-blog-automation.mts separate-counts",
     "smoke:blog-freshness-priority": "tsx scripts/smoke-blog-automation.mts freshness-priority",

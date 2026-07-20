@@ -152,6 +152,14 @@ export interface BlogListResult {
   total: number;
   limit: number;
   offset: number;
+  topics?: BlogTopic[];
+}
+
+export interface BlogTopic {
+  name: string;
+  slug: string;
+  articleCount: number;
+  latestPublishedAt: string | null;
 }
 
 export interface BlogProviderDraft {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Archive, CalendarDays, CheckCircle2, FilePlus2, Globe2, Loader2, RefreshCw, Save, Search, XCircle } from 'lucide-react';
+import { Archive, Bot, CalendarDays, CheckCircle2, ExternalLink, FilePlus2, Files, Globe2, LayoutDashboard, Loader2, RefreshCw, Save, Search, Settings2, XCircle } from 'lucide-react';
 import { archiveAdminBlogPost, getAdminBlogPosts, importAdminBlogImage, saveAdminBlogPost } from '../../lib/blog/client';
 import { blogSeoChecklist, buildBlogSeoFields } from '../../lib/blog/seo';
 import { createBlogSlug } from '../../lib/blog/slug';
@@ -11,6 +11,9 @@ import BlogAutomationPanel from './BlogAutomationPanel';
 import BlogSectionRevisionPanel from './BlogSectionRevisionPanel';
 import BlogProviderFreeWorkspace from './BlogProviderFreeWorkspace';
 import BlogEditorialReviewPanel from './BlogEditorialReviewPanel';
+import BlogAdminOverview from './BlogAdminOverview';
+
+type WorkspaceTab = 'overview' | 'articles' | 'automation' | 'operations';
 
 type Draft = BlogPostInput & {
   title: string;
@@ -28,7 +31,7 @@ type Draft = BlogPostInput & {
 };
 
 const EMPTY_DRAFT: Draft = {
-  title: '', slug: '', excerpt: '', tagline: '', summary: '', contentHtml: '<p></p>', focusKeyword: '', tags: [], seoTitle: '', metaDescription: '', canonicalUrl: '', ogImageUrl: '', status: 'draft', publishedAt: '', origin: 'admin_manual', fixtureTest: false,
+  title: '', slug: '', excerpt: '', tagline: '', summary: '', contentHtml: '<p></p>', focusKeyword: '', tags: [], seoTitle: '', metaDescription: '', canonicalUrl: '', ogImageUrl: '', status: 'draft', publishedAt: '', origin: 'admin_manual', articleType: 'evergreen_guide', topicCluster: '', fixtureTest: false,
 };
 
 function draftFromPost(post: BlogPost): Draft {
@@ -78,6 +81,8 @@ export default function BlogAdmin() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [search, setSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>('overview');
+  const [statusFilter, setStatusFilter] = useState<'all' | BlogPostStatus>('all');
   const [editorialReviewed, setEditorialReviewed] = useState(false);
   const [imageImport, setImageImport] = useState({ sourceUrl: '', creator: '', publisher: '', licence: '', altText: '' });
 
@@ -96,7 +101,10 @@ export default function BlogAdmin() {
 
   useEffect(() => { void loadPosts(); }, []);
 
-  const filteredPosts = posts.filter((post) => `${post.title} ${post.slug} ${post.status}`.toLowerCase().includes(search.toLowerCase()));
+  const filteredPosts = posts.filter((post) => (
+    (statusFilter === 'all' || post.status === statusFilter)
+    && `${post.title} ${post.slug} ${post.status}`.toLowerCase().includes(search.toLowerCase())
+  ));
   const checklist = useMemo(() => blogSeoChecklist(draft), [draft]);
 
   const update = <K extends keyof Draft>(key: K, value: Draft[K]) => {
@@ -105,6 +113,7 @@ export default function BlogAdmin() {
   };
 
   const startNew = () => {
+    setActiveTab('articles');
     setSelectedId(null);
     setDraft({ ...EMPTY_DRAFT });
     setError(null);
@@ -113,6 +122,7 @@ export default function BlogAdmin() {
   };
 
   const selectPost = (post: BlogPost) => {
+    setActiveTab('articles');
     setSelectedId(post.id);
     setDraft(draftFromPost(post));
     setError(null);
@@ -190,19 +200,62 @@ export default function BlogAdmin() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div><h2 className="text-2xl font-semibold">Blog publishing</h2><p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Write, optimize, schedule, publish, and archive public Crawlio articles. Groq drafts run through durable Vercel stages and remain subject to administrator review and deterministic publication gates.</p></div>
-        <button type="button" onClick={startNew} className="trust-button"><FilePlus2 className="h-4 w-4" /> New article</button>
+        <div><h2 className="text-2xl font-semibold">Blog studio</h2><p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Plan, draft, review, and publish useful articles. Advanced automation and source controls remain available in focused workspaces.</p></div>
+        <div className="flex flex-wrap gap-2">
+          <a href="/blog" target="_blank" rel="noreferrer" className="quiet-button">View public blog <ExternalLink className="h-4 w-4" /></a>
+          <button type="button" onClick={startNew} className="trust-button"><FilePlus2 className="h-4 w-4" /> New article</button>
+        </div>
       </div>
 
       {error && <Notice tone="danger" title="Blog action failed">{error}</Notice>}
       {message && <Notice tone="success">{message}</Notice>}
 
-      <BlogAutomationPanel posts={posts} onChanged={() => void loadPosts()} />
-      <BlogProviderFreeWorkspace />
+      <nav className="flex gap-1 overflow-x-auto border-b border-border" aria-label="Blog management">
+        {([
+          ['overview', 'Overview', LayoutDashboard],
+          ['articles', 'Articles', Files],
+          ['automation', 'AI drafts', Bot],
+          ['operations', 'Sources and system', Settings2],
+        ] as const).map(([tab, label, Icon]) => (
+          <button key={tab} type="button" onClick={() => setActiveTab(tab)} aria-current={activeTab === tab ? 'page' : undefined} className={`flex min-h-11 shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-semibold transition-colors ${activeTab === tab ? 'border-accent text-accent' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
+            <Icon className="h-4 w-4" /> {label}
+          </button>
+        ))}
+      </nav>
 
-      <div className="grid gap-6 2xl:grid-cols-[320px_minmax(0,1fr)]">
+      {activeTab === 'overview' && (
+        <BlogAdminOverview
+          posts={posts}
+          loading={loading}
+          onNew={startNew}
+          onOpenArticles={() => setActiveTab('articles')}
+          onOpenAutomation={() => setActiveTab('automation')}
+          onOpenOperations={() => setActiveTab('operations')}
+          onSelectPost={selectPost}
+        />
+      )}
+
+      {activeTab === 'automation' && <BlogAutomationPanel posts={posts} onChanged={() => void loadPosts()} />}
+      {activeTab === 'operations' && <BlogProviderFreeWorkspace />}
+
+      {activeTab === 'articles' && <div className="grid gap-6 2xl:grid-cols-[320px_minmax(0,1fr)]">
         <Panel className="h-fit overflow-hidden p-0 2xl:sticky 2xl:top-24">
-          <div className="border-b border-border p-4"><label className="relative block"><span className="sr-only">Search articles</span><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search articles" className="suite-input pl-9" /></label></div>
+          <div className="space-y-3 border-b border-border p-4">
+            <label className="relative block"><span className="sr-only">Search articles</span><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search articles" className="suite-input pl-9" /></label>
+            <label>
+              <span className="sr-only">Filter by status</span>
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'all' | BlogPostStatus)} className="suite-input">
+                <option value="all">All statuses</option>
+                <option value="needs_review">Needs review</option>
+                <option value="review">In review</option>
+                <option value="draft">Drafts</option>
+                <option value="scheduled">Scheduled</option>
+                <option value="published">Published</option>
+                <option value="failed">Failed</option>
+                <option value="archived">Archived</option>
+              </select>
+            </label>
+          </div>
           <div className="max-h-[680px] overflow-y-auto p-2">
             {loading ? <div className="flex justify-center p-8"><Loader2 className="h-5 w-5 animate-spin text-accent" /></div> : filteredPosts.length ? filteredPosts.map((post) => (
               <button key={post.id} type="button" onClick={() => selectPost(post)} className={`mb-1 w-full rounded-xl p-3 text-left ${selectedId === post.id ? 'bg-accent/10 text-accent' : 'hover:bg-muted'}`}>
@@ -218,6 +271,7 @@ export default function BlogAdmin() {
             <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-center sm:justify-between">
               <div><h3 className="text-xl font-semibold">{selectedId ? 'Edit article' : 'New article'}</h3><p className="mt-1 text-sm text-muted-foreground">Drafts are private. Publication requires complete SEO fields and useful article content.</p></div>
               <div className="flex flex-wrap gap-2">
+                {selectedId && draft.status === 'published' && <a href={`/blog/${draft.slug}`} target="_blank" rel="noreferrer" className="quiet-button">View live <ExternalLink className="h-4 w-4" /></a>}
                 {selectedId && <button type="button" onClick={archive} disabled={saving} className="quiet-button text-red-600"><Archive className="h-4 w-4" /> Archive</button>}
                 <button type="button" onClick={() => persist('draft')} disabled={saving} className="quiet-button"><Save className="h-4 w-4" /> Save draft</button>
                 <button type="button" onClick={() => persist('scheduled')} disabled={saving || !draft.publishedAt || !editorialReviewed || draft.fixtureTest} className="quiet-button"><CalendarDays className="h-4 w-4" /> Schedule</button>
@@ -237,10 +291,18 @@ export default function BlogAdmin() {
               <FormField label="URL slug" htmlFor="blog-slug" hint="The server adds a numeric suffix if another article already uses this slug."><div className="flex rounded-lg border border-border bg-card focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/15"><span className="flex items-center border-r border-border px-3 text-sm text-muted-foreground">/blog/</span><input id="blog-slug" value={draft.slug} onChange={(event) => update('slug', createBlogSlug(event.target.value))} className="min-w-0 flex-1 bg-transparent px-3 py-3 text-sm outline-none" maxLength={120} /></div></FormField>
               <FormField label="Focus phrase" htmlFor="blog-keyword"><input id="blog-keyword" value={draft.focusKeyword} onChange={(event) => update('focusKeyword', event.target.value)} className="suite-input" maxLength={100} /></FormField>
               <FormField label="Tags" htmlFor="blog-tags" hint="Comma-separated; up to 12 tags."><input id="blog-tags" value={draft.tags.join(', ')} onChange={(event) => update('tags', event.target.value.split(',').map((tag) => tag.trim()).filter(Boolean))} className="suite-input" /></FormField>
+              <FormField label="Topic hub" htmlFor="blog-topic" hint="Groups related articles on a crawlable topic page."><input id="blog-topic" value={draft.topicCluster || ''} onChange={(event) => update('topicCluster', event.target.value)} className="suite-input" maxLength={120} placeholder="Technical SEO" /></FormField>
+              <FormField label="Article format" htmlFor="blog-article-type"><select id="blog-article-type" value={draft.articleType || 'evergreen_guide'} onChange={(event) => update('articleType', event.target.value)} className="suite-input"><option value="evergreen_guide">Evergreen guide</option><option value="technical_guide">Technical guide</option><option value="troubleshooting_guide">Troubleshooting guide</option><option value="checklist">Checklist</option><option value="glossary">Glossary or explainer</option><option value="comparison">Comparison</option><option value="news_analysis">News analysis</option><option value="urgent_news">Urgent news update</option></select></FormField>
             </div>
             <div className="mt-5"><FormField label="Excerpt" htmlFor="blog-excerpt" hint={`${draft.excerpt.length}/360 characters`}><textarea id="blog-excerpt" value={draft.excerpt} onChange={(event) => update('excerpt', event.target.value)} className="suite-input min-h-28 resize-y" maxLength={360} /></FormField></div>
             <div className="mt-5 grid gap-5 lg:grid-cols-2"><FormField label="Article tagline" htmlFor="blog-tagline" hint="Adds context without repeating the headline."><input id="blog-tagline" value={draft.tagline || ''} onChange={(event) => update('tagline', event.target.value)} className="suite-input" maxLength={240} /></FormField><FormField label="Executive summary" htmlFor="blog-summary"><textarea id="blog-summary" value={draft.summary || ''} onChange={(event) => update('summary', event.target.value)} className="suite-input min-h-24 resize-y" maxLength={600} /></FormField></div>
-            <div className="mt-5 rounded-lg border border-border bg-muted/20 p-4"><h4 className="text-sm font-semibold text-foreground">Primary research source</h4><p className="mt-1 text-xs leading-5 text-muted-foreground">The exact source URL must also appear as a descriptive hyperlink in the article body.</p><div className="mt-4 grid gap-4 lg:grid-cols-3"><FormField label="Source URL" htmlFor="blog-source-url"><input id="blog-source-url" type="url" value={draft.sources?.[0]?.url || ''} onChange={(event) => update('sources', [{ ...(draft.sources?.[0] || { title: '', publisher: '' }), url: event.target.value, citationStatus: 'verified', reliability: 'high' }])} className="suite-input" /></FormField><FormField label="Source title" htmlFor="blog-source-title"><input id="blog-source-title" value={draft.sources?.[0]?.title || ''} onChange={(event) => update('sources', [{ ...(draft.sources?.[0] || { url: '', publisher: '' }), title: event.target.value, citationStatus: 'verified', reliability: 'high' }])} className="suite-input" /></FormField><FormField label="Publisher" htmlFor="blog-source-publisher"><input id="blog-source-publisher" value={draft.sources?.[0]?.publisher || ''} onChange={(event) => update('sources', [{ ...(draft.sources?.[0] || { url: '', title: '' }), publisher: event.target.value, citationStatus: 'verified', reliability: 'high' }])} className="suite-input" /></FormField></div></div>
+            <details className="mt-5 rounded-lg border border-border bg-muted/20">
+              <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-foreground">Research source <span className="ml-2 font-normal text-muted-foreground">{draft.sources?.[0]?.url ? 'Added' : 'Add source details'}</span></summary>
+              <div className="border-t border-border p-4">
+                <p className="text-xs leading-5 text-muted-foreground">The exact source URL must also appear as a descriptive hyperlink in the article body.</p>
+                <div className="mt-4 grid gap-4 lg:grid-cols-3"><FormField label="Source URL" htmlFor="blog-source-url"><input id="blog-source-url" type="url" value={draft.sources?.[0]?.url || ''} onChange={(event) => update('sources', [{ ...(draft.sources?.[0] || { title: '', publisher: '' }), url: event.target.value, citationStatus: 'verified', reliability: 'high' }])} className="suite-input" /></FormField><FormField label="Source title" htmlFor="blog-source-title"><input id="blog-source-title" value={draft.sources?.[0]?.title || ''} onChange={(event) => update('sources', [{ ...(draft.sources?.[0] || { url: '', publisher: '' }), title: event.target.value, citationStatus: 'verified', reliability: 'high' }])} className="suite-input" /></FormField><FormField label="Publisher" htmlFor="blog-source-publisher"><input id="blog-source-publisher" value={draft.sources?.[0]?.publisher || ''} onChange={(event) => update('sources', [{ ...(draft.sources?.[0] || { url: '', title: '' }), publisher: event.target.value, citationStatus: 'verified', reliability: 'high' }])} className="suite-input" /></FormField></div>
+              </div>
+            </details>
             <div className="mt-5 grid items-start gap-5 2xl:grid-cols-[minmax(0,1fr)_360px]">
               <div className="min-w-0"><FormField label="Article content"><RichTextEditor value={draft.contentHtml} onChange={(contentHtml) => update('contentHtml', contentHtml)} /></FormField>{selectedId && posts.find((post) => post.id === selectedId) && <BlogSectionRevisionPanel post={posts.find((post) => post.id === selectedId)!} onChanged={() => void loadPosts()} />}</div>
               <BlogEditorialReviewPanel post={selectedId ? posts.find((post) => post.id === selectedId) : undefined} draft={draft} />
@@ -255,7 +317,7 @@ export default function BlogAdmin() {
             <div className="mt-5 grid gap-2 sm:grid-cols-2">{checklist.map((item) => <div key={item.label} className={`flex gap-2 rounded-lg border p-3 text-sm ${item.pass ? 'border-emerald-500/20 bg-emerald-500/8 text-emerald-800 dark:text-emerald-200' : 'border-border bg-muted/35 text-muted-foreground'}`}>{item.pass ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <XCircle className="h-4 w-4 shrink-0" />}{item.label}</div>)}</div>
           </Panel>
         </div>
-      </div>
+      </div>}
     </div>
   );
 }
