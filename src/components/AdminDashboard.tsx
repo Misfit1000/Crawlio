@@ -18,6 +18,7 @@ import {
   updateUserAdminFields,
 } from '../services/supabaseDataService';
 import { Notice, PageHeader, Panel as UiPanel } from './ui/page-system';
+import BlogNotificationInbox from './blog/BlogNotificationInbox';
 
 const BlogAdmin = React.lazy(() => import('./blog/BlogAdmin'));
 
@@ -90,7 +91,7 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-7 animate-rise">
-      <PageHeader eyebrow="Operations" icon={Activity} title="Admin control center" description="Monitor the audit platform, manage access and plans, recover queued work, and publish reviewed guidance." metadata={<><span className="suite-chip"><ShieldAlert className="h-3.5 w-3.5" /> Server-verified admin</span><span className="suite-chip">{tabs.find((tab) => tab.id === activeTab)?.label}</span></>} />
+      <PageHeader eyebrow="Operations" icon={Activity} title="Admin control center" description="Monitor the audit platform, manage access and plans, recover queued work, and publish reviewed guidance." metadata={<><span className="suite-chip"><ShieldAlert className="h-3.5 w-3.5" /> Server-verified admin</span><span className="suite-chip">{tabs.find((tab) => tab.id === activeTab)?.label}</span><BlogNotificationInbox /></>} />
 
       <UiPanel className="sticky top-[5rem] z-20 flex max-w-full gap-1 overflow-x-auto p-1.5" as="nav">
         {tabs.map((tab) => {

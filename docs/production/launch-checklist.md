@@ -3,7 +3,7 @@
 ## Required before deployment
 
 - Back up the Supabase database and record the restore point.
-- Apply migrations 001 through 019 in numeric order; never edit an applied migration.
+- Apply migrations 001 through 020 in numeric order; never edit an applied migration.
 - Configure Vercel browser variables and server-only Supabase variables in their correct scopes.
 - Configure the Render audit engine with the same release commit and server-only variables.
 - Set a random `RATE_LIMIT_HASH_SECRET`; never expose it through a `VITE_` variable.

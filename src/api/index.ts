@@ -34,6 +34,12 @@ import { normalizeBlogArticleType } from '../lib/blog/length-policy';
 import { validateCalendarMove } from '../lib/blog/freshness';
 import { BLOG_FIXTURE_MODEL, BLOG_FIXTURE_PROVIDER, getBlogFixtureConfiguration, requireBlogFixtureProvider } from '../lib/blog/fixture-provider';
 import { blogSourceRepository } from '../lib/blog/source-management';
+import { blogEditorRepository, BlogDraftConflictError } from '../lib/blog/editor-repository';
+import { buildBlogReadiness } from '../lib/blog/editor-experience';
+import { applySafeBlogFixes } from '../lib/blog/editor-safe-fixes';
+import { researchSourceUrls } from '../lib/blog/research';
+import { suggestBlogHeadingStructure } from '../lib/blog/server/editor-assistance';
+import { normalizePublicBlogSourceUrl } from '../lib/blog/source-url';
 import { ApiError } from '../lib/api/errors';
 import {
   admitAuditSubmission,
@@ -81,6 +87,9 @@ apiRouter.use('/admin/blog/batches', durableRateLimit({ namespace: 'blog-batches
 apiRouter.use('/admin/blog/images/import', durableRateLimit({ namespace: 'blog-images', limit: 10, windowSeconds: 3600 }));
 apiRouter.use('/admin/blog/provider/test', durableRateLimit({ namespace: 'blog-provider-test', limit: 5, windowSeconds: 3600 }));
 apiRouter.use('/admin/blog/sources', durableRateLimit({ namespace: 'blog-sources', limit: 40, windowSeconds: 3600 }));
+apiRouter.use('/admin/blog/source/inspect', durableRateLimit({ namespace: 'blog-source-inspect', limit: 30, windowSeconds: 3600 }));
+apiRouter.use('/admin/blog/preflight', durableRateLimit({ namespace: 'blog-preflight', limit: 120, windowSeconds: 3600 }));
+apiRouter.use('/admin/blog/editor-draft', durableRateLimit({ namespace: 'blog-editor-draft', limit: 180, windowSeconds: 3600 }));
 apiRouter.use('/admin/blog/operations/action', durableRateLimit({ namespace: 'blog-operations', limit: 20, windowSeconds: 3600 }));
 apiRouter.use('/admin/blog/sections', durableRateLimit({ namespace: 'blog-section-regeneration', limit: 10, windowSeconds: 3600 }));
 apiRouter.use('/blog/scheduler', durableRateLimit({ namespace: 'blog-scheduler', limit: 10, windowSeconds: 300 }));
@@ -205,6 +214,35 @@ function prepareBlogPostForStorage(input: any) {
   }
   row.prerender_status = 'passed';
   return row;
+}
+
+function boundedBlogEditorPayload(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ApiError('BLOG_EDITOR_PAYLOAD_INVALID', 'The editor draft is invalid.', 400);
+  const bytes = Buffer.byteLength(JSON.stringify(value), 'utf8');
+  if (bytes > 350_000) throw new ApiError('BLOG_EDITOR_PAYLOAD_TOO_LARGE', 'The editor draft exceeds the 350 KB autosave limit.', 413);
+  const input = value as Record<string, unknown>;
+  const allowed = [
+    'title', 'slug', 'excerpt', 'tagline', 'summary', 'contentHtml', 'focusKeyword', 'tags', 'seoTitle', 'metaDescription',
+    'canonicalUrl', 'ogImageUrl', 'ogImageAlt', 'ogImageAttribution', 'imageVariants', 'status', 'origin', 'articleType',
+    'topicCluster', 'language', 'robotsDirective', 'freshnessStatus', 'scheduledAt', 'publishedAt', 'sources', 'relatedArticles',
+    'qualityStatus', 'qualityResults', 'originalityStatus', 'sourceStatus', 'prerenderStatus', 'imageStatus', 'fixtureTest',
+    'editorStep', 'automaticOverrides',
+  ];
+  return Object.fromEntries(Object.entries(input).filter(([key]) => allowed.includes(key)));
+}
+
+function editorDraftIdentity(value: unknown) {
+  const text = String(value || '').trim();
+  if (!/^[A-Za-z0-9_-]{8,120}$/.test(text)) throw new ApiError('BLOG_EDITOR_DRAFT_ID_INVALID', 'The editor draft identifier is invalid.', 400);
+  return text;
+}
+
+function requestedBlogSourceUrl(value: unknown) {
+  try {
+    return normalizePublicBlogSourceUrl(value);
+  } catch {
+    throw new ApiError('BLOG_SOURCE_URL_INVALID', 'Enter one public HTTP or HTTPS source URL on a standard port.', 400);
+  }
 }
 
 async function logBlogAction(adminUserId: string, action: string, postId: string, metadata: Record<string, unknown> = {}) {
@@ -723,6 +761,93 @@ apiRouter.get('/admin/blog/posts', asyncJsonRoute(async (req, res) => {
   res.json({ success: true, data: { posts } });
 }));
 
+apiRouter.post('/admin/blog/source/inspect', asyncJsonRoute(async (req, res) => {
+  if (!(await requireAdminRequester(req, res))) return;
+  const sourceUrl = requestedBlogSourceUrl(req.body?.sourceUrl);
+  let source;
+  try {
+    [source] = await researchSourceUrls([sourceUrl]);
+  } catch {
+    throw new ApiError('BLOG_SOURCE_UNAVAILABLE', 'Crawlio could not safely read usable source details from that URL.', 422);
+  }
+  if (!source) throw new ApiError('BLOG_SOURCE_UNAVAILABLE', 'Crawlio could not extract usable source details from that URL.', 422);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: { source } });
+}));
+
+apiRouter.post('/admin/blog/preflight', asyncJsonRoute(async (req, res) => {
+  if (!(await requireAdminRequester(req, res))) return;
+  const action = String(req.body?.action || 'inspect');
+  if (!['inspect', 'safe_fix', 'suggest_headings'].includes(action)) throw new ApiError('BLOG_PREFLIGHT_ACTION_INVALID', 'Choose a supported article check action.', 400);
+  const input = boundedBlogEditorPayload(req.body?.input || {}) as any;
+  const overrides = Array.isArray(req.body?.overrides) ? req.body.overrides.map(String).slice(0, 20) : [];
+  let draft = action === 'safe_fix' ? applySafeBlogFixes(input, overrides) : input;
+  let headingPreview;
+  if (action === 'suggest_headings') {
+    const suggestion = await suggestBlogHeadingStructure(String(input.contentHtml || ''));
+    headingPreview = { previousContentHtml: String(input.contentHtml || ''), contentHtml: suggestion.contentHtml, headings: suggestion.headings };
+    draft = { ...input, contentHtml: suggestion.contentHtml };
+  }
+  const readiness = buildBlogReadiness(draft);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: { draft, readiness, ...(headingPreview ? { headingPreview } : {}) } });
+}));
+
+apiRouter.get('/admin/blog/editor-draft', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const clientDraftId = editorDraftIdentity(req.query.clientDraftId);
+  const articleId = String(req.query.articleId || '').trim() || null;
+  const draft = await blogEditorRepository.getDraft(requester.userId, clientDraftId, articleId);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: { draft } });
+}));
+
+apiRouter.put('/admin/blog/editor-draft', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const clientDraftId = editorDraftIdentity(req.body?.clientDraftId);
+  const payload = boundedBlogEditorPayload(req.body?.payload || {});
+  try {
+    const draft = await blogEditorRepository.saveDraft({
+      adminUserId: requester.userId, clientDraftId, articleId: String(req.body?.articleId || '').trim() || null,
+      payload, expectedVersion: req.body?.expectedVersion == null ? null : Number(req.body.expectedVersion),
+      basePostUpdatedAt: req.body?.basePostUpdatedAt ? new Date(String(req.body.basePostUpdatedAt)).toISOString() : null,
+    });
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json({ success: true, data: { draft } });
+  } catch (error) {
+    if (error instanceof BlogDraftConflictError) throw new ApiError('BLOG_EDITOR_DRAFT_CONFLICT', error.message, 409);
+    throw error;
+  }
+}));
+
+apiRouter.delete('/admin/blog/editor-draft', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const clientDraftId = editorDraftIdentity(req.body?.clientDraftId);
+  await blogEditorRepository.deleteDraft(requester.userId, clientDraftId, String(req.body?.articleId || '').trim() || null);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: { deleted: true } });
+}));
+
+apiRouter.get('/admin/blog/notifications', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const notifications = await blogEditorRepository.listNotifications(requester.userId, Number(req.query.limit || 30));
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: { notifications } });
+}));
+
+apiRouter.post('/admin/blog/notifications/read', asyncJsonRoute(async (req, res) => {
+  const requester = await requireAdminRequester(req, res);
+  if (!requester) return;
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String).filter((id: string) => /^[0-9a-f-]{36}$/i.test(id)).slice(0, 50) : [];
+  await blogEditorRepository.markNotificationsRead(requester.userId, ids);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: { updated: true } });
+}));
+
 apiRouter.get('/admin/blog/overview', asyncJsonRoute(async (req, res) => {
   if (!(await requireAdminRequester(req, res))) return;
   const [overview, jobs, discoveries, settings] = await Promise.all([
@@ -928,9 +1053,9 @@ apiRouter.post('/admin/blog/jobs', asyncJsonRoute(async (req, res) => {
   const requester = await requireAdminRequester(req, res);
   if (!requester) return;
   const mode = String(req.body?.mode || 'manual');
-  if (!['manual', 'custom_headline', 'discover', 'one_click', 'fixture'].includes(mode)) throw new ApiError('BLOG_JOB_MODE_INVALID', 'Choose a supported blog job type.', 400);
+  if (!['manual', 'custom_headline', 'discover', 'one_click', 'one_click_source', 'fixture'].includes(mode)) throw new ApiError('BLOG_JOB_MODE_INVALID', 'Choose a supported blog job type.', 400);
   if (mode === 'fixture') requireBlogFixtureProvider();
-  if (mode === 'one_click') {
+  if (mode === 'one_click' || mode === 'one_click_source') {
     const [providerConfiguration, settings] = await Promise.all([Promise.resolve(getGroqBlogConfiguration()), blogAutomationRepository.getSettings()]);
     if (!providerConfiguration.enabled || !providerConfiguration.configured || settings.provider_enabled !== true) {
       throw new ApiError('BLOG_PROVIDER_NOT_READY', 'One-click publishing requires a connected Groq provider enabled in Blog Studio.', 503);
@@ -941,20 +1066,25 @@ apiRouter.post('/admin/blog/jobs', asyncJsonRoute(async (req, res) => {
   }
   const origin = mode === 'custom_headline'
     ? 'admin_custom_headline'
-    : mode === 'one_click'
+    : mode === 'one_click' || mode === 'one_click_source'
       ? 'trend_autopilot'
       : mode === 'discover'
         ? 'autopilot'
         : 'admin_manual';
   const topic = String(req.body?.topic || '').replace(/\s+/g, ' ').trim().slice(0, 240);
   const headline = String(req.body?.headline || '').replace(/\s+/g, ' ').trim().slice(0, 140);
-  if (!['discover', 'one_click'].includes(mode) && (mode === 'custom_headline' ? headline.length < 8 : topic.length < 5)) throw new ApiError('BLOG_JOB_INPUT_REQUIRED', mode === 'custom_headline' ? 'Enter a specific headline.' : 'Enter a specific topic.', 400);
+  const suppliedSourceUrls = Array.isArray(req.body?.sourceUrls) ? req.body.sourceUrls.slice(0, 12).map(String) : [];
+  if (mode === 'one_click_source') {
+    if (suppliedSourceUrls.length !== 1) throw new ApiError('BLOG_SOURCE_REQUIRED', 'Paste one public source URL.', 400);
+    suppliedSourceUrls[0] = requestedBlogSourceUrl(suppliedSourceUrls[0]);
+  }
+  if (!['discover', 'one_click', 'one_click_source'].includes(mode) && (mode === 'custom_headline' ? headline.length < 8 : topic.length < 5)) throw new ApiError('BLOG_JOB_INPUT_REQUIRED', mode === 'custom_headline' ? 'Enter a specific headline.' : 'Enter a specific topic.', 400);
   if (mode === 'custom_headline') {
     const duplicate = (await blogRepository.listAdmin(200)).find((post) => post.title.toLowerCase() === headline.toLowerCase());
     if (duplicate && req.body?.allowDuplicate !== true) throw new ApiError('DUPLICATE_BLOG_HEADLINE', `A post already uses this headline: ${duplicate.title}`, 409);
   }
   const current = new Date();
-  const dateBucket = mode === 'discover' || mode === 'one_click'
+  const dateBucket = mode === 'discover' || mode === 'one_click' || mode === 'one_click_source'
     ? current.toISOString().slice(0, 13)
     : `${current.toISOString().slice(0, 13)}:${Math.floor(current.getUTCMinutes() / 10)}`;
   const job = await blogAutomationRepository.createJob({
@@ -965,22 +1095,22 @@ apiRouter.post('/admin/blog/jobs', asyncJsonRoute(async (req, res) => {
     provider: mode === 'fixture' ? BLOG_FIXTURE_PROVIDER : 'groq',
     model: mode === 'fixture' ? BLOG_FIXTURE_MODEL : GROQ_DEFAULT_STRUCTURED_MODEL,
     payload: {
-      jobType: mode === 'discover' ? 'discover_trends' : mode === 'one_click' ? 'one_click_trend' : 'generate_article',
+      jobType: mode === 'discover' ? 'discover_trends' : mode === 'one_click' ? 'one_click_trend' : mode === 'one_click_source' ? 'one_click_source' : 'generate_article',
       manualDiscovery: mode === 'discover',
-      publishWhenReady: mode === 'one_click',
+      publishWhenReady: mode === 'one_click' || mode === 'one_click_source',
       audience: String(req.body?.audience || '').slice(0, 240),
       keywords: String(req.body?.keywords || '').slice(0, 300),
       feedUrls: Array.isArray(req.body?.feedUrls) ? req.body.feedUrls.slice(0, 20) : undefined,
       sources: Array.isArray(req.body?.sources) ? req.body.sources.slice(0, 12) : undefined,
-      sourceUrls: Array.isArray(req.body?.sourceUrls) ? req.body.sourceUrls.slice(0, 12).map(String) : undefined,
+      sourceUrls: suppliedSourceUrls.length ? suppliedSourceUrls : undefined,
       competitorUrls: Array.isArray(req.body?.competitorUrls) ? req.body.competitorUrls.slice(0, 5).map(String) : undefined,
-      articleType: normalizeBlogArticleType(req.body?.articleType, mode === 'discover' || mode === 'one_click' ? 'news_analysis' : 'evergreen_guide'),
+      articleType: normalizeBlogArticleType(req.body?.articleType, ['discover', 'one_click', 'one_click_source'].includes(mode) ? 'news_analysis' : 'evergreen_guide'),
       lengthMode: ['automatic', 'brief', 'standard', 'detailed', 'custom'].includes(String(req.body?.lengthMode)) ? String(req.body.lengthMode) : 'automatic',
       customMinimum: Math.max(500, Math.min(3500, Number(req.body?.customMinimum) || 0)),
       customMaximum: Math.max(500, Math.min(4000, Number(req.body?.customMaximum) || 0)),
       fixtureScenario: mode === 'fixture' && ['evergreen', 'news', 'invalid', 'timeout', 'malformed', 'originality_failure', 'missing_sources', 'image_failure'].includes(String(req.body?.fixtureScenario)) ? String(req.body.fixtureScenario) : undefined,
     },
-    idempotencyKey: blogJobIdempotencyKey({ origin, topic, customHeadline: headline, dateBucket }),
+    idempotencyKey: blogJobIdempotencyKey({ origin, topic: mode === 'one_click_source' ? suppliedSourceUrls[0] : topic, customHeadline: headline, dateBucket }),
   });
   await logBlogAction(requester.userId, 'queue_blog_job', job.id, { origin, mode, batchId: null });
   requestImmediateBlogDispatch(req, job.id);
@@ -1078,6 +1208,10 @@ apiRouter.put('/admin/blog/posts/:id', asyncJsonRoute(async (req, res) => {
   if (!requester) return;
   const existing = await blogRepository.getAdminById(req.params.id);
   if (!existing) return res.status(404).json({ success: false, error: 'Article not found.' });
+  const expectedUpdatedAt = String(req.body?.expectedUpdatedAt || '').trim();
+  if (expectedUpdatedAt && Date.parse(expectedUpdatedAt) !== Date.parse(existing.updatedAt)) {
+    throw new ApiError('BLOG_POST_EDIT_CONFLICT', 'This article changed after you opened it. Reload the latest version before saving.', 409);
+  }
   try {
     const row = prepareBlogPostForStorage(req.body || {});
     row.slug = await uniqueBlogSlug(row.slug, existing.id);

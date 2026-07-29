@@ -1,7 +1,8 @@
 import { API_ROUTES } from '../api/routes';
 import { getAuthHeaders } from '../api/auth-headers';
 import { safeJsonFetch } from '../http/safe-json';
-import type { BlogAdminOverview, BlogApprovedSource, BlogFixtureScenario, BlogGenerationJob, BlogListResult, BlogOperationsSnapshot, BlogPost, BlogPostInput, BlogSectionRevision } from './types';
+import type { BlogAdminOverview, BlogApprovedSource, BlogFixtureScenario, BlogGenerationJob, BlogListResult, BlogOperationsSnapshot, BlogPost, BlogPostInput, BlogSectionRevision, BlogSource } from './types';
+import type { BlogReadinessItem } from './editor-experience';
 
 type Envelope<T> = { success: boolean; data: T; error?: string };
 
@@ -28,11 +29,11 @@ export async function getAdminBlogPosts() {
   return request<{ posts: BlogPost[] }>(API_ROUTES.adminBlogPosts, { headers: await getAuthHeaders() });
 }
 
-export async function saveAdminBlogPost(input: BlogPostInput, id?: string) {
+export async function saveAdminBlogPost(input: BlogPostInput, id?: string, expectedUpdatedAt?: string | null) {
   return request<{ post: BlogPost }>(id ? API_ROUTES.adminBlogPost(id) : API_ROUTES.adminBlogPosts, {
     method: id ? 'PUT' : 'POST',
     headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify(input),
+    body: JSON.stringify({ ...input, ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}) }),
   });
 }
 
@@ -60,10 +61,40 @@ export async function saveBlogAutomationSettings(settings: Record<string, unknow
   });
 }
 
-export async function queueBlogJob(input: { mode: 'manual' | 'custom_headline' | 'discover' | 'one_click' | 'fixture'; topic?: string; headline?: string; audience?: string; keywords?: string; feedUrls?: string[]; sourceUrls?: string[]; competitorUrls?: string[]; requestId?: string; articleType?: string; lengthMode?: string; customMinimum?: number; customMaximum?: number; fixtureScenario?: BlogFixtureScenario }) {
+export async function queueBlogJob(input: { mode: 'manual' | 'custom_headline' | 'discover' | 'one_click' | 'one_click_source' | 'fixture'; topic?: string; headline?: string; audience?: string; keywords?: string; feedUrls?: string[]; sourceUrls?: string[]; competitorUrls?: string[]; requestId?: string; articleType?: string; lengthMode?: string; customMinimum?: number; customMaximum?: number; fixtureScenario?: BlogFixtureScenario }) {
   return request<{ job: BlogGenerationJob }>(API_ROUTES.adminBlogJobs, {
     method: 'POST', headers: await getAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(input),
   });
+}
+
+export async function inspectAdminBlogSource(sourceUrl: string) {
+  return request<{ source: BlogSource }>(API_ROUTES.adminBlogSourceInspect, { method: 'POST', headers: await getAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ sourceUrl }) });
+}
+
+export async function preflightAdminBlogDraft(input: BlogPostInput, action: 'inspect' | 'safe_fix' | 'suggest_headings' = 'inspect', overrides: string[] = []) {
+  return request<{ draft: BlogPostInput; readiness: BlogReadinessItem[]; headingPreview?: { previousContentHtml: string; contentHtml: string; headings: string[] } }>(API_ROUTES.adminBlogPreflight, { method: 'POST', headers: await getAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ input, action, overrides }) });
+}
+
+export async function getAdminBlogEditorDraft(clientDraftId: string, articleId?: string | null) {
+  const query = new URLSearchParams({ clientDraftId });
+  if (articleId) query.set('articleId', articleId);
+  return request<{ draft: { id: string; clientDraftId: string; articleId: string | null; payload: Record<string, unknown>; version: number; basePostUpdatedAt: string | null; updatedAt: string } | null }>(`${API_ROUTES.adminBlogEditorDraft}?${query}`, { headers: await getAuthHeaders() });
+}
+
+export async function saveAdminBlogEditorDraft(input: { clientDraftId: string; articleId?: string | null; payload: Record<string, unknown>; expectedVersion?: number | null; basePostUpdatedAt?: string | null }) {
+  return request<{ draft: { id: string; clientDraftId: string; articleId: string | null; payload: Record<string, unknown>; version: number; basePostUpdatedAt: string | null; updatedAt: string } }>(API_ROUTES.adminBlogEditorDraft, { method: 'PUT', headers: await getAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(input) });
+}
+
+export async function deleteAdminBlogEditorDraft(clientDraftId: string, articleId?: string | null) {
+  return request<{ deleted: boolean }>(API_ROUTES.adminBlogEditorDraft, { method: 'DELETE', headers: await getAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ clientDraftId, articleId }) });
+}
+
+export async function getAdminBlogNotifications() {
+  return request<{ notifications: Array<{ id: string; type: string; title: string; message: string; articleId: string | null; jobId: string | null; linkPath: string; readAt: string | null; createdAt: string }> }>(API_ROUTES.adminBlogNotifications, { headers: await getAuthHeaders() });
+}
+
+export async function markAdminBlogNotificationsRead(ids?: string[]) {
+  return request<{ updated: boolean }>(API_ROUTES.adminBlogNotificationsRead, { method: 'POST', headers: await getAuthHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ ids }) });
 }
 
 export async function retryBlogJob(id: string) {

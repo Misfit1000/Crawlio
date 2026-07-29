@@ -1,4 +1,4 @@
-import { blogTextFromHtml } from './sanitize';
+import { blogTextFromHtml } from './html-text';
 import type { BlogPostInput, BlogQualityCheck, BlogQualityReport, BlogSource } from './types';
 import { resolveBlogLengthRange, type BlogLengthRange } from './length-policy';
 

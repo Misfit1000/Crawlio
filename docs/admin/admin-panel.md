@@ -95,4 +95,4 @@ The plans page edits `plan_limits`:
 - priority
 - export/PDF/white-label/embed/API flags
 
-Run every migration through `019_finding_workflow_and_operations.sql` before using the complete panel.
+Run every migration through `020_blog_editor_experience.sql` before using the complete panel.

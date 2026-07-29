@@ -1,99 +1,54 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Archive, Bot, CalendarDays, CheckCircle2, ExternalLink, FilePlus2, Files, Globe2, LayoutDashboard, Loader2, RefreshCw, Save, Search, Settings2, XCircle } from 'lucide-react';
-import { archiveAdminBlogPost, getAdminBlogPosts, importAdminBlogImage, saveAdminBlogPost } from '../../lib/blog/client';
-import { blogSeoChecklist, buildBlogSeoFields } from '../../lib/blog/seo';
-import { createBlogSlug } from '../../lib/blog/slug';
-import type { BlogPost, BlogPostInput, BlogPostStatus } from '../../lib/blog/types';
+import { Bot, FilePlus2, Files, LayoutDashboard, Loader2, RefreshCw, Search, Settings2 } from 'lucide-react';
+import { getAdminBlogPosts } from '../../lib/blog/client';
+import type { BlogPost, BlogPostStatus } from '../../lib/blog/types';
+import { Notice, Panel } from '../ui/page-system';
 import { EmptyState, StatusBadge } from '../ui/visual-system';
-import { FormField, Notice, Panel } from '../ui/page-system';
-import RichTextEditor from './RichTextEditor';
 import BlogAutomationPanel from './BlogAutomationPanel';
-import BlogSectionRevisionPanel from './BlogSectionRevisionPanel';
+import BlogManualEditor from './BlogManualEditor';
 import BlogProviderFreeWorkspace from './BlogProviderFreeWorkspace';
-import BlogEditorialReviewPanel from './BlogEditorialReviewPanel';
-import BlogAdminOverview from './BlogAdminOverview';
+import BlogStudioStart from './BlogStudioStart';
 
-type WorkspaceTab = 'overview' | 'articles' | 'automation' | 'operations';
+type WorkspaceTab = 'start' | 'articles' | 'automation' | 'operations';
 
-type Draft = BlogPostInput & {
-  title: string;
-  slug: string;
-  excerpt: string;
-  contentHtml: string;
-  focusKeyword: string;
-  tags: string[];
-  seoTitle: string;
-  metaDescription: string;
-  canonicalUrl: string;
-  ogImageUrl: string;
-  status: BlogPostStatus;
-  publishedAt: string;
-};
-
-const EMPTY_DRAFT: Draft = {
-  title: '', slug: '', excerpt: '', tagline: '', summary: '', contentHtml: '<p></p>', focusKeyword: '', tags: [], seoTitle: '', metaDescription: '', canonicalUrl: '', ogImageUrl: '', status: 'draft', publishedAt: '', origin: 'admin_manual', articleType: 'evergreen_guide', topicCluster: '', fixtureTest: false,
-};
-
-function draftFromPost(post: BlogPost): Draft {
-  return {
-    title: post.title,
-    slug: post.slug,
-    excerpt: post.excerpt,
-    tagline: post.tagline,
-    summary: post.summary,
-    contentHtml: post.contentHtml,
-    focusKeyword: post.focusKeyword,
-    tags: post.tags,
-    seoTitle: post.seoTitle,
-    metaDescription: post.metaDescription,
-    canonicalUrl: post.canonicalUrl,
-    ogImageUrl: post.ogImageUrl,
-    ogImageAlt: post.ogImageAlt,
-    ogImageAttribution: post.ogImageAttribution,
-    imageVariants: post.imageVariants,
-    status: post.status,
-    origin: post.origin,
-    articleType: post.articleType,
-    topicCluster: post.topicCluster,
-    sources: post.sources,
-    relatedArticles: post.relatedArticles,
-    qualityStatus: post.qualityStatus,
-    qualityResults: post.qualityResults,
-    originalityStatus: post.originalityStatus,
-    sourceStatus: post.sourceStatus,
-    prerenderStatus: post.prerenderStatus,
-    imageStatus: post.imageStatus,
-    publishedAt: (post.scheduledAt || post.publishedAt) ? String(post.scheduledAt || post.publishedAt).slice(0, 16) : '',
-    fixtureTest: post.fixtureTest,
-  };
-}
+const TABS: Array<{ id: WorkspaceTab; label: string; icon: typeof LayoutDashboard }> = [
+  { id: 'start', label: 'Blog studio', icon: LayoutDashboard },
+  { id: 'articles', label: 'Articles', icon: Files },
+  { id: 'automation', label: 'Advanced AI', icon: Bot },
+  { id: 'operations', label: 'Sources and system', icon: Settings2 },
+];
 
 function dateLabel(value: string) {
   return new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 }
 
+function statusTone(status: BlogPostStatus): 'success' | 'warning' | 'danger' | 'neutral' {
+  if (status === 'published') return 'success';
+  if (status === 'failed' || status === 'archived') return 'danger';
+  if (status === 'draft') return 'neutral';
+  return 'warning';
+}
+
 export default function BlogAdmin() {
   const [posts, setPosts] = useState<BlogPost[]>([]);
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>('start');
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
   const [search, setSearch] = useState('');
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>('overview');
   const [statusFilter, setStatusFilter] = useState<'all' | BlogPostStatus>('all');
-  const [editorialReviewed, setEditorialReviewed] = useState(false);
-  const [imageImport, setImageImport] = useState({ sourceUrl: '', creator: '', publisher: '', licence: '', altText: '' });
 
   const loadPosts = async () => {
     setLoading(true);
     try {
-      const data = await getAdminBlogPosts();
-      setPosts(data.posts);
-      setError(null);
+      const result = await getAdminBlogPosts();
+      setPosts(result.posts);
+      setError('');
+      return result.posts;
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Blog posts could not be loaded.');
+      setError(requestError instanceof Error ? requestError.message : 'Blog articles could not be loaded.');
+      return [];
     } finally {
       setLoading(false);
     }
@@ -101,223 +56,94 @@ export default function BlogAdmin() {
 
   useEffect(() => { void loadPosts(); }, []);
 
-  const filteredPosts = posts.filter((post) => (
-    (statusFilter === 'all' || post.status === statusFilter)
-    && `${post.title} ${post.slug} ${post.status}`.toLowerCase().includes(search.toLowerCase())
-  ));
-  const checklist = useMemo(() => blogSeoChecklist(draft), [draft]);
+  useEffect(() => {
+    if (!posts.length) return;
+    const params = new URLSearchParams(window.location.search);
+    const articleId = params.get('articleId');
+    const jobId = params.get('jobId');
+    if (articleId && posts.some((post) => post.id === articleId)) {
+      setSelectedId(articleId);
+      setEditorOpen(true);
+      setActiveTab('articles');
+    } else if (jobId) {
+      setActiveTab('automation');
+    }
+  }, [posts]);
 
-  const update = <K extends keyof Draft>(key: K, value: Draft[K]) => {
-    setDraft((current) => ({ ...current, [key]: value }));
-    setEditorialReviewed(false);
-  };
+  const selectedPost = posts.find((post) => post.id === selectedId);
+  const filteredPosts = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return posts.filter((post) => {
+      const statusMatches = statusFilter === 'all' || post.status === statusFilter;
+      const textMatches = !needle || `${post.title} ${post.slug} ${post.focusKeyword}`.toLowerCase().includes(needle);
+      return statusMatches && textMatches;
+    });
+  }, [posts, search, statusFilter]);
 
-  const startNew = () => {
-    setActiveTab('articles');
-    setSelectedId(null);
-    setDraft({ ...EMPTY_DRAFT });
-    setError(null);
-    setMessage('');
-    setEditorialReviewed(false);
-  };
-
-  const selectPost = (post: BlogPost) => {
-    setActiveTab('articles');
+  const openArticle = (post: BlogPost) => {
     setSelectedId(post.id);
-    setDraft(draftFromPost(post));
-    setError(null);
-    setMessage('');
-    setEditorialReviewed(false);
+    setEditorOpen(true);
+    setActiveTab('articles');
   };
 
-  const autoFillSeo = () => {
-    const text = draft.contentHtml.replace(/<[^>]+>/g, ' ');
-    const seo = buildBlogSeoFields({ title: draft.title, excerpt: draft.excerpt, contentText: text, focusKeyword: draft.focusKeyword });
-    setDraft((current) => ({ ...current, slug: current.slug || seo.slug, excerpt: current.excerpt || seo.excerpt, seoTitle: seo.seoTitle, metaDescription: seo.metaDescription }));
-    setEditorialReviewed(false);
-    setMessage('SEO fields refreshed from the article.');
+  const startManual = () => {
+    setSelectedId(null);
+    setEditorOpen(true);
+    setActiveTab('articles');
   };
 
-  const persist = async (status?: BlogPostStatus, publishNow = false) => {
-    const nextStatus = status || draft.status;
-    if (nextStatus === 'published' && !editorialReviewed) {
-      setError('Confirm the editorial review before scheduling or publishing this article.');
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      const publishedAt = nextStatus === 'published' ? (publishNow ? new Date().toISOString() : new Date().toISOString()) : null;
-      const scheduledAt = nextStatus === 'scheduled' ? draft.publishedAt : null;
-      const data = await saveAdminBlogPost({
-        ...draft,
-        status: nextStatus,
-        publishedAt,
-        scheduledAt,
-        ...(editorialReviewed ? { originalityStatus: 'passed', sourceStatus: 'passed', prerenderStatus: 'passed', imageStatus: draft.ogImageUrl ? draft.imageStatus || 'needs_review' : 'not_required' } : {}),
-      }, selectedId || undefined);
-      setSelectedId(data.post.id);
-      setDraft(draftFromPost(data.post));
-      setMessage(nextStatus === 'scheduled' ? 'Article scheduled.' : nextStatus === 'published' ? 'Article published.' : 'Draft saved.');
-      await loadPosts();
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Article could not be saved.');
-    } finally {
-      setSaving(false);
-    }
+  const closeEditor = () => {
+    setEditorOpen(false);
+    setSelectedId(null);
+    window.history.replaceState({}, '', '/admin/blog');
   };
 
-  const archive = async () => {
-    if (!selectedId || !window.confirm('Archive this article? It will disappear from the public blog.')) return;
-    setSaving(true);
-    try {
-      await archiveAdminBlogPost(selectedId);
-      setSelectedId(null);
-      setDraft({ ...EMPTY_DRAFT });
-      setEditorialReviewed(false);
-      setError(null);
-      await loadPosts();
-      setMessage('Article archived.');
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Article could not be archived.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-
-  const importImage = async () => {
-    setSaving(true); setError(null);
-    try {
-      const { image } = await importAdminBlogImage({ ...imageImport, articleId: selectedId });
-      setDraft((current) => ({ ...current, ogImageUrl: String(image.storage_url || image.source_url || ''), ogImageAlt: String(image.alt_text || imageImport.altText), ogImageAttribution: String(image.attribution || ''), imageVariants: Array.isArray(image.variants) ? image.variants : [], imageStatus: 'passed' }));
-      setMessage(`Image verified with ${Array.isArray(image.variants) ? image.variants.length : 0} responsive variants. Attribution details were retained.`);
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Image could not be imported.');
-    } finally { setSaving(false); }
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div><h2 className="text-2xl font-semibold">Blog studio</h2><p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Plan, draft, review, and publish useful articles. Advanced automation and source controls remain available in focused workspaces.</p></div>
-        <div className="flex flex-wrap gap-2">
-          <a href="/blog" target="_blank" rel="noreferrer" className="quiet-button">View public blog <ExternalLink className="h-4 w-4" /></a>
-          <button type="button" onClick={startNew} className="trust-button"><FilePlus2 className="h-4 w-4" /> New article</button>
-        </div>
+  return <section className="space-y-6" aria-labelledby="blog-studio-title">
+    <div className="flex flex-col gap-4 border-b border-border pb-5 lg:flex-row lg:items-end lg:justify-between">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-accent">Content operations</p>
+        <h1 id="blog-studio-title" className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">Blog studio</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Publish a guarded AI article in one click, create from a trusted source, or write manually with automatic search fields.</p>
       </div>
-
-      {error && <Notice tone="danger" title="Blog action failed">{error}</Notice>}
-      {message && <Notice tone="success">{message}</Notice>}
-
-      <nav className="flex gap-1 overflow-x-auto border-b border-border" aria-label="Blog management">
-        {([
-          ['overview', 'Overview', LayoutDashboard],
-          ['articles', 'Articles', Files],
-          ['automation', 'AI drafts', Bot],
-          ['operations', 'Sources and system', Settings2],
-        ] as const).map(([tab, label, Icon]) => (
-          <button key={tab} type="button" onClick={() => setActiveTab(tab)} aria-current={activeTab === tab ? 'page' : undefined} className={`flex min-h-11 shrink-0 items-center gap-2 border-b-2 px-3 text-sm font-semibold transition-colors ${activeTab === tab ? 'border-accent text-accent' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
-            <Icon className="h-4 w-4" /> {label}
-          </button>
-        ))}
-      </nav>
-
-      {activeTab === 'overview' && (
-        <BlogAdminOverview
-          posts={posts}
-          loading={loading}
-          onNew={startNew}
-          onOpenArticles={() => setActiveTab('articles')}
-          onOpenAutomation={() => setActiveTab('automation')}
-          onOpenOperations={() => setActiveTab('operations')}
-          onSelectPost={selectPost}
-        />
-      )}
-
-      {activeTab === 'automation' && <BlogAutomationPanel posts={posts} onChanged={() => void loadPosts()} />}
-      {activeTab === 'operations' && <BlogProviderFreeWorkspace />}
-
-      {activeTab === 'articles' && <div className="grid gap-6 2xl:grid-cols-[320px_minmax(0,1fr)]">
-        <Panel className="h-fit overflow-hidden p-0 2xl:sticky 2xl:top-24">
-          <div className="space-y-3 border-b border-border p-4">
-            <label className="relative block"><span className="sr-only">Search articles</span><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search articles" className="suite-input pl-9" /></label>
-            <label>
-              <span className="sr-only">Filter by status</span>
-              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'all' | BlogPostStatus)} className="suite-input">
-                <option value="all">All statuses</option>
-                <option value="needs_review">Needs review</option>
-                <option value="review">In review</option>
-                <option value="draft">Drafts</option>
-                <option value="scheduled">Scheduled</option>
-                <option value="published">Published</option>
-                <option value="failed">Failed</option>
-                <option value="archived">Archived</option>
-              </select>
-            </label>
-          </div>
-          <div className="max-h-[680px] overflow-y-auto p-2">
-            {loading ? <div className="flex justify-center p-8"><Loader2 className="h-5 w-5 animate-spin text-accent" /></div> : filteredPosts.length ? filteredPosts.map((post) => (
-              <button key={post.id} type="button" onClick={() => selectPost(post)} className={`mb-1 w-full rounded-xl p-3 text-left ${selectedId === post.id ? 'bg-accent/10 text-accent' : 'hover:bg-muted'}`}>
-                <span className="line-clamp-2 text-sm font-semibold">{post.title}</span>
-                <span className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground"><StatusBadge tone={post.status === 'published' ? 'success' : post.status === 'archived' ? 'danger' : 'warning'}>{post.status}</StatusBadge><span>{dateLabel(post.updatedAt)}</span></span>
-              </button>
-            )) : <EmptyState icon={FilePlus2} title="No articles" description="Create the first Crawlio article." />}
-          </div>
-        </Panel>
-
-        <div className="min-w-0 space-y-6">
-          <Panel className="p-5 sm:p-6">
-            <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-center sm:justify-between">
-              <div><h3 className="text-xl font-semibold">{selectedId ? 'Edit article' : 'New article'}</h3><p className="mt-1 text-sm text-muted-foreground">Drafts are private. Publication requires complete SEO fields and useful article content.</p></div>
-              <div className="flex flex-wrap gap-2">
-                {selectedId && draft.status === 'published' && <a href={`/blog/${draft.slug}`} target="_blank" rel="noreferrer" className="quiet-button">View live <ExternalLink className="h-4 w-4" /></a>}
-                {selectedId && <button type="button" onClick={archive} disabled={saving} className="quiet-button text-red-600"><Archive className="h-4 w-4" /> Archive</button>}
-                <button type="button" onClick={() => persist('draft')} disabled={saving} className="quiet-button"><Save className="h-4 w-4" /> Save draft</button>
-                <button type="button" onClick={() => persist('scheduled')} disabled={saving || !draft.publishedAt || !editorialReviewed || draft.fixtureTest} className="quiet-button"><CalendarDays className="h-4 w-4" /> Schedule</button>
-                <button type="button" onClick={() => persist('published', true)} disabled={saving || !editorialReviewed || draft.fixtureTest} className="trust-button">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe2 className="h-4 w-4" />} Publish now</button>
-              </div>
-            </div>
-
-            {draft.fixtureTest && <div className="mt-5"><Notice tone="warning" title="Fixture test content">This draft is permanently excluded from publication, public topic hubs, sitemaps, and RSS. Use it only to verify the protected editorial workflow.</Notice></div>}
-
-            <label className="mt-5 flex items-start gap-3 rounded-lg border border-border bg-muted/25 p-3 text-sm leading-6">
-              <input type="checkbox" checked={editorialReviewed} onChange={(event) => setEditorialReviewed(event.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-[var(--accent)]" />
-              <span><span className="font-semibold text-foreground">Editorial review complete.</span> <span className="text-muted-foreground">Facts, links, claims, originality, and source attribution have been checked by an administrator.</span></span>
-            </label>
-
-            <div className="mt-6 grid gap-5 lg:grid-cols-2">
-              <FormField label="Article title" htmlFor="blog-title"><input id="blog-title" value={draft.title} onChange={(event) => { const title = event.target.value; setDraft((current) => ({ ...current, title, slug: selectedId ? current.slug : createBlogSlug(title) })); setEditorialReviewed(false); }} className="suite-input" maxLength={140} /></FormField>
-              <FormField label="URL slug" htmlFor="blog-slug" hint="The server adds a numeric suffix if another article already uses this slug."><div className="flex rounded-lg border border-border bg-card focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/15"><span className="flex items-center border-r border-border px-3 text-sm text-muted-foreground">/blog/</span><input id="blog-slug" value={draft.slug} onChange={(event) => update('slug', createBlogSlug(event.target.value))} className="min-w-0 flex-1 bg-transparent px-3 py-3 text-sm outline-none" maxLength={120} /></div></FormField>
-              <FormField label="Focus phrase" htmlFor="blog-keyword"><input id="blog-keyword" value={draft.focusKeyword} onChange={(event) => update('focusKeyword', event.target.value)} className="suite-input" maxLength={100} /></FormField>
-              <FormField label="Tags" htmlFor="blog-tags" hint="Comma-separated; up to 12 tags."><input id="blog-tags" value={draft.tags.join(', ')} onChange={(event) => update('tags', event.target.value.split(',').map((tag) => tag.trim()).filter(Boolean))} className="suite-input" /></FormField>
-              <FormField label="Topic hub" htmlFor="blog-topic" hint="Groups related articles on a crawlable topic page."><input id="blog-topic" value={draft.topicCluster || ''} onChange={(event) => update('topicCluster', event.target.value)} className="suite-input" maxLength={120} placeholder="Technical SEO" /></FormField>
-              <FormField label="Article format" htmlFor="blog-article-type"><select id="blog-article-type" value={draft.articleType || 'evergreen_guide'} onChange={(event) => update('articleType', event.target.value)} className="suite-input"><option value="evergreen_guide">Evergreen guide</option><option value="technical_guide">Technical guide</option><option value="troubleshooting_guide">Troubleshooting guide</option><option value="checklist">Checklist</option><option value="glossary">Glossary or explainer</option><option value="comparison">Comparison</option><option value="news_analysis">News analysis</option><option value="urgent_news">Urgent news update</option></select></FormField>
-            </div>
-            <div className="mt-5"><FormField label="Excerpt" htmlFor="blog-excerpt" hint={`${draft.excerpt.length}/360 characters`}><textarea id="blog-excerpt" value={draft.excerpt} onChange={(event) => update('excerpt', event.target.value)} className="suite-input min-h-28 resize-y" maxLength={360} /></FormField></div>
-            <div className="mt-5 grid gap-5 lg:grid-cols-2"><FormField label="Article tagline" htmlFor="blog-tagline" hint="Adds context without repeating the headline."><input id="blog-tagline" value={draft.tagline || ''} onChange={(event) => update('tagline', event.target.value)} className="suite-input" maxLength={240} /></FormField><FormField label="Executive summary" htmlFor="blog-summary"><textarea id="blog-summary" value={draft.summary || ''} onChange={(event) => update('summary', event.target.value)} className="suite-input min-h-24 resize-y" maxLength={600} /></FormField></div>
-            <details className="mt-5 rounded-lg border border-border bg-muted/20">
-              <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-foreground">Research source <span className="ml-2 font-normal text-muted-foreground">{draft.sources?.[0]?.url ? 'Added' : 'Add source details'}</span></summary>
-              <div className="border-t border-border p-4">
-                <p className="text-xs leading-5 text-muted-foreground">The exact source URL must also appear as a descriptive hyperlink in the article body.</p>
-                <div className="mt-4 grid gap-4 lg:grid-cols-3"><FormField label="Source URL" htmlFor="blog-source-url"><input id="blog-source-url" type="url" value={draft.sources?.[0]?.url || ''} onChange={(event) => update('sources', [{ ...(draft.sources?.[0] || { title: '', publisher: '' }), url: event.target.value, citationStatus: 'verified', reliability: 'high' }])} className="suite-input" /></FormField><FormField label="Source title" htmlFor="blog-source-title"><input id="blog-source-title" value={draft.sources?.[0]?.title || ''} onChange={(event) => update('sources', [{ ...(draft.sources?.[0] || { url: '', publisher: '' }), title: event.target.value, citationStatus: 'verified', reliability: 'high' }])} className="suite-input" /></FormField><FormField label="Publisher" htmlFor="blog-source-publisher"><input id="blog-source-publisher" value={draft.sources?.[0]?.publisher || ''} onChange={(event) => update('sources', [{ ...(draft.sources?.[0] || { url: '', title: '' }), publisher: event.target.value, citationStatus: 'verified', reliability: 'high' }])} className="suite-input" /></FormField></div>
-              </div>
-            </details>
-            <div className="mt-5 grid items-start gap-5 2xl:grid-cols-[minmax(0,1fr)_360px]">
-              <div className="min-w-0"><FormField label="Article content"><RichTextEditor value={draft.contentHtml} onChange={(contentHtml) => update('contentHtml', contentHtml)} /></FormField>{selectedId && posts.find((post) => post.id === selectedId) && <BlogSectionRevisionPanel post={posts.find((post) => post.id === selectedId)!} onChanged={() => void loadPosts()} />}</div>
-              <BlogEditorialReviewPanel post={selectedId ? posts.find((post) => post.id === selectedId) : undefined} draft={draft} />
-            </div>
-          </Panel>
-
-          <Panel className="p-5 sm:p-6">
-            <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-start sm:justify-between"><div><h3 className="text-xl font-semibold">Search preview and SEO checks</h3><p className="mt-1 text-sm text-muted-foreground">Deterministic checks guide the editor; they do not guarantee Google rankings.</p></div><button type="button" onClick={autoFillSeo} className="quiet-button"><RefreshCw className="h-4 w-4" /> Auto-fill SEO</button></div>
-            <div className="mt-5 grid gap-5 lg:grid-cols-2"><FormField label="SEO title" htmlFor="blog-seo-title" hint={`${draft.seoTitle.length}/60 recommended characters`}><input id="blog-seo-title" value={draft.seoTitle} onChange={(event) => update('seoTitle', event.target.value)} className="suite-input" maxLength={70} /></FormField><FormField label="Meta description" htmlFor="blog-meta" hint={`${draft.metaDescription.length}/160 recommended characters`}><textarea id="blog-meta" value={draft.metaDescription} onChange={(event) => update('metaDescription', event.target.value)} className="suite-input min-h-24 resize-y" maxLength={180} /></FormField><FormField label="Canonical URL override" htmlFor="blog-canonical" hint="Leave empty to use the article URL."><input id="blog-canonical" type="url" value={draft.canonicalUrl} onChange={(event) => update('canonicalUrl', event.target.value)} className="suite-input" placeholder={`${window.location.origin}/blog/article-slug`} /></FormField><FormField label="Publish date" htmlFor="blog-publish-date" hint="A future date schedules public visibility."><input id="blog-publish-date" type="datetime-local" value={draft.publishedAt} onChange={(event) => update('publishedAt', event.target.value)} className="suite-input" /></FormField></div>
-            <div className="mt-5 rounded-lg border border-border p-4"><h4 className="text-sm font-semibold text-foreground">Verified article image</h4><p className="mt-1 text-xs leading-5 text-muted-foreground">Imports only public raster images after network, file type, size, dimensions, licence, and attribution checks. SVG is rejected.</p><div className="mt-4 grid gap-4 lg:grid-cols-2"><FormField label="Public image URL" htmlFor="image-source"><input id="image-source" type="url" value={imageImport.sourceUrl} onChange={(event) => setImageImport((value) => ({ ...value, sourceUrl: event.target.value }))} className="suite-input" /></FormField><FormField label="Descriptive alt text" htmlFor="image-alt"><input id="image-alt" value={imageImport.altText} onChange={(event) => setImageImport((value) => ({ ...value, altText: event.target.value }))} className="suite-input" /></FormField><FormField label="Publisher" htmlFor="image-publisher"><input id="image-publisher" value={imageImport.publisher} onChange={(event) => setImageImport((value) => ({ ...value, publisher: event.target.value }))} className="suite-input" /></FormField><FormField label="Licence" htmlFor="image-licence"><input id="image-licence" value={imageImport.licence} onChange={(event) => setImageImport((value) => ({ ...value, licence: event.target.value }))} className="suite-input" /></FormField></div><button type="button" onClick={importImage} disabled={saving || !imageImport.sourceUrl || !imageImport.publisher || !imageImport.licence || imageImport.altText.length < 8} className="quiet-button mt-4">Verify and import image</button>{draft.ogImageUrl && <p className="mt-3 break-all text-xs text-muted-foreground">Stored image: {draft.ogImageUrl}</p>}</div>
-            <div className="mt-6 rounded-xl border border-border bg-white p-5 text-slate-900"><div className="text-sm text-emerald-700">{window.location.hostname} / blog / {draft.slug || 'article-slug'}</div><div className="mt-1 text-xl text-[#1a0dab]">{draft.seoTitle || draft.title || 'Article SEO title'}</div><p className="mt-1 text-sm leading-6 text-slate-700">{draft.metaDescription || draft.excerpt || 'Article meta description preview.'}</p></div>
-            <div className="mt-5 grid gap-2 sm:grid-cols-2">{checklist.map((item) => <div key={item.label} className={`flex gap-2 rounded-lg border p-3 text-sm ${item.pass ? 'border-emerald-500/20 bg-emerald-500/8 text-emerald-800 dark:text-emerald-200' : 'border-border bg-muted/35 text-muted-foreground'}`}>{item.pass ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <XCircle className="h-4 w-4 shrink-0" />}{item.label}</div>)}</div>
-          </Panel>
-        </div>
-      </div>}
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" className="quiet-button" onClick={() => void loadPosts()} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh</button>
+        <button type="button" className="trust-button" onClick={startManual}><FilePlus2 className="h-4 w-4" /> Write article</button>
+      </div>
     </div>
-  );
+
+    <nav className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-card p-1" aria-label="Blog administration">
+      {TABS.map((tab) => { const Icon = tab.icon; return <button key={tab.id} type="button" onClick={() => { setActiveTab(tab.id); if (tab.id !== 'articles') setEditorOpen(false); }} className={`flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition-colors ${activeTab === tab.id ? 'bg-accent text-white shadow-sm' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`} aria-current={activeTab === tab.id ? 'page' : undefined}><Icon className="h-4 w-4" /> {tab.label}</button>; })}
+    </nav>
+
+    {error && <Notice tone="danger" title="Blog studio could not load">{error}</Notice>}
+
+    {activeTab === 'start' && <BlogStudioStart posts={posts} onManual={startManual} onOpenArticle={openArticle} onOpenAutomation={() => setActiveTab('automation')} />}
+
+    {activeTab === 'articles' && (editorOpen ? <BlogManualEditor
+      key={selectedPost?.id || 'new-article'}
+      post={selectedPost}
+      onClose={closeEditor}
+      onSaved={(saved) => { setSelectedId(saved.id); void loadPosts(); }}
+      onArchived={() => { closeEditor(); void loadPosts(); }}
+    /> : <div className="space-y-4">
+      <Panel className="p-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center">
+          <label className="relative flex-1"><span className="sr-only">Search articles</span><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input className="suite-input pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by title, URL, or focus phrase" /></label>
+          <select className="suite-input md:w-48" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'all' | BlogPostStatus)} aria-label="Filter articles by status">
+            <option value="all">All statuses</option><option value="draft">Draft</option><option value="needs_review">Needs attention</option><option value="review">In review</option><option value="scheduled">Scheduled</option><option value="published">Published</option><option value="failed">Failed</option><option value="archived">Archived</option>
+          </select>
+        </div>
+      </Panel>
+      {loading ? <div className="flex min-h-56 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-accent" /></div> : filteredPosts.length ? <div className="grid gap-3 lg:grid-cols-2">
+        {filteredPosts.map((post) => <button key={post.id} type="button" onClick={() => openArticle(post)} className="group rounded-lg border border-border bg-card p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-md">
+          <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h2 className="truncate font-semibold group-hover:text-accent">{post.title || 'Untitled article'}</h2><p className="mt-1 truncate text-xs text-muted-foreground">/blog/{post.slug || 'draft'}</p></div><StatusBadge tone={statusTone(post.status)}>{post.status.replaceAll('_', ' ')}</StatusBadge></div>
+          <p className="mt-4 line-clamp-2 text-sm leading-6 text-muted-foreground">{post.excerpt || 'Continue writing to generate a summary and search preview.'}</p>
+          <div className="mt-4 flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground"><span>{post.origin === 'admin_manual' ? 'Manual article' : 'AI-assisted article'}</span><span>Updated {dateLabel(post.updatedAt)}</span></div>
+        </button>)}
+      </div> : <EmptyState icon={Files} title="No articles found" description="Change the filters or start a new article." action={<button type="button" className="trust-button" onClick={startManual}><FilePlus2 className="h-4 w-4" /> Write article</button>} />}
+    </div>)}
+
+    {activeTab === 'automation' && <BlogAutomationPanel posts={posts} onChanged={() => void loadPosts()} />}
+    {activeTab === 'operations' && <BlogProviderFreeWorkspace />}
+  </section>;
 }

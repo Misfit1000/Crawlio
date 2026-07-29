@@ -17,7 +17,20 @@ The repository includes temporary write fallbacks for a rolling deployment, but 
 
 ## Current migration head
 
-Apply every migration in numeric order from `001_resource_light_audit.sql` through `019_finding_workflow_and_operations.sql`. Migrations 001-018 are published history and must not be edited. Migration 019 is additive: it creates owner-scoped finding workflow records, service-only alert deduplication state, Realtime publication for workflow rows, supporting indexes, and advances the database ledger to API schema 13.
+Apply every migration in numeric order from `001_resource_light_audit.sql` through `020_blog_editor_experience.sql`. Migrations 001-019 are published history and must not be edited. Migration 020 is additive and does not change the audit API schema: it creates server-only blog editor recovery buffers and administrator notification records.
+
+For migration 020:
+
+1. Create a Supabase-supported backup or restore point.
+2. Apply `supabase/migrations/020_blog_editor_experience.sql` in the Supabase SQL Editor.
+3. Run the verification queries at the bottom of the migration.
+4. Confirm RLS is enabled on `blog_editor_drafts` and `blog_admin_notifications`.
+5. Confirm neither table has an anonymous or authenticated policy.
+6. Deploy the matching Vercel build. The Render audit engine does not need a blog change.
+7. Open Admin > Blog studio, create a manual draft, wait for `Saved`, refresh, and restore it.
+8. Run one guarded AI article and confirm a published or needs-attention alert appears in the Blog studio inbox.
+
+Do not deploy the Blog Studio UI before migration 020. Existing public blog and audit contracts remain unchanged.
 
 For migration 019:
 

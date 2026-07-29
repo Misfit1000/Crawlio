@@ -91,6 +91,7 @@
     "verify:sentry-assets": "node scripts/verify-sentry-assets.mjs",
     "smoke:blog": "tsx scripts/smoke-blog-cms.mts",
     "smoke:blog-one-click": "tsx scripts/smoke-blog-one-click.mts",
+    "smoke:blog-editor-experience": "tsx scripts/smoke-blog-editor-experience.mts",
     "smoke:blog-discovery": "tsx scripts/smoke-blog-discovery.mts",
     "smoke:blog-article-origins": "tsx scripts/smoke-blog-automation.mts article-origins",
     "smoke:blog-separate-counts": "tsx scripts/smoke-blog-automation.mts separate-counts",
@@ -179,7 +180,7 @@
     "react-dom": "^18.3.1",
     "react-router": "^7.18.1",
     "sanitize-html": "^2.17.6",
-    "sharp": "^0.34.5",
+    "sharp": "^0.35.3",
     "vite": "^6.2.0"
   },
   "devDependencies": {

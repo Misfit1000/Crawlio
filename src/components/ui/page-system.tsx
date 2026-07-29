@@ -87,7 +87,7 @@ export function FormField({
   children,
   htmlFor,
 }: {
-  label: string;
+  label: ReactNode;
   hint?: string;
   error?: string | null;
   children: ReactNode;

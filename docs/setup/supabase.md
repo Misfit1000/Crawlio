@@ -5,7 +5,7 @@
 1. Create a Supabase project.
 2. Copy the project URL and anon key for the frontend.
 3. Copy the service role key for the API and worker only.
-4. Apply every SQL file in `supabase/migrations/` in numeric order through `019_finding_workflow_and_operations.sql`. Never rewrite an applied migration.
+4. Apply every SQL file in `supabase/migrations/` in numeric order through `020_blog_editor_experience.sql`. Never rewrite an applied migration.
 
 ## Frontend Environment
 
@@ -46,6 +46,8 @@ The migration creates:
 It also enables RLS, adds Realtime publication entries, and creates indexes for queue claiming, live timelines, pages, issues, and cleanup.
 
 Migration 019 permits authenticated owners to manage workflow only for their own signed-in audits. Guests retain a device-only fallback and cannot write shared workflow rows. `operations_alert_state` has RLS and no browser policy.
+
+Migration 020 adds service-only blog editor recovery buffers and administrator notifications. Both tables have RLS enabled and intentionally expose no anonymous or authenticated policies.
 
 ## Runtime Contract
 

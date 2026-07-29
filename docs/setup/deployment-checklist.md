@@ -12,7 +12,7 @@
 
 See `docs/operations/sentry.md` for the ordered setup and privacy checks.
 
-Apply migrations in numeric order through `019_finding_workflow_and_operations.sql`. Verify RLS, server-only audit admission, finding-workflow ownership, alert-state secrecy, the Vercel blog claim/complete/recovery RPCs, review thresholds, section revisions, image variants, approved sources, and fixture publication guards before deploying code.
+Apply migrations in numeric order through `020_blog_editor_experience.sql`. Verify RLS, server-only audit admission, finding-workflow ownership, alert-state secrecy, private blog editor buffers and notifications, the Vercel blog claim/complete/recovery RPCs, review thresholds, section revisions, image variants, approved sources, and fixture publication guards before deploying code.
 
 ## Pre-Deploy
 
@@ -63,7 +63,7 @@ git diff --check
 
 ## Supabase
 
-- Apply every file in `supabase/migrations/` in numeric order through 019; never rewrite an earlier migration.
+- Apply every file in `supabase/migrations/` in numeric order through 020; never rewrite an earlier migration.
 - Confirm Supabase Realtime is enabled for audit tables.
 - Confirm the live audit page shows `WebSocket live` after opening an audit.
 - Confirm RLS is enabled on audit tables.

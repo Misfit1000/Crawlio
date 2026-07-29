@@ -7,11 +7,13 @@ import { BLOG_FIXTURE_PROVIDER, generateBlogFixture, regenerateFixtureSection } 
 import { cleanupOrphanedBlogImageVariants, importBlogImage } from '../images';
 import { resolveBlogLengthRange } from '../length-policy';
 import { evaluateBlogQuality } from '../quality';
+import { completeManualArticleLinks } from '../editor-safe-fixes';
+import { blogEditorRepository } from '../editor-repository';
 import { renderBlogArticleHtml } from '../render';
 import { buildCompetitorGapBrief, researchCompetitorReferences, researchSourceUrls } from '../research';
 import { blogRepository } from '../repository';
 import { canonicalSiteOrigin } from '../sitemap';
-import { blogTextFromHtml, sanitizeBlogHtml } from '../sanitize';
+import { blogTextFromHtml } from '../sanitize';
 import { createBlogSlug } from '../slug';
 import type { BlogGenerationJob, BlogJobState, BlogPostInput, BlogSource, BlogWorkflowStage } from '../types';
 import { prepareBlogPost } from '../validation';
@@ -69,26 +71,8 @@ function articleTopic(job: BlogGenerationJob, outputs: Record<string, unknown>) 
   return job.customHeadline || job.topic || String(trend?.sourceTitle || trend?.source_title || '');
 }
 
-function escapeArticleText(value: unknown) {
-  return String(value || '').replace(/[&<>"']/g, (character) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  })[character] || character);
-}
-
 export function completeGeneratedArticleLinks(contentHtml: string, sources: BlogSource[]) {
-  let html = sanitizeBlogHtml(contentHtml);
-  const hrefs = () => [...html.matchAll(/href=["']([^"']+)/gi)].map((match) => match[1]);
-  const missingSources = sources.filter((source) => !hrefs().includes(source.url));
-  const internalLinks = hrefs().filter((href) => /^\/(?!\/)/.test(href));
-  const additions: string[] = [];
-  if (missingSources.length) {
-    additions.push(`<p>Review the original evidence from ${missingSources.map((source) => `<a href="${escapeArticleText(source.url)}">${escapeArticleText(source.title)}</a>`).join(' and ')}.</p>`);
-  }
-  if (!internalLinks.includes('/blog')) additions.push('<p>Browse more practical guidance in the <a href="/blog">Crawlio SEO article library</a>.</p>');
-  if (internalLinks.length + Number(!internalLinks.includes('/blog')) < 2 && !internalLinks.includes('/#start-audit')) {
-    additions.push('<p>Apply these checks to a public website with the <a href="/#start-audit">Crawlio website audit</a>.</p>');
-  }
-  return additions.length ? `${html}<h2>Sources and next steps</h2>${additions.join('')}` : html;
+  return completeManualArticleLinks(contentHtml, sources);
 }
 
 async function runStructured<T>(job: BlogGenerationJob, stage: BlogWorkflowStage, prompt: string, validate: (value: unknown) => value is T) {
@@ -142,6 +126,23 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
       const selectedRow = stored.find((item) => item.source_url === selectedTrend.sourceUrl);
       if (selectedRow?.id) await blogAutomationRepository.updateDiscovery(selectedRow.id, { status: 'selected' });
       return { output: { sources, competitors: [], selectedTrend }, message: `Selected a timely update from ${selectedTrend.publisher}` };
+    }
+    if (jobType === 'one_click_source') {
+      const supplied = Array.isArray(job.payload.sourceUrls) ? job.payload.sourceUrls.map(String).slice(0, 1) : [];
+      if (supplied.length !== 1) throw new Error('One public source URL is required.');
+      const posts = await blogRepository.listAdmin(300);
+      if (posts.some((post) => post.sources.some((source) => source.url === supplied[0]))) throw new Error('This source is already covered by an existing article.');
+      const sources = await researchSourceUrls(supplied);
+      const source = sources[0];
+      if (!source) throw new Error('The supplied source could not be verified.');
+      if (posts.some((post) => post.sources.some((existingSource) => existingSource.url === source.url) || post.title.toLowerCase() === source.title.toLowerCase())) {
+        throw new Error('This source or topic is already covered by an existing article.');
+      }
+      const selectedTrend = {
+        sourceUrl: source.url, sourceTitle: source.title, publisher: source.publisher,
+        publishedAt: source.publishedAt || new Date().toISOString(), freshnessStatus: 'unverified', topicCluster: 'SEO updates',
+      };
+      return { output: { sources, competitors: [], selectedTrend }, message: `Verified the source from ${source.publisher}` };
     }
     const supplied = Array.isArray(job.payload.sourceUrls) ? job.payload.sourceUrls.map(String).slice(0, 12) : [];
     const sources = supplied.length ? await researchSourceUrls(supplied) : sourcesFromJob(job);
@@ -234,7 +235,8 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
     const recovered = await blogRepository.getByGenerationJobId(job.id);
     if (recovered) {
       await blogAutomationRepository.updateJob(job.id, { articleId: recovered.id, result: { recoveredAfterRetry: true } });
-      return { output: { articleId: recovered.id }, next: recovered.status === 'scheduled' ? 'scheduled' : 'ready_for_review', state: recovered.status === 'scheduled' ? 'scheduled' : 'ready_for_review', message: 'Existing draft recovered safely' };
+      const destination = recovered.status === 'published' ? 'published' : recovered.status === 'scheduled' ? 'scheduled' : 'ready_for_review';
+      return { output: { articleId: recovered.id }, next: destination, state: destination, message: 'Existing article recovered safely' };
     }
     const draft = outputs.assembled as any;
     const metadata = (outputs.metadata || {}) as any;
@@ -289,6 +291,13 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
     }
     await blogRepository.syncEditorialRecords(post, job.requestedBy, '');
     await blogAutomationRepository.updateJob(job.id, { articleId: post.id, result: { articleId: post.id, blockers, qualityStatus: quality.status, published: publishNow }, inputTokens: Number((outputs.providerUsage as any)?.inputTokens || 0), outputTokens: Number((outputs.providerUsage as any)?.outputTokens || 0), completedAt: new Date().toISOString() });
+    await blogEditorRepository.createNotification({
+      adminUserId: job.requestedBy,
+      type: publishNow ? 'blog_published' : 'blog_needs_attention',
+      title: publishNow ? 'AI article published' : 'AI article needs attention',
+      message: publishNow ? `${post.title} is now live.` : `${post.title} was saved privately because ${blockers.length || 1} publication check${blockers.length === 1 ? '' : 's'} need attention.`,
+      articleId: post.id, jobId: job.id, linkPath: `/admin/blog?articleId=${encodeURIComponent(post.id)}`,
+    }).catch(() => undefined);
     return publishNow
       ? { output: { articleId: post.id, blockers: [] }, next: 'published', state: 'published', message: 'Article passed every gate and was published' }
       : { output: { articleId: post.id, blockers }, next: 'ready_for_review', state: 'ready_for_review', message: blockers.length ? 'Draft saved for review because publication checks need attention' : 'Draft is ready for editorial review' };
@@ -338,6 +347,12 @@ export async function processNextVercelBlogStage(input: { requestedJobId?: strin
     const terminal = !safe.retryable || job.stageAttemptCount >= 3 || job.attemptCount >= job.maxAttempts;
     const retryAt = new Date(Date.now() + Math.min(15 * 60_000, 30_000 * Math.max(1, job.stageAttemptCount))).toISOString();
     const deferred = await blogAutomationRepository.deferVercelStage({ jobId: job.id, executionId, expectedStage: job.workflowStage, errorCode: safe.code, message: safe.message, retryAt, terminal });
+    if (terminal) {
+      await blogEditorRepository.createNotification({
+        adminUserId: job.requestedBy, type: 'blog_failed', title: 'AI article could not finish', message: safe.message,
+        jobId: job.id, linkPath: `/admin/blog?jobId=${encodeURIComponent(job.id)}`,
+      }).catch(() => undefined);
+    }
     return { processed: true as const, job: deferred, errorCode: safe.code };
   }
 }
