@@ -2,6 +2,7 @@ import { AlertTriangle, CheckCircle2, FileSearch, Layers, ShieldAlert } from 'lu
 import type { ResourceAuditDocument, ResourceAuditIssue } from '../../lib/audit/resource-types';
 import type { AuditScoreState } from '../../lib/audit/audit-live-score';
 import { issueSignature, type ChecklistStatus } from '../../lib/audit/client-insights';
+import { findingImpact } from '../../lib/audit/report-insights';
 import { AuditScoreOverview, CategoryScoreBar, ProgressBar, SeverityDistribution, StatusBadge, SurfaceCard } from '../ui/visual-system';
 
 export interface AuditCategoryScore {
@@ -130,7 +131,7 @@ export function PriorityRecommendations({
             return (
               <article key={issue.id} className="grid gap-3 py-4 md:grid-cols-[36px_minmax(0,1fr)_150px_130px] md:items-center">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted text-sm font-semibold tabular-nums">{index + 1}</div>
-                <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold">{issue.title}</h3><StatusBadge tone={issue.severity === 'critical' ? 'danger' : issue.severity === 'high' || issue.severity === 'medium' ? 'warning' : 'neutral'}>{issue.severity}</StatusBadge></div><p className="mt-1 text-sm text-muted-foreground">{priorityReason(issue)}</p></div>
+                <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold">{issue.title}</h3><StatusBadge tone={issue.severity === 'critical' ? 'danger' : issue.severity === 'high' || issue.severity === 'medium' ? 'warning' : 'neutral'}>{issue.severity}</StatusBadge><StatusBadge tone="accent">{findingImpact(issue).label}</StatusBadge></div><p className="mt-1 text-sm text-muted-foreground">{priorityReason(issue)}</p></div>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground"><ShieldAlert className="h-4 w-4" />{issue.affectedPageCount || 1} affected</div>
                 <div className="flex items-center gap-2 text-sm capitalize text-muted-foreground"><CheckCircle2 className="h-4 w-4" />{workflow}</div>
               </article>

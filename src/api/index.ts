@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Router } from 'express';
 import { normalizeDomainInput, normalizeUserUrl } from '../lib/seo/url-utils';
 import { isCompletedAuditStatus } from '../lib/audit/audit-time';
@@ -40,6 +40,7 @@ import { applySafeBlogFixes } from '../lib/blog/editor-safe-fixes';
 import { researchSourceUrls } from '../lib/blog/research';
 import { suggestBlogHeadingStructure } from '../lib/blog/server/editor-assistance';
 import { normalizePublicBlogSourceUrl } from '../lib/blog/source-url';
+import { indexNowKey, notifyIndexNow } from '../lib/blog/indexnow';
 import { ApiError } from '../lib/api/errors';
 import {
   admitAuditSubmission,
@@ -65,6 +66,16 @@ import {
   flushNodeMonitoring,
 } from '../lib/monitoring/sentry-node';
 import { resolveSentryBuildConfiguration } from '../lib/monitoring/sentry-build';
+import { listProjectOverview, updateProjectSettings, upsertProject } from '../lib/projects/service';
+import {
+  completeSearchConsoleAuthorization,
+  createSearchConsoleAuthorization,
+  disconnectSearchConsole,
+  getSearchConsoleRows,
+  searchConsoleConfigured,
+  searchConsoleStatus,
+  syncSearchConsoleProperty,
+} from '../lib/search-console/server';
 
 const DUPLICATE_AUDIT_WINDOW_MS = 10 * 60 * 1000;
 
@@ -96,6 +107,12 @@ apiRouter.use('/blog/scheduler', durableRateLimit({ namespace: 'blog-scheduler',
 apiRouter.use('/audit/export', durableRateLimit({ namespace: 'report-export', limit: 10, windowSeconds: 300 }));
 apiRouter.use('/audit/cancel', durableRateLimit({ namespace: 'audit-cancel', limit: 10, windowSeconds: 300 }));
 apiRouter.use('/domain/link-signals', createRateLimiter({ namespace: 'public-link-signals', windowMs: 60 * 60 * 1000, maxRequests: 20 }));
+apiRouter.use('/projects', durableRateLimit({ namespace: 'projects', limit: 90, windowSeconds: 60 }));
+apiRouter.use('/search-console', durableRateLimit({ namespace: 'search-console', limit: 30, windowSeconds: 300 }));
+apiRouter.use(['/projects', '/search-console'], (_req, res, next) => {
+  res.setHeader('Cache-Control', 'private, no-store');
+  next();
+});
 
 function firstHeaderValue(value: unknown) {
   return Array.isArray(value) ? String(value[0] || '') : String(value || '');
@@ -214,6 +231,81 @@ function prepareBlogPostForStorage(input: any) {
   }
   row.prerender_status = 'passed';
   return row;
+}
+
+function nextProjectAuditAt(frequency: string, from = Date.now()) {
+  const days = frequency === 'weekly' ? 7 : 30;
+  return new Date(from + days * 86_400_000).toISOString();
+}
+
+async function enqueueScheduledProjectAudit(project: any) {
+  const normalized = normalizeUserUrl(String(project.normalized_url || ''));
+  if (!normalized.isValid || normalized.hostname !== String(project.hostname || '').toLowerCase()) {
+    throw new ApiError('PROJECT_TARGET_INVALID', 'The scheduled project target is invalid.', 400);
+  }
+  const decision = await canStartAudit(String(project.user_id), getAuditModeConfig(project.audit_mode || 'quick').mode as AuditMode, {
+    deepAuditEnabled: isDeepAuditEnabled(),
+  });
+  const admission = await admitAuditSubmission({
+    userId: String(project.user_id),
+    guestKeyHash: null,
+    ipHash: hashGuestValue(`project-scheduler:${project.id}`),
+    normalizedDomain: normalized.hostname,
+    normalizedUrl: normalized.normalizedUrl,
+    auditMode: decision.effectiveMode,
+    plan: decision.plan,
+    dailyLimit: decision.limits.dailyAudits,
+    domainDailyLimit: Number(process.env.DOMAIN_DAILY_AUDIT_LIMIT || 2),
+    activeLimit: Math.max(1, decision.limits.concurrency),
+    globalActiveLimit: Number(process.env.GLOBAL_ACTIVE_AUDIT_LIMIT || 50),
+    botVerified: true,
+  });
+  if (admission.reusedExistingAudit || (!admission.allowed && admission.auditId)) {
+    return { auditId: admission.auditId, reused: true };
+  }
+  if (!admission.allowed) throw admissionError(admission);
+
+  let audit: ResourceAuditDocument;
+  try {
+    audit = await auditRepository.createAuditJob({
+      id: admission.auditId,
+      submittedInput: normalized.normalizedUrl,
+      normalizedUrl: normalized.normalizedUrl,
+      hostname: normalized.hostname,
+      mode: decision.effectiveMode,
+      requestedMode: decision.requestedMode,
+      effectiveMode: decision.effectiveMode,
+      plan: decision.plan,
+      processingTier: decision.processingTier,
+      pageLimit: decision.pageLimit,
+      queuePriority: decision.queuePriority,
+      estimatedWaitSeconds: admission.queueDepth ? Math.max(0, admission.queueDepth - 1) * 45 : null,
+      userId: decision.userId,
+      guestKeyHash: null,
+      projectId: project.id,
+    });
+  } catch (error) {
+    await releaseAuditAdmission(admission.auditId, 'SCHEDULED_AUDIT_CREATE_FAILED');
+    throw error;
+  }
+  try {
+    await consumeAuditQuota(decision.userId, audit.id, decision.effectiveMode, {
+      plan: decision.plan,
+      pagesLimit: decision.pageLimit,
+      guestKey: `scheduled:${project.id}`,
+    });
+    await auditRepository.updateAudit(audit.id, { quotaCounted: true });
+  } catch (error) {
+    await auditRepository.addInternalDiagnostic({
+      auditId: audit.id,
+      affectedUrl: audit.normalizedUrl,
+      failureCode: 'SCHEDULED_QUOTA_COUNTER_SYNC_FAILED',
+      phase: 'admission',
+      attemptCount: 1,
+      internalDetails: error instanceof Error ? error.message : String(error),
+    }).catch(() => undefined);
+  }
+  return { auditId: audit.id, reused: false };
 }
 
 function boundedBlogEditorPayload(value: unknown) {
@@ -457,6 +549,9 @@ apiRouter.get('/admin/diagnostics', asyncJsonRoute(async (req, res) => {
       apiConfigured: Boolean(process.env.SENTRY_DSN),
       workerConfigured: workerSentryConfigured,
       sourceMapsConfigured: sentryBuild.sourceMapsConfigured,
+      searchConsoleConfigured: searchConsoleConfigured(),
+      projectSchedulerConfigured: String(process.env.CRON_SECRET || '').length >= 24,
+      canonicalAppUrlConfigured: /^https:\/\//.test(String(process.env.APP_URL || '')),
       environment: sentryBuild.environment,
     },
   }});
@@ -759,6 +854,14 @@ apiRouter.get('/admin/blog/posts', asyncJsonRoute(async (req, res) => {
   const posts = await blogRepository.listAdmin(Number(req.query.limit || 100));
   res.setHeader('Cache-Control', 'private, no-store');
   res.json({ success: true, data: { posts } });
+}));
+
+apiRouter.get('/blog/indexnow-key.txt', asyncJsonRoute(async (_req, res) => {
+  const key = indexNowKey();
+  if (!key) throw new ApiError('INDEXNOW_NOT_CONFIGURED', 'IndexNow is not configured.', 404);
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.send(key);
 }));
 
 apiRouter.post('/admin/blog/source/inspect', asyncJsonRoute(async (req, res) => {
@@ -1261,6 +1364,7 @@ apiRouter.post('/admin/blog/posts/:id/workflow', asyncJsonRoute(async (req, res)
   await blogRepository.syncEditorialRecords(post, requester.userId, existing.status);
   if ((existing.origin === 'autopilot' || existing.origin === 'trend_autopilot') && existing.status === 'needs_review' && (action === 'publish_now' || action === 'cancel')) await blogAutomationRepository.recordAutomaticReview(action === 'publish_now');
   await logBlogAction(requester.userId, `blog_workflow_${action}`, post.id, { previousState: existing.status, newState: post.status, reason });
+  if (action === 'publish_now' && post.status === 'published') void notifyIndexNow([`/blog/${post.slug}`, '/blog', '/sitemap.xml', '/rss.xml']).catch(() => undefined);
   res.json({ success: true, data: { post } });
 }));
 
@@ -1310,6 +1414,171 @@ apiRouter.delete('/admin/blog/posts/:id', asyncJsonRoute(async (req, res) => {
   res.json({ success: true, data: { post } });
 }));
 
+apiRouter.get('/projects/overview', asyncJsonRoute(async (req, res) => {
+  const requester = await getRequester(req);
+  if (!requester.userId) throw new ApiError('AUTHENTICATION_REQUIRED', 'Authentication required.', 401);
+  const limits = await getPlanLimits(requester.profile?.plan || 'free');
+  const overview = await listProjectOverview(requester.userId);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: { ...overview, scheduledAuditsEnabled: limits.scheduledAuditsEnabled } });
+}));
+
+apiRouter.post('/projects', asyncJsonRoute(async (req, res) => {
+  const requester = await getRequester(req);
+  if (!requester.userId) throw new ApiError('AUTHENTICATION_REQUIRED', 'Authentication required.', 401);
+  try {
+    const project = await upsertProject(requester.userId, { name: req.body?.name, url: req.body?.url });
+    res.status(201).json({ success: true, data: { project } });
+  } catch (error) {
+    if (error instanceof Error && /valid public website/i.test(error.message)) throw new ApiError('PROJECT_URL_INVALID', error.message, 400);
+    throw error;
+  }
+}));
+
+apiRouter.patch('/projects/:id', asyncJsonRoute(async (req, res) => {
+  const requester = await getRequester(req);
+  if (!requester.userId || !requester.profile) throw new ApiError('AUTHENTICATION_REQUIRED', 'Authentication required.', 401);
+  const requestedFrequency = String(req.body?.auditFrequency || '');
+  if (requestedFrequency && requestedFrequency !== 'manual') {
+    const limits = await getPlanLimits(requester.profile.plan);
+    if (!limits.scheduledAuditsEnabled) {
+      throw new ApiError('SCHEDULED_AUDITS_NOT_INCLUDED', 'Scheduled audits are available on Agency and administrator plans.', 403);
+    }
+  }
+  try {
+    const project = await updateProjectSettings(requester.userId, req.params.id, req.body || {});
+    res.json({ success: true, data: { project } });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Project not found.') throw new ApiError('PROJECT_NOT_FOUND', error.message, 404);
+    throw error;
+  }
+}));
+
+apiRouter.get('/projects/notifications', asyncJsonRoute(async (req, res) => {
+  const requester = await getRequester(req);
+  if (!requester.userId) throw new ApiError('AUTHENTICATION_REQUIRED', 'Authentication required.', 401);
+  const client = requireSupabaseAdminClient();
+  await client.from('project_notifications').delete().eq('user_id', requester.userId).lt('expires_at', new Date().toISOString());
+  const result = await client.from('project_notifications').select('id,project_id,kind,title,message,audit_id,read_at,created_at').eq('user_id', requester.userId).order('created_at', { ascending: false }).limit(50);
+  if (result.error) throw result.error;
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: { notifications: result.data || [] } });
+}));
+
+apiRouter.post('/projects/notifications/read', asyncJsonRoute(async (req, res) => {
+  const requester = await getRequester(req);
+  if (!requester.userId) throw new ApiError('AUTHENTICATION_REQUIRED', 'Authentication required.', 401);
+  const client = requireSupabaseAdminClient();
+  let query = client.from('project_notifications').update({ read_at: new Date().toISOString() }).eq('user_id', requester.userId).is('read_at', null);
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String).filter((id: string) => /^[0-9a-f-]{36}$/i.test(id)).slice(0, 50) : [];
+  if (ids.length) query = query.in('id', ids);
+  const result = await query.select('id');
+  if (result.error) throw result.error;
+  res.json({ success: true, data: { updated: result.data?.length || 0 } });
+}));
+
+apiRouter.get('/projects/scheduler/run', asyncJsonRoute(async (req, res) => {
+  if (!schedulerRequestAllowed(req)) throw new ApiError('PROJECT_SCHEDULER_UNAUTHORIZED', 'Scheduler authentication failed.', 401);
+  await assertAuditDeploymentCompatible();
+  const client = requireSupabaseAdminClient();
+  const dueResult = await client.from('projects')
+    .select('id,user_id,name,normalized_url,hostname,audit_frequency,audit_mode,next_audit_at')
+    .in('audit_frequency', ['weekly', 'monthly'])
+    .not('next_audit_at', 'is', null)
+    .lte('next_audit_at', new Date().toISOString())
+    .order('next_audit_at', { ascending: true })
+    .limit(10);
+  if (dueResult.error) throw dueResult.error;
+  const results: Array<{ projectId: string; status: string; auditId?: string; message?: string }> = [];
+  for (const project of dueResult.data || []) {
+    try {
+      const profileResult = await client.from('user_profiles').select('plan').eq('id', project.user_id).maybeSingle();
+      if (profileResult.error) throw profileResult.error;
+      const limits = await getPlanLimits(profileResult.data?.plan || 'free');
+      if (!limits.scheduledAuditsEnabled) {
+        await client.from('projects').update({ audit_frequency: 'manual', next_audit_at: null, updated_at: new Date().toISOString() }).eq('id', project.id);
+        await client.from('project_notifications').insert({ project_id: project.id, user_id: project.user_id, kind: 'schedule_paused', title: 'Scheduled audits paused', message: 'This plan no longer includes scheduled audits.' });
+        results.push({ projectId: project.id, status: 'paused' });
+        continue;
+      }
+      const queued = await enqueueScheduledProjectAudit(project);
+      const now = new Date().toISOString();
+      await client.from('projects').update({ last_audit_at: now, last_audit_id: queued.auditId, next_audit_at: nextProjectAuditAt(project.audit_frequency), updated_at: now }).eq('id', project.id);
+      results.push({ projectId: project.id, status: queued.reused ? 'reused' : 'queued', auditId: queued.auditId });
+    } catch (error) {
+      const retryAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      await client.from('projects').update({ next_audit_at: retryAt, updated_at: new Date().toISOString() }).eq('id', project.id);
+      results.push({ projectId: project.id, status: 'deferred', message: error instanceof Error ? error.message.slice(0, 180) : 'Audit admission was deferred.' });
+    }
+  }
+  res.json({ success: true, data: { checked: dueResult.data?.length || 0, results } });
+}));
+
+apiRouter.get('/search-console/status', asyncJsonRoute(async (req, res) => {
+  const requester = await getRequester(req);
+  if (!requester.userId) throw new ApiError('AUTHENTICATION_REQUIRED', 'Authentication required.', 401);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: await searchConsoleStatus(requester.userId) });
+}));
+
+apiRouter.post('/search-console/connect', asyncJsonRoute(async (req, res) => {
+  const requester = await getRequester(req);
+  if (!requester.userId) throw new ApiError('AUTHENTICATION_REQUIRED', 'Authentication required.', 401);
+  const origin = requestOrigin(req);
+  if (!origin) throw new ApiError('APPLICATION_ORIGIN_UNAVAILABLE', 'The application URL is not configured.', 503);
+  try {
+    const authorizationUrl = await createSearchConsoleAuthorization(requester.userId, `${origin}/api/tools/search-console/callback`);
+    res.json({ success: true, data: { authorizationUrl } });
+  } catch (error) {
+    if (error instanceof Error && /not configured/i.test(error.message)) throw new ApiError('SEARCH_CONSOLE_NOT_CONFIGURED', error.message, 503);
+    throw error;
+  }
+}));
+
+apiRouter.get('/search-console/callback', asyncJsonRoute(async (req, res) => {
+  const origin = requestOrigin(req);
+  if (!origin) throw new ApiError('APPLICATION_ORIGIN_UNAVAILABLE', 'The application URL is not configured.', 503);
+  const state = String(req.query.state || '');
+  const code = String(req.query.code || '');
+  if (!state || !code) return res.redirect(302, `${origin}/app/search-data?gsc=cancelled`);
+  try {
+    const result = await completeSearchConsoleAuthorization({ state, code, redirectUri: `${origin}/api/tools/search-console/callback` });
+    res.redirect(302, `${origin}${result.redirectPath}?gsc=connected&properties=${result.propertyCount}`);
+  } catch {
+    res.redirect(302, `${origin}/app/search-data?gsc=error`);
+  }
+}));
+
+apiRouter.post('/search-console/sync/:propertyId', asyncJsonRoute(async (req, res) => {
+  const requester = await getRequester(req);
+  if (!requester.userId) throw new ApiError('AUTHENTICATION_REQUIRED', 'Authentication required.', 401);
+  try {
+    res.json({ success: true, data: await syncSearchConsoleProperty(requester.userId, String(req.params.propertyId)) });
+  } catch (error) {
+    if (error instanceof Error && /not found/i.test(error.message)) throw new ApiError('SEARCH_CONSOLE_PROPERTY_NOT_FOUND', error.message, 404);
+    throw new ApiError('SEARCH_CONSOLE_SYNC_FAILED', error instanceof Error ? error.message : 'Search Console sync failed.', 502);
+  }
+}));
+
+apiRouter.get('/search-console/data/:propertyId', asyncJsonRoute(async (req, res) => {
+  const requester = await getRequester(req);
+  if (!requester.userId) throw new ApiError('AUTHENTICATION_REQUIRED', 'Authentication required.', 401);
+  try {
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json({ success: true, data: await getSearchConsoleRows(requester.userId, String(req.params.propertyId)) });
+  } catch (error) {
+    if (error instanceof Error && /not found/i.test(error.message)) throw new ApiError('SEARCH_CONSOLE_PROPERTY_NOT_FOUND', error.message, 404);
+    throw error;
+  }
+}));
+
+apiRouter.delete('/search-console/connection', asyncJsonRoute(async (req, res) => {
+  const requester = await getRequester(req);
+  if (!requester.userId) throw new ApiError('AUTHENTICATION_REQUIRED', 'Authentication required.', 401);
+  await disconnectSearchConsole(requester.userId);
+  res.json({ success: true, data: { disconnected: true } });
+}));
+
 async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'quick') {
   const { url, mode = defaultMode, projectId = null } = req.body || {};
   const normalized = normalizeUserUrl(String(url || ''), {
@@ -1321,6 +1590,17 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
 
   const requestedMode = getAuditModeConfig(mode).mode as AuditMode;
   const { userId } = await getRequester(req);
+  let validatedProjectId: string | null = null;
+  if (projectId != null) {
+    if (!userId) throw new ApiError('PROJECT_AUTHENTICATION_REQUIRED', 'Sign in to attach an audit to a project.', 401);
+    const projectResult = await requireSupabaseAdminClient().from('projects').select('id,hostname').eq('id', String(projectId)).eq('user_id', userId).maybeSingle();
+    if (projectResult.error) throw projectResult.error;
+    if (!projectResult.data) throw new ApiError('PROJECT_NOT_FOUND', 'Project not found.', 404);
+    if (String(projectResult.data.hostname || '').toLowerCase() !== normalized.hostname.toLowerCase()) {
+      throw new ApiError('PROJECT_DOMAIN_MISMATCH', 'The audit website must match the selected project.', 400);
+    }
+    validatedProjectId = projectResult.data.id;
+  }
   const guestIdentity = guestIdentityForRequest(req);
   const ownerLookup = userId
     ? { userId, guestKeyHash: null }
@@ -1421,7 +1701,7 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
       estimatedWaitSeconds: admission?.queueDepth ? Math.max(0, admission.queueDepth - 1) * 45 : null,
       userId: decision.userId,
       guestKeyHash: decision.userId ? null : guestIdentity.guestKeyHash,
-      projectId,
+      projectId: validatedProjectId,
     });
   } catch (error) {
     if (admission?.auditId) await releaseAuditAdmission(admission.auditId, 'AUDIT_CREATE_FAILED');
@@ -1493,6 +1773,49 @@ apiRouter.get('/audit/result/:id', asyncJsonRoute(async (req, res) => {
   if (!liveData.audit || !(await canAccessAudit(req, liveData.audit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
   res.setHeader('Cache-Control', 'private, no-store');
   res.json({ success: true, data: liveData });
+}));
+
+apiRouter.post('/audit/:id/share', durableRateLimit({ namespace: 'report-share', limit: 20, windowSeconds: 3600 }), asyncJsonRoute(async (req, res) => {
+  res.setHeader('Cache-Control', 'private, no-store');
+  const audit = await auditRepository.getAudit(req.params.id);
+  if (!audit || !(await canAccessAudit(req, audit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
+  if (!audit.userId) throw new ApiError('REPORT_SHARE_SIGN_IN_REQUIRED', 'Sign in before creating a shareable report.', 401);
+  if (!isCompletedAuditStatus(audit.status)) throw new ApiError('REPORT_SHARE_NOT_READY', 'The report can be shared after the audit completes.', 409);
+  const origin = requestOrigin(req);
+  if (!origin) throw new ApiError('APPLICATION_ORIGIN_UNAVAILABLE', 'The application URL is not configured.', 503);
+  const days = Math.max(1, Math.min(30, Math.floor(Number(req.body?.expiresInDays || 7))));
+  const token = randomBytes(32).toString('base64url');
+  const expiresAt = new Date(Date.now() + days * 86_400_000).toISOString();
+  const client = requireSupabaseAdminClient();
+  await client.from('report_shares').delete().eq('user_id', audit.userId).lt('expires_at', new Date().toISOString());
+  const result = await client.from('report_shares').insert({ audit_id: audit.id, project_id: audit.projectId, user_id: audit.userId, token_hash: createHash('sha256').update(token).digest('hex'), expires_at: expiresAt }).select('id').single();
+  if (result.error) throw result.error;
+  res.json({ success: true, data: { shareId: result.data.id, shareUrl: `${origin}/share/${token}`, expiresAt } });
+}));
+
+apiRouter.get('/shared-reports/:token', createRateLimiter({ namespace: 'shared-reports', windowMs: 60 * 60 * 1000, maxRequests: 120 }), asyncJsonRoute(async (req, res) => {
+  const token = String(req.params.token || '');
+  if (!/^[A-Za-z0-9_-]{40,80}$/.test(token)) throw new ApiError('SHARED_REPORT_NOT_FOUND', 'Shared report not found.', 404);
+  const client = requireSupabaseAdminClient();
+  const shareResult = await client.from('report_shares').select('id,audit_id,expires_at,revoked_at,view_count').eq('token_hash', createHash('sha256').update(token).digest('hex')).is('revoked_at', null).gt('expires_at', new Date().toISOString()).maybeSingle();
+  if (shareResult.error) throw shareResult.error;
+  if (!shareResult.data) throw new ApiError('SHARED_REPORT_NOT_FOUND', 'This report link is invalid or expired.', 404);
+  const [audit, report, pages, issues] = await Promise.all([
+    auditRepository.getAudit(shareResult.data.audit_id),
+    auditRepository.getFinalReport(shareResult.data.audit_id),
+    auditRepository.getLatestPages(shareResult.data.audit_id, 100),
+    auditRepository.getLatestIssues(shareResult.data.audit_id, 500),
+  ]);
+  if (!audit || !report || !isCompletedAuditStatus(audit.status)) throw new ApiError('SHARED_REPORT_NOT_FOUND', 'Shared report not found.', 404);
+  await client.from('report_shares').update({ last_viewed_at: new Date().toISOString(), view_count: Number(shareResult.data.view_count || 0) + 1 }).eq('id', shareResult.data.id).eq('view_count', shareResult.data.view_count || 0);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: {
+    audit: { id: audit.id, normalizedUrl: audit.normalizedUrl, hostname: audit.hostname, effectiveMode: audit.effectiveMode, status: audit.status, pagesCrawled: audit.pagesCrawled, issuesFound: audit.issuesFound, criticalCount: audit.criticalCount, highCount: audit.highCount, mediumCount: audit.mediumCount, lowCount: audit.lowCount, completedAt: audit.completedAt },
+    report,
+    pages,
+    issues,
+    expiresAt: shareResult.data.expires_at,
+  } });
 }));
 
 apiRouter.get('/audit/:id/finding-workflow', asyncJsonRoute(async (req, res) => {

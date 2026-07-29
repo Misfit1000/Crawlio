@@ -45,6 +45,7 @@ import {
   flushNodeMonitoring,
   initializeWorkerMonitoring,
 } from '../lib/monitoring/sentry-node';
+import { recordProjectAuditCompletion, recordProjectAuditFailure } from '../lib/projects/completion';
 
 initializeWorkerMonitoring();
 
@@ -444,6 +445,17 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
   }, { type: 'robots_fetching', message: 'Checking search engine access rules' });
   const robotsTxt = await fetchRobotsTxt(origin, workerFetchOptions(config.timeoutMs));
   const robotsRules = robotsTxt ? parseRobotsTxt(robotsTxt) : null;
+
+  if (audit.projectId) {
+    const previousPages = await auditRepository.getPreviousProjectPages(audit.projectId, audit.id, Math.min(config.pageLimit, 100)).catch(() => []);
+    for (const page of previousPages) {
+      if (scheduled.size >= candidateLimit) break;
+      await enqueuePage(page.url, Math.max(1, page.crawlDepth), 'Previous project audit');
+    }
+    if (previousPages.length) {
+      await writer.addEvent({ type: 'project_pages_prioritized', message: `Prioritized ${previousPages.length} previously audited project pages before fresh discovery.`, progress: 12, data: { priorPages: previousPages.length } });
+    }
+  }
 
   await writeProgress({
     progress: 14,
@@ -1004,6 +1016,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
       : `Audit completed in ${Math.max(1, Math.round((Date.now() - new Date(workerStart).getTime()) / 1000))}s`,
     progress: 100,
   }, { force: true });
+  await recordProjectAuditCompletion({ ...audit, status: completedStatus, completedAt, pagesCrawled: analysedPages, issuesFound: issues.length }, report).catch(() => undefined);
 }
 
 async function processAudit(audit: ResourceAuditDocument, workerId: string) {
@@ -1165,6 +1178,7 @@ export async function runOneAudit(
         affectedUrl: failure.affectedUrl,
         progress: 100,
       });
+      await recordProjectAuditFailure({ ...audit, status: 'failed', completedAt: nowIso(), error: safeMessage }, safeMessage).catch(() => undefined);
     }
     console.error(`Audit ${audit.id} failed [${failure.code}]: ${failure.internalDetails}`);
     if (runtimeState) {

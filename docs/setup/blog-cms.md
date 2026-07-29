@@ -1,6 +1,6 @@
 # Blog automation setup
 
-Apply every Supabase migration in numeric order through 020. Migration 020 adds private editor recovery drafts and in-app administrator notifications. Both tables are service-role-only and have no browser policies.
+Apply every Supabase migration in numeric order through 021. Migration 020 adds private editor recovery drafts and in-app administrator notifications. Migration 021 is the current platform head and adds project, share, and Search Console storage without changing the public blog contract.
 
 Vercel serves the Vite application, protected blog APIs, bounded workflow stages, source/feed processing, publication, complete article HTML, sitemap, news sitemap, and RSS. Configure the server variables in `docs/deployment/vercel-blog-environment.md`. Never use a `VITE_` prefix for Groq, service-role, dispatcher, or cron secrets.
 
@@ -19,3 +19,6 @@ The Blog studio starts with three workflows:
 AI jobs that fail a publication gate are saved privately as Needs attention. They are never published by bypassing source, claim, originality, link, or rendering checks. The Blog studio inbox reports published, needs-attention, and terminal-failure outcomes without adding email or webhook dependencies.
 
 Manual drafts are copied to browser storage immediately and saved to the server after three idle seconds, with writes capped to once per fifteen seconds. Published articles use an isolated editor buffer and only change publicly after Republish. A stale browser tab receives a conflict response instead of overwriting a newer article.
+# Search discovery notifications
+
+Published articles already provide initial HTML, canonical URLs, Article and Breadcrumb structured data, RSS, and sitemap entries. `INDEXNOW_KEY` optionally submits the article, blog index, sitemap, and RSS URLs after successful publication. Submission is best-effort and never bypasses publication gates or guarantees indexing/ranking.

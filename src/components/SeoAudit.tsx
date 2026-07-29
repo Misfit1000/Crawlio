@@ -4,7 +4,7 @@ import { createAuditSubmitGuard } from '../lib/api/audit-submit-guard';
 import { safeJsonFetch } from '../lib/http/safe-json';
 import React, { useState, useEffect, useRef } from 'react';
 import { Activity, Play, RefreshCw, CheckCircle2, Globe, Lock } from 'lucide-react';
-import { useNavigate } from 'react-router';
+import { useNavigate } from '../app/router';
 import { useAuth } from '../contexts/AuthContext';
 import { FormField, Notice, PageHeader, Panel, SegmentedControl } from './ui/page-system';
 import { AUDIT_TARGET_INPUT_PROPS, normalizeAuditTarget } from '../lib/url/normalize-audit-target';
@@ -13,6 +13,7 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [url, setUrl] = useState(initialUrl || '');
+  const [projectId, setProjectId] = useState<string | null>(null);
   const [mode, setMode] = useState<'quick' | 'standard' | 'deep'>('quick');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,6 +22,16 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
   const plan = user?.plan || 'free';
   const canUseStandard = plan === 'paid' || plan === 'agency' || plan === 'admin';
   const canUseDeep = plan === 'agency' || plan === 'admin';
+
+  useEffect(() => {
+    if (initialUrl) return;
+    const prefill = window.localStorage.getItem('crawlio_prefill_audit_url');
+    const linkedProjectId = window.localStorage.getItem('crawlio_prefill_project_id');
+    if (prefill) setUrl(prefill);
+    if (linkedProjectId) setProjectId(linkedProjectId);
+    window.localStorage.removeItem('crawlio_prefill_audit_url');
+    window.localStorage.removeItem('crawlio_prefill_project_id');
+  }, [initialUrl]);
 
   useEffect(() => {
     if (initialUrl && !autoStartedRef.current && !loading) {
@@ -50,7 +61,7 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
       const dataResp = await safeJsonFetch<any>(API_ROUTES.auditStart, {
         method: 'POST',
         headers: await getAuditStartHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ url: url.trim(), mode })
+        body: JSON.stringify({ url: url.trim(), mode, projectId })
       });
       const data = dataResp.success ? dataResp.data : { success: false, error: (dataResp as any).error };
       if (!data.success) throw new Error(data.error);

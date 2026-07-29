@@ -1363,6 +1363,18 @@ export const auditRepository = {
     };
   },
 
+  async getPreviousProjectPages(projectId: string, excludingAuditId: string, limit = 100): Promise<ResourceAuditPage[]> {
+    const boundedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+    const client = getSupabaseAdminClient();
+    if (!client) return [];
+    const auditResult = await client.from('audits').select('id').eq('project_id', projectId).in('status', ['completed', 'completed_with_warnings']).neq('id', excludingAuditId).order('completed_at', { ascending: false }).limit(1).maybeSingle();
+    assertNoError(auditResult.error, 'Find previous project audit');
+    if (!auditResult.data) return [];
+    const pagesResult = await client.from('audit_pages').select('*').eq('audit_id', auditResult.data.id).order('issue_count', { ascending: false }).order('crawl_depth', { ascending: true }).limit(boundedLimit);
+    assertNoError(pagesResult.error, 'Load previous project pages');
+    return (pagesResult.data || []).map(toAuditPage).filter((page): page is ResourceAuditPage => Boolean(page));
+  },
+
   async compareAudits(currentAuditId: string, baselineAuditId: string): Promise<AuditComparison | null> {
     const [currentAudit, baselineAudit] = await Promise.all([
       this.getAuditJob(currentAuditId),

@@ -9,6 +9,7 @@ import { resolveBlogLengthRange } from '../length-policy';
 import { evaluateBlogQuality } from '../quality';
 import { completeManualArticleLinks } from '../editor-safe-fixes';
 import { blogEditorRepository } from '../editor-repository';
+import { notifyIndexNow } from '../indexnow';
 import { renderBlogArticleHtml } from '../render';
 import { buildCompetitorGapBrief, researchCompetitorReferences, researchSourceUrls } from '../research';
 import { blogRepository } from '../repository';
@@ -298,6 +299,7 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
       message: publishNow ? `${post.title} is now live.` : `${post.title} was saved privately because ${blockers.length || 1} publication check${blockers.length === 1 ? '' : 's'} need attention.`,
       articleId: post.id, jobId: job.id, linkPath: `/admin/blog?articleId=${encodeURIComponent(post.id)}`,
     }).catch(() => undefined);
+    if (publishNow) void notifyIndexNow([`/blog/${post.slug}`, '/blog', '/sitemap.xml', '/rss.xml']).catch(() => undefined);
     return publishNow
       ? { output: { articleId: post.id, blockers: [] }, next: 'published', state: 'published', message: 'Article passed every gate and was published' }
       : { output: { articleId: post.id, blockers }, next: 'ready_for_review', state: 'ready_for_review', message: blockers.length ? 'Draft saved for review because publication checks need attention' : 'Draft is ready for editorial review' };

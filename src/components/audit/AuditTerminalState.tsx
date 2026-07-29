@@ -1,6 +1,6 @@
 import React from 'react';
 import { AlertTriangle, CheckCircle2, Clock3, History, LayoutDashboard, Loader2, RefreshCw, StopCircle } from 'lucide-react';
-import { Link } from 'react-router';
+import { Link } from '../../app/router';
 import { customerSafeDiagnosticText } from '../../lib/audit/audit-failures';
 import { deriveAuditTerminalPresentation } from '../../lib/audit/audit-terminal-presentation';
 import type { ResourceAuditDocument } from '../../lib/audit/resource-types';

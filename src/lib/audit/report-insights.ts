@@ -162,6 +162,16 @@ export function groupRecommendations(issues: ResourceAuditIssue[]): Recommendati
   });
 }
 
+export function findingImpact(issue: Pick<ResourceAuditIssue, 'severity' | 'affectedPageCount'>) {
+  const pages = Math.max(1, Number(issue.affectedPageCount || 1));
+  const severity = issue.severity === 'critical' ? 4 : issue.severity === 'high' ? 3 : issue.severity === 'medium' ? 2 : 1;
+  const reach = pages >= 20 ? 3 : pages >= 5 ? 2 : 1;
+  const value = severity + reach;
+  if (value >= 6) return { label: 'High potential impact', detail: `Important finding affecting ${pages} ${pages === 1 ? 'page' : 'pages'}.` };
+  if (value >= 4) return { label: 'Moderate potential impact', detail: `Meaningful finding affecting ${pages} ${pages === 1 ? 'page' : 'pages'}.` };
+  return { label: 'Focused improvement', detail: `Limited measured reach across ${pages} ${pages === 1 ? 'page' : 'pages'}.` };
+}
+
 export function observedPageMetrics(pages: ResourceAuditPage[]) {
   const responseTimes = pages.map((page) => page.responseTimeMs).filter((value) => Number.isFinite(value) && value >= 0).sort((a, b) => a - b);
   const sizes = pages.map((page) => page.pageSizeBytes).filter((value) => Number.isFinite(value) && value >= 0);

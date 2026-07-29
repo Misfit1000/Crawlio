@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Archive, BarChart3, ChevronLeft, ChevronRight, History, Loader2, Search, Trash2 } from 'lucide-react';
-import { Link } from 'react-router';
+import { Link } from '../../app/router';
 import { auditWorkspacePath } from '../../app/routes';
 import { isCompletedAuditStatus } from '../../lib/audit/audit-time';
 import { API_ROUTES } from '../../lib/api/routes';

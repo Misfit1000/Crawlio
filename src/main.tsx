@@ -4,7 +4,7 @@ import App from './App.tsx';
 import './index.css';
 import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
-import { BrowserRouter } from 'react-router';
+import { BrowserRouter } from './app/router';
 import AppErrorBoundary from './components/AppErrorBoundary';
 import { initializeBrowserMonitoring } from './lib/monitoring/sentry-browser';
 

@@ -17,7 +17,19 @@ The repository includes temporary write fallbacks for a rolling deployment, but 
 
 ## Current migration head
 
-Apply every migration in numeric order from `001_resource_light_audit.sql` through `020_blog_editor_experience.sql`. Migrations 001-019 are published history and must not be edited. Migration 020 is additive and does not change the audit API schema: it creates server-only blog editor recovery buffers and administrator notification records.
+Apply every migration in numeric order from `001_resource_light_audit.sql` through `021_project_growth_workflows.sql`. Migrations 001-020 are published history and must not be edited. Migration 021 is additive and does not change audit API schema version 13.
+
+For migration 021:
+
+1. Create a Supabase backup or restore point.
+2. Apply `supabase/migrations/021_project_growth_workflows.sql` in the SQL Editor.
+3. Confirm the project scheduling columns, notification table, report-share table, Search Console account/property/row tables, and bounded indexes exist.
+4. Confirm `report_shares`, OAuth state/accounts/properties, and Search Console rows have RLS enabled with no browser policies.
+5. Deploy the matching Vercel build, then deploy the same commit to the Render audit engine so terminal project notifications are recorded.
+6. Confirm Admin > Diagnostics reports the optional Search Console, scheduler, and canonical URL readiness accurately.
+7. Run a project-linked audit, create a read-only share, and verify the share contains no account identity, live events, credentials, or internal diagnostics.
+
+Do not deploy this release before migration 021. Scheduled Vercel functions enqueue bounded work only; all crawling remains in the Render audit engine.
 
 For migration 020:
 

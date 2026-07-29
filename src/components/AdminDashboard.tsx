@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router';
-import { Activity, AlertTriangle, BarChart3, BookOpen, CheckCircle2, Clock3, Database, Gauge, Loader2, RefreshCw, Search, Settings, ShieldAlert, SlidersHorizontal, Users, Wifi, XCircle } from 'lucide-react';
+import { useLocation, useNavigate } from '../app/router';
+import { Activity, AlertTriangle, BarChart3, BookOpen, CheckCircle2, Clock3, Database, Gauge, Globe2, Loader2, RefreshCw, Search, Settings, ShieldAlert, SlidersHorizontal, Users, Wifi, XCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { isCompletedAuditStatus } from '../lib/audit/audit-time';
 import {
@@ -438,6 +438,9 @@ function AdminDiagnostics() {
           <Metric icon={Database} label="API" value={monitoring.apiConfigured ? 'Configured' : 'Not configured'} detail="Unexpected server failures" tone={monitoring.apiConfigured ? 'success' : undefined} />
           <Metric icon={Wifi} label="Audit engine" value={monitoring.workerConfigured ? 'Configured' : 'Not configured'} detail="Latest worker heartbeat" tone={monitoring.workerConfigured ? 'success' : undefined} />
           <Metric icon={Gauge} label="Source maps" value={monitoring.sourceMapsConfigured ? 'Configured' : 'Not configured'} detail={`Environment: ${monitoring.environment || 'unknown'}`} tone={monitoring.sourceMapsConfigured ? 'success' : undefined} />
+          <Metric icon={BarChart3} label="Search Console" value={monitoring.searchConsoleConfigured ? 'Configured' : 'Optional'} detail="Server-only OAuth connection" tone={monitoring.searchConsoleConfigured ? 'success' : undefined} />
+          <Metric icon={Clock3} label="Project scheduler" value={monitoring.projectSchedulerConfigured ? 'Configured' : 'Not configured'} detail="Admission only; worker crawls" tone={monitoring.projectSchedulerConfigured ? 'success' : undefined} />
+          <Metric icon={Globe2} label="Canonical app URL" value={monitoring.canonicalAppUrlConfigured ? 'Configured' : 'Not configured'} detail="Public links and OAuth callbacks" tone={monitoring.canonicalAppUrlConfigured ? 'success' : undefined} />
         </div>
         {testMessage && <Notice tone="success" className="mt-4">{testMessage}</Notice>}
         {testError && <Notice tone="danger" className="mt-4">{testError}</Notice>}

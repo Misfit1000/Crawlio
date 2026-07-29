@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3, CheckCircle2, Clock3, Copy, FileDown, Globe2, Layers, Loader2, RefreshCw, Search, ShieldCheck, Wrench } from 'lucide-react';
-import { NavLink } from 'react-router';
+import { NavLink } from '../../app/router';
 import { auditWorkspacePath, type AuditWorkspaceSection } from '../../app/routes';
 import { API_ROUTES } from '../../lib/api/routes';
 import { getAuditAccessHeaders } from '../../lib/api/auth-headers';
@@ -140,10 +140,13 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
 
   const copyReportLink = async () => {
     try {
-      await navigator.clipboard.writeText(window.location.href);
-      setActionMessage('Report link copied. Access rules still apply.');
-    } catch {
-      setActionMessage('Copy failed. Use the address shown in the browser.');
+      const response = await safeJsonFetch<any>(API_ROUTES.auditShare(auditId), { method: 'POST', headers: await getAuditAccessHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ expiresInDays: 7 }) });
+      if (!response.success) throw new Error((response as any).error);
+      const shareUrl = (response.data.data || response.data).shareUrl;
+      await navigator.clipboard.writeText(shareUrl);
+      setActionMessage('Read-only report link copied. It expires in 7 days.');
+    } catch (shareError) {
+      setActionMessage(shareError instanceof Error ? shareError.message : 'The report link could not be created.');
     } finally {
       window.setTimeout(() => setActionMessage(null), 3000);
     }
@@ -190,7 +193,7 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
           <div className="flex flex-wrap gap-2">
             {onRerun && <button type="button" onClick={() => onRerun(audit.normalizedUrl, audit.effectiveMode)} className="trust-button min-h-10 px-3 py-2 text-sm"><RefreshCw className="h-4 w-4" /> Rerun</button>}
             <button type="button" onClick={openComparison} className="quiet-button min-h-10 px-3 py-2 text-sm"><BarChart3 className="h-4 w-4" /> Compare</button>
-            <button type="button" onClick={copyReportLink} className="quiet-button min-h-10 px-3 py-2 text-sm"><Copy className="h-4 w-4" /> Copy link</button>
+            <button type="button" onClick={copyReportLink} className="quiet-button min-h-10 px-3 py-2 text-sm"><Copy className="h-4 w-4" /> Share report</button>
             <button type="button" onClick={() => downloadAuditExport(auditId, 'pdf')} disabled={!data.finalReport} className="quiet-button min-h-10 px-3 py-2 text-sm"><FileDown className="h-4 w-4" /> PDF</button>
             <button type="button" onClick={() => downloadAuditExport(auditId, 'json')} disabled={!data.finalReport} className="quiet-button min-h-10 px-3 py-2 text-sm"><FileDown className="h-4 w-4" /> JSON</button>
           </div>
@@ -206,7 +209,7 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
       />
       <AuditReportReadyNote warning={audit.status === 'completed_with_warnings' && Boolean(data.finalReport)} />
       {error && <Notice tone="danger" title="Some audit data could not refresh">{safeWorkspaceError}</Notice>}
-      {actionMessage && <Notice tone={actionMessage.startsWith('Copy failed') ? 'danger' : 'success'}>{actionMessage}</Notice>}
+      {actionMessage && <Notice tone={actionMessage.includes('copied') ? 'success' : 'danger'}>{actionMessage}</Notice>}
 
       <nav className="no-scrollbar flex gap-1 overflow-x-auto border-y border-border py-2" aria-label="Audit sections">
         {sections.map((item) => {

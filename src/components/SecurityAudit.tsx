@@ -5,7 +5,7 @@ import { safeJsonFetch } from '../lib/http/safe-json';
 import { AUDIT_TARGET_INPUT_PROPS, normalizeAuditTarget } from '../lib/url/normalize-audit-target';
 import React, { useRef, useState } from 'react';
 import { ShieldCheck, CheckCircle2, Loader2, Lock } from 'lucide-react';
-import { useNavigate } from 'react-router';
+import { useNavigate } from '../app/router';
 import { FormField, Notice, PageHeader, Panel } from './ui/page-system';
 
 export default function SecurityAudit() {

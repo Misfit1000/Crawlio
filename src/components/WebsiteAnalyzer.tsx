@@ -4,7 +4,7 @@ import { createAuditSubmitGuard } from '../lib/api/audit-submit-guard';
 import { safeJsonFetch } from '../lib/http/safe-json';
 import React, { useEffect, useRef, useState } from 'react';
 import { Globe, Loader2, FileText, AlertTriangle, Search, Link2, ShieldCheck, Route } from 'lucide-react';
-import { useNavigate } from 'react-router';
+import { useNavigate } from '../app/router';
 import { useAuth } from '../contexts/AuthContext';
 import { FormField, Notice, PageHeader, PageSection, Panel, SegmentedControl } from './ui/page-system';
 import { AUDIT_TARGET_INPUT_PROPS, normalizeAuditTarget } from '../lib/url/normalize-audit-target';

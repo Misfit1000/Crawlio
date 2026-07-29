@@ -12,7 +12,7 @@
 
 See `docs/operations/sentry.md` for the ordered setup and privacy checks.
 
-Apply migrations in numeric order through `020_blog_editor_experience.sql`. Verify RLS, server-only audit admission, finding-workflow ownership, alert-state secrecy, private blog editor buffers and notifications, the Vercel blog claim/complete/recovery RPCs, review thresholds, section revisions, image variants, approved sources, and fixture publication guards before deploying code.
+Apply migrations in numeric order through `021_project_growth_workflows.sql`. Verify RLS, server-only audit admission, finding-workflow ownership, alert-state secrecy, private editor/OAuth/share-token tables, project scheduling, and blog publication guards before deploying code.
 
 ## Pre-Deploy
 
@@ -42,6 +42,8 @@ git diff --check
 - Set `VITE_SUPABASE_URL`.
 - Set `VITE_SUPABASE_ANON_KEY`.
 - Set server-only `GROQ_*`, `BLOG_DISPATCH_SECRET`, `CRON_SECRET`, `RATE_LIMIT_HASH_SECRET`, and `APP_URL` values on Vercel.
+- Optional Search Console connection: set `GOOGLE_SEARCH_CONSOLE_CLIENT_ID`, `GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET`, and an independent `SEARCH_TOKEN_ENCRYPTION_KEY` of at least 32 random characters on Vercel only. Add `${APP_URL}/api/tools/search-console/callback` as the exact Google OAuth redirect URI.
+- Optional blog discovery notification: set `INDEXNOW_KEY` on Vercel only and confirm `${APP_URL}/indexnow-key.txt` returns that key after deployment.
 - Confirm no `VITE_GROQ_*` environment variable exists.
 - Do not set the Supabase service role key in public `VITE_*` variables.
 - Deploy frontend, lightweight audit APIs, and bounded Vercel blog stages.
@@ -63,7 +65,7 @@ git diff --check
 
 ## Supabase
 
-- Apply every file in `supabase/migrations/` in numeric order through 020; never rewrite an earlier migration.
+- Apply every file in `supabase/migrations/` in numeric order through 021; never rewrite an earlier migration.
 - Confirm Supabase Realtime is enabled for audit tables.
 - Confirm the live audit page shows `WebSocket live` after opening an audit.
 - Confirm RLS is enabled on audit tables.
@@ -88,3 +90,7 @@ git diff --check
 11. Confirm cancel works for a queued audit.
 12. Publish a reviewed test article, verify complete initial HTML at `/blog/{slug}`, and confirm it appears in `/sitemap.xml` and `/rss.xml`.
 13. Run the manual no-audit production release smoke, then one explicitly enabled Quick Audit against the controlled smoke target.
+14. Track one website project and confirm a manual audit is attached to it.
+15. For an Agency/Admin test account, enable a weekly schedule and confirm the Vercel cron only creates a queued audit that Render later processes.
+16. Create a seven-day report link in a completed authenticated audit and open it in a signed-out browser.
+17. If Search Console is configured, connect an owned property, sync it, and confirm current/previous rows appear without tokens in browser responses.

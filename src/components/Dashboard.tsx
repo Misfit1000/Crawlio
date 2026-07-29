@@ -33,6 +33,7 @@ import {
   SurfaceCard,
 } from './ui/visual-system';
 import { PageHeader } from './ui/page-system';
+import ProjectCockpit from './projects/ProjectCockpit';
 
 interface DashboardProps {
   onOpenSeoAudit?: () => void;
@@ -112,6 +113,7 @@ export default function Dashboard(props: DashboardProps) {
         description="Review current plan usage, measured website health, recent audit history, and the next fixes that deserve attention."
         actions={<button type="button" onClick={props.onOpenSeoAudit} className="trust-button"><Rocket className="h-4 w-4" /> Start new audit</button>}
       />
+      {user && <ProjectCockpit onStartAudit={props.onOpenSeoAudit || (() => undefined)} onOpenReports={props.onOpenReports || (() => undefined)} />}
       <SurfaceCard className="p-0">
         <div className="grid lg:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
           <div className="p-6 md:p-8">

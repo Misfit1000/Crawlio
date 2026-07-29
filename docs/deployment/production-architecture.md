@@ -22,7 +22,7 @@ Blog generation is Vercel-only and resumes through finite leased stages stored i
 - Worker health: `https://seointel-audit-worker.onrender.com/health`.
 - Worker health exposes only safe status, audit contract versions, and the deployment commit so Vercel and Render releases can be compared.
 - Canonical app origin: `https://keywordsintel.vercel.app` until a custom domain is attached.
-- Apply Supabase migrations 001 through 020 in numeric order. Migration 016 makes Vercel's durable admission path the only audit-job creator; migration 019 persists owner-scoped finding workflow and alert deduplication state; migration 020 adds server-only blog editor recovery and notifications.
+- Apply Supabase migrations 001 through 021 in numeric order. Migration 016 makes Vercel's durable admission path the only audit-job creator; migration 019 persists owner-scoped finding workflow and alert deduplication state; migration 020 adds server-only blog editor recovery and notifications; migration 021 adds website projects, report shares, and server-only Search Console storage.
 
 The retired in-process audit store, event emitter, crawler, and local audit runners are intentionally absent. `src/workers/audit-worker.ts` is the only production crawl/check orchestrator. `npm run verify:audit-architecture` prevents a crawler import from entering the Vercel API boundary.
 

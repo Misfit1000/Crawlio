@@ -24,6 +24,13 @@ Use independent secrets for each purpose. Never copy a service-role or provider 
 - `SENTRY_DSN`: optional server-side error monitoring DSN.
 - `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`: optional Vercel build-only source-map upload configuration. The auth token is sensitive and must never use a `VITE_` prefix.
 - `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE`: optional overrides. Prefer Vercel's deployment environment and Git commit SHA.
+- `GOOGLE_SEARCH_CONSOLE_CLIENT_ID`, `GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET`: optional Google OAuth web client for owner-authorized Search Console measurements.
+- `SEARCH_TOKEN_ENCRYPTION_KEY`: independent random value of at least 32 characters used to encrypt Search Console refresh and access tokens at rest.
+- `INDEXNOW_KEY`: optional random hexadecimal key, 32-128 characters, used to notify supported search engines after a guarded blog publication.
+
+For Search Console, create a Google Cloud OAuth web client and register exactly `${APP_URL}/api/tools/search-console/callback` as an authorized redirect URI. Enable the Google Search Console API. Never add these three values to a `VITE_` variable or the Render worker.
+
+When `INDEXNOW_KEY` is set, Crawlio serves the key at `${APP_URL}/indexnow-key.txt`. Confirm that URL returns the exact key before relying on publication notifications. IndexNow is a discovery notification, not a guarantee of indexing or ranking.
 
 ## Vercel blog-only
 

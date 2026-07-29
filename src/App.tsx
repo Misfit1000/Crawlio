@@ -9,7 +9,7 @@ import { getAuditStartHeaders } from './lib/api/auth-headers';
 import { createAuditSubmitGuard } from './lib/api/audit-submit-guard';
 import { BrandMark, LoadingSkeleton, ThemeToggle } from './components/ui/visual-system';
 import { MarketingShell, WorkspaceShell } from './components/layout/ProductShells';
-import { useLocation, useNavigate } from 'react-router';
+import { useLocation, useNavigate } from './app/router';
 import { BRAND } from './lib/brand';
 import {
   TAB_PATHS,
@@ -37,6 +37,7 @@ const SearchData = lazy(() => import('./components/SearchData'));
 const LiveAuditProgress = lazy(() => import('./components/audit/LiveAuditProgress').then((mod) => ({ default: mod.LiveAuditProgress })));
 const AuditWorkspace = lazy(() => import('./components/audit/AuditWorkspace'));
 const AuditHistoryPage = lazy(() => import('./components/audit/AuditHistoryPage'));
+const SharedReportPage = lazy(() => import('./components/audit/SharedReportPage'));
 const BlogIndex = lazy(() => import('./components/blog/BlogIndex'));
 const BlogPostPage = lazy(() => import('./components/blog/BlogPostPage'));
 const LegalPage = lazy(() => import('./components/LegalPage'));
@@ -151,7 +152,7 @@ export default function App() {
 
   useEffect(() => {
     const robots = document.querySelector<HTMLMetaElement>('meta[name="robots"]') || document.head.appendChild(Object.assign(document.createElement('meta'), { name: 'robots' }));
-    robots.content = pathname.startsWith('/app') || pathname.startsWith('/admin') || pathname.startsWith('/audit/live/') || pathname === '/login' || pathname === '/register'
+    robots.content = pathname.startsWith('/app') || pathname.startsWith('/admin') || pathname.startsWith('/audit/live/') || pathname.startsWith('/share/') || pathname === '/login' || pathname === '/register'
       ? 'noindex, nofollow'
       : 'index, follow';
   }, [pathname]);
@@ -204,7 +205,8 @@ export default function App() {
 
   const blogMatch = pathname.match(/^\/blog(?:\/([^/]+))?\/?$/);
   const isBlogRoute = Boolean(blogMatch);
-  const knownPublicRoute = pathname === '/' || pathname === '/pricing' || pathname === '/reports/example' || pathname === '/login' || pathname === '/register' || isBlogRoute || Boolean(legalKind);
+  const shareMatch = pathname.match(/^\/share\/([A-Za-z0-9_-]{40,80})\/?$/);
+  const knownPublicRoute = pathname === '/' || pathname === '/pricing' || pathname === '/reports/example' || pathname === '/login' || pathname === '/register' || isBlogRoute || Boolean(shareMatch) || Boolean(legalKind);
   let blogSlug = '';
   if (blogMatch?.[1]) {
     try {
@@ -358,7 +360,11 @@ export default function App() {
       )}
 
       <div className="relative z-10 flex flex-col min-h-screen">
-        {legalKind ? (
+        {shareMatch ? (
+          <MarketingShell theme={theme} onToggleTheme={toggleTheme} userLabel={user?.username || (user ? 'Account' : null)} authLoading={authLoading} navigationBase="/" onHome={() => navigate('/')} onLogin={() => setAuthMode('login')} onSettings={() => openAppTab('settings')} onLogout={handleLogout}>
+            <Suspense fallback={<LoadingSkeleton rows={5} />}><SharedReportPage token={shareMatch[1]} /></Suspense>
+          </MarketingShell>
+        ) : legalKind ? (
           <MarketingShell
             theme={theme}
             onToggleTheme={toggleTheme}
