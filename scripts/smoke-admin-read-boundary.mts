@@ -9,7 +9,7 @@ await new Promise<void>(resolve => server.once('listening', resolve));
 try {
   const address = server.address();
   assert(address && typeof address !== 'string');
-  for (const resource of ['users', 'audits']) {
+  for (const resource of ['users', 'audits', 'workers', 'actions', 'plans', 'platform/settings']) {
     const response = await fetch(`http://127.0.0.1:${address.port}/admin/${resource}?limit=999999`);
     assert.equal(response.status, 403);
     assert.equal(response.headers.get('cache-control'), 'private, no-store');

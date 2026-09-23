@@ -639,9 +639,17 @@ apiRouter.post('/admin/users/:id/update', asyncJsonRoute(async (req, res) => {
   }
   if (!Object.keys(patch).length) throw new ApiError('EMPTY_ADMIN_UPDATE', 'No supported user fields were provided.', 400);
   const client = requireSupabaseAdminClient();
-  const { data: before, error: readError } = await client.from('user_profiles').select('role,plan,subscription_status').eq('id', req.params.id).maybeSingle();
+  const { data: before, error: readError } = await client.from('user_profiles').select('role,plan,subscription_status,disabled').eq('id', req.params.id).maybeSingle();
   if (readError) throw readError;
   if (!before) throw new ApiError('USER_NOT_FOUND', 'User not found.', 404);
+  if (req.params.id === requester.userId && patch.role && patch.role !== before.role) {
+    throw new ApiError('SELF_ROLE_CHANGE_FORBIDDEN', 'Another administrator must change your role.', 409);
+  }
+  if (before.role === 'admin' && patch.role && patch.role !== 'admin' && !before.disabled) {
+    const { count, error: countError } = await client.from('user_profiles').select('id', { count: 'exact', head: true }).eq('role', 'admin').eq('disabled', false);
+    if (countError) throw countError;
+    if ((count ?? 0) <= 1) throw new ApiError('LAST_ADMIN_PROTECTED', 'The final active administrator cannot be demoted.', 409);
+  }
   const { error } = await client.from('user_profiles').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', req.params.id);
   if (error) throw error;
   await client.from('admin_actions').insert({ admin_user_id: requester.userId, action: 'update_user_access', target_type: 'user', target_id: req.params.id, metadata: { reason, before, after: patch } });
@@ -682,7 +690,10 @@ apiRouter.post('/admin/platform/settings', asyncJsonRoute(async (req, res) => {
     support_email: String(patch.supportEmail || before?.support_email || '').slice(0, 254),
     require_email_verification: Boolean(patch.requireEmailVerification ?? before?.require_email_verification),
     public_registration: Boolean(patch.publicRegistration ?? before?.public_registration ?? true),
-    value: typeof patch.value === 'object' && patch.value ? patch.value : before?.value || {},
+    value: {
+      ...(before?.value && typeof before.value === 'object' ? before.value : {}),
+      ...(patch.value && typeof patch.value === 'object' && !Array.isArray(patch.value) ? patch.value : {}),
+    },
     updated_at: new Date().toISOString(),
   };
   const { error } = await client.from('platform_settings').upsert(row, { onConflict: 'id' });

@@ -29,6 +29,7 @@ import type {
 } from "../../lib/blog/types";
 import { Notice, Panel } from "../ui/page-system";
 import { StatusBadge } from "../ui/visual-system";
+import { useAdminActionReason } from "../admin/AdminActionDialog";
 
 type Tab = "sources" | "trends" | "operations";
 const EMPTY_SOURCE: Partial<BlogApprovedSource> = {
@@ -54,6 +55,7 @@ function date(value: string | null | undefined) {
 }
 
 export default function BlogProviderFreeWorkspace() {
+  const requestAdminReason = useAdminActionReason();
   const [tab, setTab] = useState<Tab>("sources");
   const [sources, setSources] = useState<BlogApprovedSource[]>([]);
   const [discoveries, setDiscoveries] = useState<Array<Record<string, any>>>(
@@ -128,14 +130,11 @@ export default function BlogProviderFreeWorkspace() {
     targetId = "",
     confirmation = "",
   ) => {
-    if (confirmation && !window.confirm(confirmation)) return;
-    const reason = window.prompt("Reason for this administrator action?");
-    if (!reason?.trim()) return;
-    void run(
-      key,
-      () => runBlogOperation(action, reason.trim(), targetId),
-      success,
-    );
+    void (async () => {
+      const reason = await requestAdminReason(confirmation || `running ${action.replaceAll("_", " ")}`);
+      if (!reason) return;
+      await run(key, () => runBlogOperation(action, reason, targetId), success);
+    })();
   };
   const operationMetrics = useMemo(
     () =>
@@ -495,12 +494,10 @@ export default function BlogProviderFreeWorkspace() {
                     <button
                       type="button"
                       onClick={() => {
-                        if (
-                          window.confirm(
-                            `${source.enabled ? "Pause" : "Resume"} ${source.name}?`,
-                          )
-                        )
-                          void run(
+                        void (async () => {
+                          const reason = await requestAdminReason(`${source.enabled ? "pausing" : "resuming"} ${source.name}`);
+                          if (!reason) return;
+                          await run(
                             `toggle-${source.id}`,
                             () =>
                               saveApprovedBlogSource(
@@ -511,6 +508,7 @@ export default function BlogProviderFreeWorkspace() {
                               ? "Source paused."
                               : "Source resumed.",
                           );
+                        })();
                       }}
                       className="quiet-button"
                     >
@@ -521,15 +519,15 @@ export default function BlogProviderFreeWorkspace() {
                       type="button"
                       aria-label={`Delete ${source.name}`}
                       onClick={() => {
-                        const reason = window.prompt(
-                          "Reason for deleting this approved source?",
-                        );
-                        if (reason)
-                          void run(
+                        void (async () => {
+                          const reason = await requestAdminReason(`deleting approved source ${source.name}`);
+                          if (!reason) return;
+                          await run(
                             `delete-${source.id}`,
                             () => deleteApprovedBlogSource(source.id, reason),
                             "Source deleted.",
                           );
+                        })();
                       }}
                       className="quiet-button text-red-600"
                     >

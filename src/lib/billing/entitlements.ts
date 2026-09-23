@@ -36,6 +36,7 @@ export interface UserProfileEntitlement {
   subscriptionStatus: SubscriptionStatus;
   auditQuotaUsedDaily: number;
   auditQuotaUsedMonthly: number;
+  disabled: boolean;
 }
 
 export interface AuditStartDecision {
@@ -232,6 +233,7 @@ function rowToProfile(row: any): UserProfileEntitlement {
     subscriptionStatus: normalizeSubscriptionStatus(row.subscription_status),
     auditQuotaUsedDaily: Number(row.audit_quota_used_daily ?? 0),
     auditQuotaUsedMonthly: Number(row.audit_quota_used_monthly ?? 0),
+    disabled: Boolean(row.disabled),
   };
 }
 
@@ -259,10 +261,17 @@ export async function ensureUserProfileFromAuthUser(user: SupabaseAuthUser) {
     .eq('id', user.id)
     .maybeSingle();
   if (readError) throw readError;
+  if (existing?.disabled) throw new EntitlementError('This account is temporarily unavailable.', { status: 403 });
 
   const nextRole = isAdminEmail ? 'admin' : normalizeRole(existing?.role);
   const nextPlan = isAdminEmail ? 'admin' : normalizePlan(existing?.plan);
-  const nextSubscriptionStatus = nextPlan === 'free' ? normalizeSubscriptionStatus(existing?.subscription_status) : 'active';
+  const nextSubscriptionStatus = existing
+    ? normalizeSubscriptionStatus(existing.subscription_status)
+    : nextPlan === 'free' ? 'inactive' : 'active';
+
+  if (existing && existing.email === email && existing.role === nextRole && existing.plan === nextPlan && existing.full_name) {
+    return rowToProfile(existing);
+  }
 
   const { data, error } = await client
     .from('user_profiles')
@@ -305,6 +314,7 @@ export async function getUserEntitlements(userId: string): Promise<{ profile: Us
   if (error) throw error;
   if (!data) throw new EntitlementError('User profile not found.', { status: 401 });
   const profile = rowToProfile(data);
+  if (profile.disabled) throw new EntitlementError('This account is temporarily unavailable.', { status: 403 });
   return { profile, limits: await getPlanLimits(profile.plan) };
 }
 

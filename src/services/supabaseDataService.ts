@@ -216,24 +216,21 @@ export const getAdminAudits = async (limit = 50) => {
   return (await getAdminList('audits', { limit })).rows;
 };
 
+async function adminRead<T>(path: string): Promise<T> {
+  const response = await safeJsonFetch<{ data: T }>(`/api/tools/admin/${path}`, {
+    headers: await getAuthHeaders(),
+    credentials: 'same-origin',
+  });
+  if (response.success === false) throw new Error(response.error);
+  return response.data.data;
+}
+
 export const getAdminWorkers = async () => {
-  const client = clientOrNull();
-  if (!client) return [];
-  const { data, error } = await client
-    .from('platform_settings')
-    .select('id,key,value,updated_at')
-    .like('id', 'audit_worker:%')
-    .order('updated_at', { ascending: false });
-  if (error) throw error;
-  return (data ?? []).map(toCamelRow);
+  return (await adminRead<Record<string, unknown>[]>('workers')).map(toCamelRow);
 };
 
 export const getPlanLimits = async () => {
-  const client = clientOrNull();
-  if (!client) return [];
-  const { data, error } = await client.from('plan_limits').select('*').order('priority', { ascending: true });
-  if (error) throw error;
-  return (data ?? []).map(toCamelRow);
+  return (await adminRead<Record<string, unknown>[]>('plans')).map(toCamelRow);
 };
 
 export const updatePlanLimit = async (plan: string, patch: any, _adminUserId?: string, reason = '') => {
@@ -255,11 +252,7 @@ export const updateAuditAdminAction = async (auditId: string, patch: any, _admin
 };
 
 export const getAdminActions = async (limit = 50) => {
-  const client = clientOrNull();
-  if (!client) return [];
-  const { data, error } = await client.from('admin_actions').select('*').order('created_at', { ascending: false }).limit(limit);
-  if (error) throw error;
-  return (data ?? []).map(toCamelRow);
+  return (await adminRead<Record<string, unknown>[]>(`actions?limit=${Math.max(1, Math.min(50, Math.floor(limit)))}`)).map(toCamelRow);
 };
 
 export const getAdminDiagnostics = async () => {
@@ -329,23 +322,9 @@ export const deleteAnyDocument = async (path: string) => {
 };
 
 export const getPlatformSettings = async () => {
-  const client = clientOrNull();
-  if (!client) {
-    return {
-      platformName: 'Crawlio Audit',
-      supportEmail: 'support@keywordintelligence.com',
-      requireEmailVerification: false,
-      publicRegistration: true,
-    };
-  }
-  const { data, error } = await client.from('platform_settings').select('*').eq('id', 'settings').maybeSingle();
-  if (error) throw error;
-  return data ? toCamelRow(data) : {
-    platformName: 'Crawlio Audit',
-    supportEmail: 'support@keywordintelligence.com',
-    requireEmailVerification: false,
-    publicRegistration: true,
-  };
+  const data = await adminRead<Record<string, unknown> | null>('platform/settings');
+  if (!data) throw new Error('Platform settings have not been configured.');
+  return toCamelRow(data);
 };
 
 export const updatePlatformSettings = async (data: any, reason = '') => {

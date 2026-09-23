@@ -156,7 +156,11 @@ export function Field({ label, value, onChange }: { label: string; value: string
 
 
 export function NumberInput({ value, onBlur, disabled = false }: { value: number; onBlur: (value: number) => void; disabled?: boolean }) {
-  return <input type="number" min={0} defaultValue={value} disabled={disabled} onBlur={(event) => onBlur(Math.max(0, Number(event.currentTarget.value)))} className="w-24 rounded-lg border border-border bg-background px-2.5 py-1.5 disabled:opacity-50" />;
+  return <input type="number" min={0} defaultValue={value} disabled={disabled} onBlur={(event) => {
+    const next = event.currentTarget.valueAsNumber;
+    if (Number.isFinite(next) && next >= 0 && next !== value) onBlur(next);
+    else event.currentTarget.value = String(value);
+  }} className="w-24 rounded-lg border border-border bg-background px-2.5 py-1.5 disabled:opacity-50" />;
 }
 
 
