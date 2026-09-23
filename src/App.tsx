@@ -25,6 +25,7 @@ const Login = lazy(() => import('./components/Login'));
 const Register = lazy(() => import('./components/Register'));
 const Sidebar = lazy(() => import('./components/Sidebar'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
+const ProjectsPage = lazy(() => import('./components/projects/ProjectsPage'));
 const WebsiteAnalyzer = lazy(() => import('./components/WebsiteAnalyzer'));
 const SeoAudit = lazy(() => import('./components/SeoAudit'));
 const SecurityAudit = lazy(() => import('./components/SecurityAudit'));
@@ -300,6 +301,8 @@ export default function App() {
     }
 
     switch (activeTab) {
+      case 'projects':
+        return <ProjectsPage onStartAudit={() => setActiveTab('seo-audit')} onOpenReports={() => setActiveTab('reports')} />;
       case 'dashboard':
         return (
           <Dashboard

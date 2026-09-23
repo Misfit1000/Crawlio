@@ -1,8 +1,9 @@
-export type TabType = 'dashboard' | 'website-analyzer' | 'seo-audit' | 'seo-findings' | 'technical-seo' | 'crawlability' | 'performance' | 'pages' | 'audit-history' | 'security-audit' | 'rank-tracker' | 'imports' | 'reports' | 'settings' | 'admin-dashboard' | 'search-data';
+export type TabType = 'projects' | 'dashboard' | 'website-analyzer' | 'seo-audit' | 'seo-findings' | 'technical-seo' | 'crawlability' | 'performance' | 'pages' | 'audit-history' | 'security-audit' | 'rank-tracker' | 'imports' | 'reports' | 'settings' | 'admin-dashboard' | 'search-data';
 
 export type AuditWorkspaceSection = 'overview' | 'seo' | 'technical' | 'crawlability' | 'links' | 'performance' | 'security' | 'pages';
 
 export const TAB_PATHS: Record<TabType, string> = {
+  projects: '/app/projects',
   dashboard: '/app',
   'website-analyzer': '/app/website-scan',
   'seo-audit': '/app/audits/new',

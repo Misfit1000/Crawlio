@@ -1,5 +1,7 @@
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
+import { authorizeScheduler } from '../lib/api/scheduler-auth';
 import { Router } from 'express';
+import { createAdminReadRouter } from './admin/read-routes';
 import { normalizeDomainInput, normalizeUserUrl } from '../lib/seo/url-utils';
 import { isCompletedAuditStatus } from '../lib/audit/audit-time';
 import { generateKeywords } from '../lib/keywords/generator';
@@ -90,6 +92,7 @@ function asyncJsonRoute(handler: any) {
 }
 
 export const apiRouter = Router();
+apiRouter.use('/admin', createAdminReadRouter(requireAdminRequester));
 
 apiRouter.use('/admin', durableRateLimit({ namespace: 'admin-api', limit: 120, windowSeconds: 60 }));
 apiRouter.use('/admin/diagnostics/sentry-test', durableRateLimit({ namespace: 'sentry-test', limit: 3, windowSeconds: 3600 }));
@@ -122,11 +125,9 @@ function hashGuestValue(value: string) {
   return createHash('sha256').update(value).digest('hex');
 }
 
-function schedulerRequestAllowed(req: any) {
-  const expected = String(process.env.BLOG_DISPATCH_SECRET || process.env.BLOG_CRON_SECRET || process.env.BLOG_SCHEDULER_SECRET || process.env.CRON_SECRET || '');
+function schedulerRequestAllowed(req: any, scope: 'cron' | 'dispatch' = 'cron') {
   const supplied = firstHeaderValue(req.headers?.authorization).replace(/^Bearer\s+/i, '') || firstHeaderValue(req.headers?.['x-blog-scheduler-secret']);
-  if (expected.length < 24 || supplied.length < 24) return false;
-  return timingSafeEqual(createHash('sha256').update(expected).digest(), createHash('sha256').update(supplied).digest());
+  return authorizeScheduler(supplied, scope);
 }
 
 function requestOrigin(req: any) {
@@ -804,7 +805,7 @@ apiRouter.get('/blog/scheduler/run', runBlogScheduler);
 apiRouter.post('/blog/scheduler/run', runBlogScheduler);
 
 const runBlogDispatcher = asyncJsonRoute(async (req: any, res: any) => {
-  if (!schedulerRequestAllowed(req)) throw new ApiError('BLOG_DISPATCH_UNAUTHORIZED', 'Dispatcher authentication failed.', 401);
+  if (!schedulerRequestAllowed(req, req.method === 'GET' ? 'cron' : 'dispatch')) throw new ApiError('BLOG_DISPATCH_UNAUTHORIZED', 'Dispatcher authentication failed.', 401);
   const requestedJobId = String(req.body?.jobId || req.query?.jobId || '').trim() || null;
   if (requestedJobId && !/^[0-9a-f-]{36}$/i.test(requestedJobId)) throw new ApiError('BLOG_JOB_ID_INVALID', 'The requested blog job ID is invalid.', 400);
   const data = await dispatchVercelBlogStages({ requestedJobId, maxStages: Math.max(1, Math.min(3, Number(req.body?.maxStages || req.query?.maxStages || 1))) });
@@ -820,7 +821,7 @@ apiRouter.get('/blog/jobs/dispatch', runBlogDispatcher);
 apiRouter.post('/blog/jobs/dispatch', runBlogDispatcher);
 
 apiRouter.post('/blog/jobs/recover', asyncJsonRoute(async (req, res) => {
-  if (!schedulerRequestAllowed(req)) throw new ApiError('BLOG_RECOVERY_UNAUTHORIZED', 'Recovery authentication failed.', 401);
+  if (!schedulerRequestAllowed(req, 'dispatch')) throw new ApiError('BLOG_RECOVERY_UNAUTHORIZED', 'Recovery authentication failed.', 401);
   const data = await recoverAndDispatchVercelBlogWork(Math.max(1, Math.min(3, Number(req.body?.maxStages || 1))));
   res.setHeader('Cache-Control', 'private, no-store');
   res.json({ success: true, data });

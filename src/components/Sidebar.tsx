@@ -1,15 +1,17 @@
 import { Activity, BarChart3, FileText, Gauge, Globe, HelpCircle, History, LayoutDashboard, Layers, ListChecks, Search, Settings, ShieldAlert, ShieldCheck, X, type LucideIcon } from 'lucide-react';
 import { TabType } from '../App';
 import { useAuth } from '../contexts/AuthContext';
+import { useLocation, useNavigate } from '../app/router';
 
 const navGroups: Array<{
   title: string;
   items: Array<{ icon: LucideIcon; label: string; description: string; id: TabType; adminOnly?: boolean }>;
 }> = [
   {
-    title: 'Overview',
+    title: 'Workspace',
     items: [
-      { icon: LayoutDashboard, label: 'Overview', description: 'Scores, usage, and next actions', id: 'dashboard' },
+      { icon: LayoutDashboard, label: 'Dashboard', description: 'Scores and next actions', id: 'dashboard' },
+      { icon: Globe, label: 'Projects', description: 'Websites, schedules, and progress', id: 'projects' },
       { icon: Activity, label: 'Start audit', description: 'Run a live website audit', id: 'seo-audit' },
       { icon: History, label: 'Audit history', description: 'Past runs and comparisons', id: 'audit-history' },
       { icon: FileText, label: 'Reports', description: 'Evidence, exports, and delivery', id: 'reports' },
@@ -26,6 +28,11 @@ const navGroups: Array<{
       { icon: Globe, label: 'Pages', description: 'Filter page-level evidence', id: 'pages' },
     ],
   },
+  { title: 'Search data', items: [
+    { icon: BarChart3, label: 'Search performance', description: 'Connected or imported search data', id: 'search-data' },
+    { icon: Layers, label: 'Import data', description: 'Add your provider exports', id: 'imports' },
+    { icon: Search, label: 'Keyword positions', description: 'Positions from imported data', id: 'rank-tracker' },
+  ] },
   { title: 'Administration', items: [{ icon: ShieldAlert, label: 'Admin', description: 'Users, queue, and engine health', id: 'admin-dashboard', adminOnly: true }] },
 ];
 
@@ -39,6 +46,14 @@ interface SidebarProps {
 
 export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOpenHelp }: SidebarProps) {
   const { user } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const isAdmin = activeTab === 'admin-dashboard';
+  const adminLinks = [
+    ['Overview', '/admin'], ['Users', '/admin/users'], ['Audits', '/admin/audits'],
+    ['Queue', '/admin/queue'], ['Content', '/admin/blog'], ['Audit engines', '/admin/workers'],
+    ['Diagnostics', '/admin/diagnostics'], ['Plans', '/admin/plans'], ['Platform settings', '/admin/settings'],
+  ];
 
   const filteredGroups = navGroups
     .map((group) => ({
@@ -56,8 +71,8 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOp
           <div className="border-b border-border p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold">Workspace</div>
-                <div className="text-xs text-muted-foreground">Website audits and reports</div>
+                <div className="text-sm font-semibold">{isAdmin ? 'Administration' : 'Workspace'}</div>
+                <div className="text-xs text-muted-foreground">{isAdmin ? 'Manage Crawlio' : 'Website audits and reports'}</div>
               </div>
               <button onClick={onClose} className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden" aria-label="Close navigation">
                 <X className="h-4 w-4" />
@@ -66,7 +81,7 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOp
           </div>
 
           <nav className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-3" aria-label="Main navigation">
-            {filteredGroups.map((group) => (
+            {isAdmin ? <div className="space-y-1">{adminLinks.map(([label, path]) => <button key={path} type="button" aria-current={location.pathname === path ? 'page' : undefined} onClick={() => { navigate(path); if (window.innerWidth < 1024) onClose(); }} className={`flex min-h-11 w-full items-center rounded-lg px-3 text-left text-sm font-medium ${location.pathname === path ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>{label}</button>)}<button className="quiet-button mt-4 w-full" onClick={() => setActiveTab('dashboard')}>Back to workspace</button></div> : filteredGroups.map((group) => (
               <div key={group.title}>
                 <div className="mb-2 px-2 text-xs font-semibold text-[var(--subtle-foreground)]">{group.title}</div>
                 <div className="space-y-1">
@@ -77,6 +92,7 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOp
                       <button
                         key={item.id}
                         type="button"
+                        aria-current={isActive ? 'page' : undefined}
                         onClick={() => {
                           setActiveTab(item.id);
                           if (window.innerWidth < 1024) onClose();

@@ -148,14 +148,14 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
 
   return (
     <main id="main-content" className="w-full bg-background text-foreground">
-      <section id="product" className="relative overflow-hidden border-b border-border bg-card">
+      <section id="product" className="customer-hero relative overflow-hidden border-b border-border bg-card">
         <div className="hero-grid pointer-events-none absolute inset-0 opacity-65" aria-hidden="true" />
         <div className="section-shell relative py-10 sm:py-14 lg:py-18">
           <div className="grid items-center gap-10 xl:grid-cols-[0.9fr_1.1fr] xl:gap-12">
             <div className="min-w-0">
               <div className="mb-5 flex flex-wrap gap-3 text-xs font-semibold text-muted-foreground"><span className="inline-flex items-center gap-2"><CircleAlert className="h-4 w-4 text-accent" /> Public website audits</span><span className="inline-flex items-center gap-2"><Activity className="h-4 w-4 text-emerald-600 dark:text-emerald-300" /> Live progress</span></div>
-              <h1 className="max-w-2xl text-4xl font-bold leading-[1.05] sm:text-5xl lg:text-[3.6rem]">See what is holding your website back.</h1>
-              <p className="mt-5 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">Run a technical SEO audit, trace each problem to the affected pages, and understand what to fix first.</p>
+              <h1 className="max-w-2xl text-4xl font-bold leading-[1.1] sm:text-5xl lg:text-[3.6rem]">A clearer picture of your website.<br /><span className="text-accent">A better next move.</span></h1>
+              <p className="mt-5 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">See your SEO, website health, and browser safety in one live audit. Find the pages that need attention and turn the evidence into a practical fix list.</p>
 
               <form id="start-audit" onSubmit={handleSubmit} noValidate className="mt-8 max-w-2xl" aria-label="Start a website audit">
                 <label htmlFor="homepage-audit-url" className="mb-2 block text-sm font-semibold">Website or domain</label>

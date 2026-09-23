@@ -20,7 +20,7 @@ export function PageHeader({
   metadata?: ReactNode;
 }) {
   return (
-    <header className="flex flex-col gap-5 border-b border-border pb-6 lg:flex-row lg:items-end lg:justify-between">
+    <header className="page-header flex flex-col gap-5 border-b border-border pb-6 lg:flex-row lg:items-end lg:justify-between">
       <div className="min-w-0">
         {(eyebrow || Icon) && (
           <div className="page-eyebrow mb-3">
@@ -28,11 +28,11 @@ export function PageHeader({
             {eyebrow && <span>{eyebrow}</span>}
           </div>
         )}
-        <h1 className="text-3xl font-semibold leading-tight sm:text-[2.15rem]">{title}</h1>
+        <h1 className="text-2xl font-semibold leading-tight sm:text-3xl">{title}</h1>
         {description && <p className="page-description mt-3">{description}</p>}
         {metadata && <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">{metadata}</div>}
       </div>
-      {actions && <div className="flex shrink-0 flex-wrap items-center gap-3">{actions}</div>}
+      {actions && <div className="flex max-w-full flex-wrap items-center gap-2">{actions}</div>}
     </header>
   );
 }

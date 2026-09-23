@@ -177,12 +177,15 @@ export const makeUserAdmin = async (uid: string) => {
 };
 
 export const getAllUsers = async (limit = 100) => {
-  const client = clientOrNull();
-  if (!client) return [];
-  const { data, error } = await client.from('user_profiles').select('*').order('created_at', { ascending: false }).limit(Math.max(1, Math.min(200, limit)));
-  if (error) throw error;
-  return (data ?? []).map(toCamelRow);
+  return (await getAdminList('users', { limit })).rows;
 };
+
+export async function getAdminList(kind: 'users' | 'audits', params: Record<string, string | number> = {}) {
+  const query = new URLSearchParams(Object.entries(params).map(([key, value]) => [key, String(value)]));
+  const response = await safeJsonFetch<{ data: { rows: Record<string, unknown>[]; hasMore: boolean } }>(`/api/tools/admin/${kind}?${query}`, { headers: await getAuthHeaders() });
+  if (response.success === false) throw new Error(response.error);
+  return { rows: response.data.data.rows.map(toCamelRow), hasMore: response.data.data.hasMore };
+}
 
 export const updateUserRole = async (uid: string, role: string) => {
   throw new Error(`Protected administrator action required to assign ${role} to ${uid}.`);
@@ -210,15 +213,7 @@ export const getAllProjects = async () => {
 };
 
 export const getAdminAudits = async (limit = 50) => {
-  const client = clientOrNull();
-  if (!client) return [];
-  const { data, error } = await client
-    .from('audits')
-    .select('id,user_id,guest_key_hash,submitted_input,normalized_url,status,plan,requested_mode,effective_mode,queue_priority,processing_tier,current_phase,locked_by,lease_expires_at,error,created_at,updated_at')
-    .order('created_at', { ascending: false })
-    .limit(limit);
-  if (error) throw error;
-  return (data ?? []).map(toCamelRow);
+  return (await getAdminList('audits', { limit })).rows;
 };
 
 export const getAdminWorkers = async () => {

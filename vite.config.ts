@@ -40,6 +40,9 @@ export default defineConfig(({ mode }) => {
             if (normalizedId.includes('/@sentry/')) {
               return 'sentry-vendor';
             }
+            if (normalizedId.includes('/@tiptap/') || normalizedId.includes('/prosemirror-')) {
+              return 'editor-vendor';
+            }
             if (normalizedId.includes('/react/') || normalizedId.includes('/react-dom/')) {
               return 'react-vendor';
             }

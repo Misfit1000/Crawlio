@@ -5,6 +5,7 @@ import { buildIssueInsight, issueBucket, issueSignature, type ChecklistStatus } 
 import { FINDING_WORKFLOW_STATUSES, type FindingWorkflowRecord, type FindingWorkflowStatus } from '../../lib/audit/finding-workflow';
 import { findingImpact } from '../../lib/audit/report-insights';
 import { StatusBadge } from '../ui/visual-system';
+import { useUrlFilter } from '../../app/use-url-filter';
 
 const PAGE_SIZE = 20;
 const STATUSES: ChecklistStatus[] = [...FINDING_WORKFLOW_STATUSES];
@@ -41,12 +42,12 @@ export default function FindingWorkspace({
   savingKeys?: Set<string>;
   onWorkflowSave?: (signature: string, patch: { status?: FindingWorkflowStatus; notes?: string; dueAt?: string | null }) => Promise<FindingWorkflowRecord>;
 }) {
-  const [query, setQuery] = useState('');
-  const [severity, setSeverity] = useState('all');
-  const [category, setCategory] = useState('all');
-  const [status, setStatus] = useState('all');
-  const [errorCode, setErrorCode] = useState('all');
-  const [sort, setSort] = useState('priority');
+  const [query, setQuery] = useUrlFilter('finding');
+  const [severity, setSeverity] = useUrlFilter('priority', 'all');
+  const [category, setCategory] = useUrlFilter('category', 'all');
+  const [status, setStatus] = useUrlFilter('workflow', 'all');
+  const [errorCode, setErrorCode] = useUrlFilter('error', 'all');
+  const [sort, setSort] = useUrlFilter('sort', 'priority');
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
