@@ -179,14 +179,25 @@ function pollAuditLiveData(
   });
 
   let interval: number | undefined;
+  let failures = 0;
+  let controller: AbortController | undefined;
   const stop = () => {
     cancelled = true;
-    if (interval != null) window.clearInterval(interval);
+    controller?.abort();
+    if (interval != null) window.clearTimeout(interval);
   };
   const poll = async () => {
+    if (cancelled) return;
+    if (document.hidden) {
+      interval = window.setTimeout(poll, Math.max(15000, AUDIT_LIMITS.livePollIntervalMs));
+      return;
+    }
+    controller = new AbortController();
+    const timeout = window.setTimeout(() => controller?.abort(), 15000);
     try {
-      const response = await safeJsonFetch<any>(API_ROUTES.auditStatus(auditId), { headers: await getAuditAccessHeaders() });
+      const response = await safeJsonFetch<any>(API_ROUTES.auditStatus(auditId), { headers: await getAuditAccessHeaders(), signal: controller.signal });
       if (!cancelled && response.success) {
+        failures = 0;
         const nextData = response.data.data || response.data;
         callback(nextData);
         onConnectionChange?.({
@@ -197,6 +208,7 @@ function pollAuditLiveData(
         });
         if (isTerminalAuditStatus(nextData.audit?.status)) stop();
       } else if (!cancelled && !response.success) {
+        failures += 1;
         const message = (response as any).error || 'Audit status polling failed.';
         onConnectionChange?.({
           transport: 'polling',
@@ -207,6 +219,8 @@ function pollAuditLiveData(
         onError?.(new Error(message));
       }
     } catch (error: any) {
+      if (cancelled) return;
+      failures += 1;
       const nextError = error instanceof Error ? error : new Error(String(error));
       onConnectionChange?.({
         transport: 'polling',
@@ -215,10 +229,12 @@ function pollAuditLiveData(
         lastUpdateAt: Date.now(),
       });
       onError?.(nextError);
+    } finally {
+      window.clearTimeout(timeout);
+      if (!cancelled) interval = window.setTimeout(poll, Math.min(30000, AUDIT_LIMITS.livePollIntervalMs * 2 ** Math.min(failures, 3)));
     }
   };
-  interval = window.setInterval(poll, AUDIT_LIMITS.livePollIntervalMs);
-  poll();
+  void poll();
   return stop;
 }
 
@@ -278,7 +294,11 @@ export function subscribeToAuditLiveData(
 
   const startPollingFallback = (message: string) => {
     if (closed || fallbackUnsubscribe) return;
-    fallbackUnsubscribe = pollAuditLiveData(auditId, callback, onError, onConnectionChange, message);
+    fallbackUnsubscribe = pollAuditLiveData(auditId, (snapshot) => {
+      if (closed) return;
+      liveData = snapshot;
+      callback(snapshot);
+    }, onError, onConnectionChange, message);
   };
 
   getAuditAccessHeaders()
@@ -335,6 +355,10 @@ export function subscribeToAuditLiveData(
       }
       if (status === 'SUBSCRIBED') {
         websocketConnected = true;
+        if (liveData.audit?.userId && fallbackUnsubscribe) {
+          fallbackUnsubscribe();
+          fallbackUnsubscribe = null;
+        }
         onConnectionChange?.({
           transport: 'websocket',
           status: 'connected',
