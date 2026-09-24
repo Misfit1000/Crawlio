@@ -3,7 +3,8 @@ import { getAuditAccessHeaders } from '../api/auth-headers';
 import { getSupabaseBrowserClient } from '../supabase/client';
 import { safeJsonFetch } from '../http/safe-json';
 import { AUDIT_LIMITS } from './audit-config';
-import { isTerminalAuditStatus } from './audit-time';
+import { mergeAuditLiveData } from './audit-lifecycle';
+import { hasUsableAuditReport, isTerminalAuditStatus } from './audit-time';
 import type {
   ResourceAuditDocument,
   ResourceAuditEvent,
@@ -171,6 +172,7 @@ function pollAuditLiveData(
   onConnectionChange?: (state: LiveAuditConnectionState) => void,
   reason = 'Using HTTP polling for live audit updates.',
   deferFirstPoll = false,
+  initialSnapshot?: ResourceAuditLiveData,
 ) {
   let cancelled = false;
   onConnectionChange?.({
@@ -183,6 +185,13 @@ function pollAuditLiveData(
   let failures = 0;
   let controller: AbortController | undefined;
   let inFlight = false;
+  let liveData: ResourceAuditLiveData = initialSnapshot ?? {
+    audit: null,
+    latestEvents: [],
+    latestPages: [],
+    latestIssues: [],
+    finalReport: null,
+  };
   const onVisibility = () => {
     if (document.hidden || cancelled || inFlight) return;
     if (interval != null) window.clearTimeout(interval);
@@ -196,26 +205,39 @@ function pollAuditLiveData(
   };
   const poll = async () => {
     if (cancelled || inFlight) return;
-    if (document.hidden) {
-      interval = window.setTimeout(poll, Math.max(15000, AUDIT_LIMITS.livePollIntervalMs));
-      return;
-    }
+    if (document.hidden) return;
     controller = new AbortController();
     inFlight = true;
     const timeout = window.setTimeout(() => controller?.abort(), 15000);
     try {
-      const response = await safeJsonFetch<any>(API_ROUTES.auditStatus(auditId), { headers: await getAuditAccessHeaders(), signal: controller.signal });
+      const audit = liveData.audit;
+      const url = audit ? API_ROUTES.auditStatusDelta(auditId, {
+        updatedAt: audit.updatedAt,
+        status: audit.status,
+        pagesCrawled: audit.pagesCrawled,
+        issuesFound: audit.issuesFound,
+        hasReport: Boolean(liveData.finalReport),
+      }) : API_ROUTES.auditStatus(auditId);
+      const response = await safeJsonFetch<any>(url, { headers: await getAuditAccessHeaders(), signal: controller.signal });
       if (!cancelled && response.success) {
         failures = 0;
-        const nextData = response.data.data || response.data;
-        callback(nextData);
+        const payload = response.data.data || response.data;
+        const incoming: ResourceAuditLiveData = payload.partial ? {
+          audit: payload.audit,
+          latestEvents: payload.latestEvents || [],
+          latestPages: payload.latestPages || [],
+          latestIssues: payload.latestIssues || [],
+          finalReport: payload.finalReport,
+        } : payload;
+        liveData = mergeAuditLiveData(liveData, incoming);
+        callback(liveData);
         onConnectionChange?.({
           transport: 'polling',
           status: 'polling',
           message: reason,
           lastUpdateAt: Date.now(),
         });
-        if (isTerminalAuditStatus(nextData.audit?.status)) stop();
+        if (isTerminalAuditStatus(liveData.audit?.status) && (!hasUsableAuditReport(liveData.audit?.status) || liveData.finalReport)) stop();
       } else if (!cancelled && !response.success) {
         failures += 1;
         const message = (response as any).error || 'Audit status polling failed.';
@@ -242,12 +264,16 @@ function pollAuditLiveData(
     } finally {
       inFlight = false;
       window.clearTimeout(timeout);
-      if (!cancelled) interval = window.setTimeout(poll, Math.min(30000, AUDIT_LIMITS.livePollIntervalMs * 2 ** Math.min(failures, 3)));
+      if (!cancelled && !document.hidden) {
+        interval = window.setTimeout(poll, Math.min(30000, AUDIT_LIMITS.livePollIntervalMs * 2 ** Math.min(failures, 3)));
+      }
     }
   };
   document.addEventListener('visibilitychange', onVisibility);
-  if (deferFirstPoll) interval = window.setTimeout(poll, AUDIT_LIMITS.livePollIntervalMs);
-  else void poll();
+  if (!document.hidden) {
+    if (deferFirstPoll) interval = window.setTimeout(poll, AUDIT_LIMITS.livePollIntervalMs);
+    else void poll();
+  }
   return stop;
 }
 
@@ -269,6 +295,7 @@ export function subscribeToAuditLiveData(
       onConnectionChange,
       'Live updates are using automatic refresh.',
       Boolean(initialSnapshot?.audit),
+      initialSnapshot,
     );
   }
 
@@ -313,7 +340,7 @@ export function subscribeToAuditLiveData(
       if (closed) return;
       liveData = snapshot;
       callback(snapshot);
-    }, onError, onConnectionChange, message);
+    }, onError, onConnectionChange, message, false, liveData);
   };
 
   if (!initialSnapshot) getAuditAccessHeaders()

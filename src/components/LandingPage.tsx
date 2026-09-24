@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   ArrowRight,
@@ -16,7 +16,8 @@ import {
 } from 'lucide-react';
 import { createAuditSubmitGuard } from '../lib/api/audit-submit-guard';
 import { AUDIT_TARGET_INPUT_PROPS, normalizeAuditTarget } from '../lib/url/normalize-audit-target';
-import { PUBLIC_AUDIT_PLANS, PUBLIC_PLAN_COMPARISON } from '../lib/plans/public-plan-presentation';
+import { createPublicPlanComparison, mergePublicPlanPresentation, type PublicPlanProjection } from '../lib/plans/public-plan-presentation';
+import { loadPublicPlanProjection } from '../lib/plans/public-plan-client';
 import { StatusBadge } from './ui/visual-system';
 import { AuditConceptScene } from './ui/AuditConceptScene';
 
@@ -111,7 +112,50 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
   const [auditError, setAuditError] = useState<string | null>(null);
   const [activeCoverage, setActiveCoverage] = useState(coverageGroups[0].id);
   const [activeFinding, setActiveFinding] = useState(0);
+  const [planProjection, setPlanProjection] = useState<PublicPlanProjection | null>(null);
+  const [planDataUnavailable, setPlanDataUnavailable] = useState(false);
   const auditStartGuardRef = useRef(createAuditSubmitGuard());
+  const pricingRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const element = pricingRef.current;
+    if (!element) return;
+    const controller = new AbortController();
+    let active = true;
+    let requested = false;
+    const load = () => {
+      if (requested) return;
+      requested = true;
+      void loadPublicPlanProjection(controller.signal)
+        .then((projection) => {
+          if (!active) return;
+          setPlanProjection(projection);
+          setPlanDataUnavailable(false);
+        })
+        .catch((error) => {
+          if (active && (error as Error)?.name !== 'AbortError') setPlanDataUnavailable(true);
+        });
+    };
+    if (!('IntersectionObserver' in window)) {
+      load();
+      return () => {
+        active = false;
+        controller.abort();
+      };
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        load();
+        observer.disconnect();
+      }
+    }, { rootMargin: '800px 0px' });
+    observer.observe(element);
+    return () => {
+      active = false;
+      observer.disconnect();
+      controller.abort();
+    };
+  }, []);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -135,6 +179,8 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
 
   const selectedCoverage = coverageGroups.find((group) => group.id === activeCoverage) || coverageGroups[0];
   const selectedFinding = findingExamples[activeFinding];
+  const publicPlans = useMemo(() => mergePublicPlanPresentation(planProjection), [planProjection]);
+  const planComparison = useMemo(() => createPublicPlanComparison(publicPlans), [publicPlans]);
 
   return (
     <main id="main-content" className="w-full bg-background text-foreground">
@@ -170,7 +216,7 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
         </div>
       </section>
 
-      <section id="features" className="section-shell scroll-mt-24 py-14 md:py-18">
+      <section id="features" className="content-auto section-shell scroll-mt-24 py-14 md:py-18">
         <div className="grid gap-10 xl:grid-cols-[0.7fr_1.3fr]">
           <div className="xl:sticky xl:top-28 xl:self-start"><p className="text-sm font-semibold text-accent">Audit coverage</p><h2 className="mt-2 text-3xl font-semibold leading-tight md:text-4xl">See what the audit actually checks.</h2><p className="mt-4 max-w-lg text-sm leading-7 text-muted-foreground">Coverage is organised around the decisions you need to make, not a wall of disconnected feature cards.</p>
             <div className="mt-7 grid gap-1 border-y border-border py-2" role="tablist" aria-label="Audit coverage categories">
@@ -186,7 +232,7 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
         </div>
       </section>
 
-      <section id="example-report" className="border-y border-border bg-[var(--surface-inset)] py-14 md:py-18">
+      <section id="example-report" className="content-auto border-y border-border bg-[var(--surface-inset)] py-14 md:py-18">
         <div className="section-shell">
           <div className="grid gap-8 lg:grid-cols-[0.72fr_1.28fr] lg:items-end"><div><p className="text-sm font-semibold text-accent">Specific recommendations</p><h2 className="mt-2 text-3xl font-semibold leading-tight md:text-4xl">A finding should explain the problem, not just name it.</h2><p className="mt-4 text-sm leading-7 text-muted-foreground">Select an example to see the same evidence-first structure used in reports.</p></div><div className="flex flex-wrap gap-2 lg:justify-end"><StatusBadge tone="neutral">Example report</StatusBadge><StatusBadge tone="accent">Demonstration data</StatusBadge></div></div>
           <div className="mt-8 grid overflow-hidden rounded-xl border border-border bg-card lg:grid-cols-[0.8fr_1.2fr]">
@@ -202,7 +248,7 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
         </div>
       </section>
 
-      <section id="how-it-works" className="section-shell scroll-mt-24 py-14 md:py-18">
+      <section id="how-it-works" className="content-auto section-shell scroll-mt-24 py-14 md:py-18">
         <div className="grid gap-10 xl:grid-cols-[0.62fr_1.38fr]"><div><p className="text-sm font-semibold text-accent">From evidence to action</p><h2 className="mt-2 text-3xl font-semibold leading-tight md:text-4xl">The report becomes a working backlog.</h2><p className="mt-4 text-sm leading-7 text-muted-foreground">Findings retain the context needed to verify, assign, fix, and compare the work.</p><button type="button" onClick={onExploreFeatures} className="quiet-button mt-6">Open your workspace <ExternalLink className="h-4 w-4" /></button></div>
           <ol className="grid border-y border-border md:grid-cols-2">
             {workflow.map(([number, title, description], index) => <li key={number} className={`grid grid-cols-[44px_1fr] gap-3 border-b border-border py-5 md:px-6 ${index % 2 === 0 ? 'md:border-r' : ''} ${index >= 4 ? 'md:border-b-0' : ''}`}><span className="font-semibold tabular-nums text-accent">{number}</span><div><h3 className="font-semibold">{title}</h3><p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p></div></li>)}
@@ -210,7 +256,7 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
         </div>
       </section>
 
-      <section className="border-y border-border bg-card py-14 md:py-18">
+      <section className="content-auto border-y border-border bg-card py-14 md:py-18">
         <div className="section-shell grid gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
           <div><div className="flex h-11 w-11 items-center justify-center rounded-lg border border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"><LockKeyhole className="h-5 w-5" /></div><h2 className="mt-5 text-3xl font-semibold leading-tight md:text-4xl">The report is clear about what it knows.</h2><p className="mt-4 text-sm leading-7 text-muted-foreground">Audit scores come from collected checks. Missing evidence remains a limitation and is never converted into a pass.</p></div>
           <div className="divide-y divide-border border-y border-border">
@@ -226,26 +272,27 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
         </div>
       </section>
 
-      <section id="pricing" className="section-shell scroll-mt-24 py-14 md:py-18">
+      <section id="pricing" ref={pricingRef} className="content-auto section-shell scroll-mt-24 py-14 md:py-18">
         <div className="max-w-3xl"><p className="text-sm font-semibold text-accent">Plans and limits</p><h2 className="mt-2 text-3xl font-semibold leading-tight md:text-4xl">Choose the audit depth you need.</h2><p className="mt-4 text-sm leading-7 text-muted-foreground">Self-service billing is not available yet. Plan access is enabled by an administrator, and server-enforced limits always take priority.</p></div>
         <div className="mt-8 grid gap-4 lg:grid-cols-3">
-          {PUBLIC_AUDIT_PLANS.map((plan) => <article key={plan.id} className={`flex h-full flex-col rounded-xl border bg-card p-5 sm:p-7 ${plan.recommended ? 'border-accent ring-1 ring-accent/25' : 'border-border'}`}><div className="flex items-start justify-between gap-3"><div><h3 className="text-2xl font-semibold">{plan.name}</h3><p className="mt-1 text-sm text-muted-foreground">{plan.mode}</p></div>{plan.recommended && <StatusBadge tone="accent">Recommended</StatusBadge>}</div><div className="mt-6 border-y border-border py-4"><div className="text-lg font-semibold">Up to {plan.pagesPerAudit} analysed pages</div><div className="mt-1 text-sm text-muted-foreground">{plan.allowance}</div></div><div className="mt-5"><div className="text-xs font-semibold text-muted-foreground">Best for</div><p className="mt-1 text-sm leading-6">{plan.bestFor}</p></div><ul className="mt-5 space-y-3 text-sm">{plan.features.map((feature) => <li key={feature} className="flex gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-300" />{feature}</li>)}</ul><p className="mt-auto border-t border-border pt-5 text-xs leading-5 text-muted-foreground">{plan.footer}</p></article>)}
+          {publicPlans.map((plan) => <article key={plan.id} className={`flex h-full flex-col rounded-xl border bg-card p-5 sm:p-7 ${plan.recommended ? 'border-accent ring-1 ring-accent/25' : 'border-border'}`}><div className="flex items-start justify-between gap-3"><div><h3 className="text-2xl font-semibold">{plan.name}</h3><p className="mt-1 text-sm text-muted-foreground">{plan.mode}</p></div>{plan.recommended && <StatusBadge tone="accent">Recommended</StatusBadge>}</div><div className="mt-6 border-y border-border py-4"><div className="text-lg font-semibold">Up to {plan.pagesPerAudit} analysed pages</div><div className="mt-1 text-sm text-muted-foreground">{plan.allowance}</div></div><div className="mt-5"><div className="text-xs font-semibold text-muted-foreground">Best for</div><p className="mt-1 text-sm leading-6">{plan.bestFor}</p></div><ul className="mt-5 space-y-3 text-sm">{plan.features.map((feature) => <li key={feature} className="flex gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-300" />{feature}</li>)}</ul><p className="mt-auto border-t border-border pt-5 text-xs leading-5 text-muted-foreground">{plan.footer}</p></article>)}
         </div>
+        {planDataUnavailable && <p className="mt-4 text-xs text-muted-foreground" role="status">Current plan data is temporarily unavailable. The server-enforced limits shown when an audit starts always take priority.</p>}
         <div className="mt-7 overflow-x-auto rounded-xl border border-border bg-card" aria-label="Audit plan comparison">
           <table className="w-full min-w-[720px] border-collapse text-left text-sm">
             <caption className="sr-only">Compare Crawlio audit plan capabilities</caption>
-            <thead><tr className="border-b border-border bg-[var(--surface-inset)]"><th scope="col" className="px-4 py-3 font-semibold">Capability</th>{PUBLIC_AUDIT_PLANS.map((plan) => <th key={plan.id} scope="col" className="px-4 py-3 font-semibold">{plan.name}</th>)}</tr></thead>
-            <tbody className="divide-y divide-border">{PUBLIC_PLAN_COMPARISON.map((row) => <tr key={row.label}><th scope="row" className="px-4 py-3 font-medium">{row.label}</th>{row.values.map((value, index) => <td key={`${row.label}-${PUBLIC_AUDIT_PLANS[index].id}`} className="px-4 py-3 text-muted-foreground">{value}</td>)}</tr>)}</tbody>
+            <thead><tr className="border-b border-border bg-[var(--surface-inset)]"><th scope="col" className="px-4 py-3 font-semibold">Capability</th>{publicPlans.map((plan) => <th key={plan.id} scope="col" className="px-4 py-3 font-semibold">{plan.name}</th>)}</tr></thead>
+            <tbody className="divide-y divide-border">{planComparison.map((row) => <tr key={row.label}><th scope="row" className="px-4 py-3 font-medium">{row.label}</th>{row.values.map((value, index) => <td key={`${row.label}-${publicPlans[index].id}`} className="px-4 py-3 text-muted-foreground">{value}</td>)}</tr>)}</tbody>
           </table>
         </div>
         <button type="button" onClick={() => onNavigate('start-audit')} className="trust-button mt-6">Start a free audit <ArrowRight className="h-4 w-4" /></button>
       </section>
 
-      <section className="section-shell grid gap-6 py-14 md:grid-cols-[1fr_auto] md:items-center" aria-labelledby="guides-heading">
+      <section className="content-auto section-shell grid gap-6 py-14 md:grid-cols-[1fr_auto] md:items-center" aria-labelledby="guides-heading">
         <div><p className="text-sm font-semibold text-accent">Keep learning</p><h2 id="guides-heading" className="mt-2 text-3xl font-semibold">Turn a finding into understanding.</h2><p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">Explore practical guides to website audits, search visibility, and the technical work behind a healthier site.</p></div>
         <a href="/blog" className="quiet-button justify-self-start">Explore the blog <ArrowRight className="h-4 w-4" /></a>
       </section>
-      <section id="faq" className="border-t border-border bg-[var(--surface-inset)] py-14 md:py-18">
+      <section id="faq" className="content-auto border-t border-border bg-[var(--surface-inset)] py-14 md:py-18">
         <div className="section-shell grid gap-8 lg:grid-cols-[0.58fr_1.42fr]"><div><p className="text-sm font-semibold text-accent">Before you start</p><h2 className="mt-2 text-3xl font-semibold leading-tight">Practical audit questions.</h2><p className="mt-3 text-sm leading-6 text-muted-foreground">The service is built for public websites and reports unavailable evidence directly.</p></div><div className="divide-y divide-border border-y border-border">{faqs.map(([question, answer]) => <FaqItem key={question} question={question} answer={answer} />)}</div></div>
       </section>
     </main>

@@ -6,6 +6,12 @@ import { isNodeMonitoringConfigured } from '../lib/monitoring/sentry-node';
 
 export { type WorkerHeartbeatStatus };
 
+export const WORKER_HEARTBEAT_INTERVAL_MS = 30_000;
+
+export function shouldWritePeriodicHeartbeat(lastWriteAt: number, now = Date.now(), intervalMs = WORKER_HEARTBEAT_INTERVAL_MS) {
+  return now - lastWriteAt >= intervalMs;
+}
+
 export const WORKER_ENV_ERROR =
   'Audit worker cannot start: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required. The online worker must use Supabase, not memory storage.';
 

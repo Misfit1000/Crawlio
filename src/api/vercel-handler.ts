@@ -16,6 +16,7 @@ import { ApiError, requestIdMiddleware, sendSafeApiError } from '../lib/api/erro
 import { publicVersionPayload } from '../lib/platform/version';
 
 let cachedApp: express.Express | null = null;
+let apiRouterPromise: Promise<typeof import('./index')['apiRouter']> | null = null;
 
 initializeApiMonitoring();
 
@@ -29,10 +30,20 @@ function rewriteVercelPath(req: any) {
   req.url = `/api/${path}${query ? `?${query}` : ''}`;
 }
 
+function loadApiRouter() {
+  apiRouterPromise ||= import('./index').then((module) => module.apiRouter);
+  return apiRouterPromise;
+}
+
+function lazyApiRouter(req: express.Request, res: express.Response, next: express.NextFunction) {
+  void loadApiRouter()
+    .then((router) => router(req, res, next))
+    .catch(next);
+}
+
 async function getApp() {
   if (cachedApp) return cachedApp;
 
-  const { apiRouter } = await import('./index');
   const app = express();
   const parseJsonBody = jsonBodyParser();
 
@@ -59,8 +70,8 @@ async function getApp() {
   });
   app.use('/api/tools/audit/start', createRateLimiter({ namespace: 'audit-start', windowMs: 60_000, maxRequests: 20 }));
   app.use('/tools/audit/start', createRateLimiter({ namespace: 'audit-start-direct', windowMs: 60_000, maxRequests: 20 }));
-  app.use('/api/tools', apiRouter);
-  app.use('/tools', apiRouter);
+  app.use('/api/tools', lazyApiRouter);
+  app.use('/tools', lazyApiRouter);
   app.use((_req, _res, next) => next(new ApiError('API_ROUTE_NOT_FOUND', 'The requested API route was not found.', 404)));
   app.use(apiErrorHandler);
 

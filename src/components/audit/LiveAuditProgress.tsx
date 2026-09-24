@@ -218,8 +218,20 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
 
   useEffect(() => {
     if (!shouldRunClock) return;
-    const interval = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(interval);
+    let interval: number | undefined;
+    const syncClock = () => {
+      if (interval != null) window.clearInterval(interval);
+      interval = undefined;
+      if (document.hidden) return;
+      setNow(Date.now());
+      interval = window.setInterval(() => setNow(Date.now()), 1000);
+    };
+    syncClock();
+    document.addEventListener('visibilitychange', syncClock);
+    return () => {
+      document.removeEventListener('visibilitychange', syncClock);
+      if (interval != null) window.clearInterval(interval);
+    };
   }, [shouldRunClock]);
 
   useEffect(() => {

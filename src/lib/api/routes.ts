@@ -1,6 +1,15 @@
 export const API_ROUTES = {
   auditStart: "/api/tools/audit/start",
   auditStatus: (id: string) => `/api/tools/audit/status/${id}`,
+  auditStatusDelta: (id: string, known: { updatedAt?: string; status?: string; pagesCrawled?: number; issuesFound?: number; hasReport?: boolean }) => {
+    const params = new URLSearchParams({ delta: '1' });
+    if (known.updatedAt) params.set('knownUpdatedAt', known.updatedAt);
+    if (known.status) params.set('knownStatus', known.status);
+    if (known.pagesCrawled != null) params.set('knownPagesCrawled', String(known.pagesCrawled));
+    if (known.issuesFound != null) params.set('knownIssuesFound', String(known.issuesFound));
+    if (known.hasReport) params.set('hasReport', '1');
+    return `/api/tools/audit/status/${id}?${params.toString()}`;
+  },
   auditResult: (id: string) => `/api/tools/audit/result/${id}`,
   auditHistory: "/api/tools/audits/history",
   auditCompare: (currentId: string, baselineId: string) => `/api/tools/audit/compare/${encodeURIComponent(currentId)}/${encodeURIComponent(baselineId)}`,
@@ -25,6 +34,7 @@ export const API_ROUTES = {
   searchConsoleData: (propertyId: string) => `/api/tools/search-console/data/${encodeURIComponent(propertyId)}`,
   searchConsoleConnection: '/api/tools/search-console/connection',
   version: '/api/version',
+  publicPlans: '/api/tools/plans/public',
   accountExport: '/api/tools/me/export',
   accountDelete: '/api/tools/me/delete',
   adminDiagnostics: '/api/tools/admin/diagnostics',

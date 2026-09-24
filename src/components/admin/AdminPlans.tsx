@@ -15,7 +15,7 @@ export default function AdminPlans({ adminUserId }: { adminUserId: string }) {
   const plans = useAdminData(() => getPlanLimits(), []);
   const [updatingPlan, setUpdatingPlan] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const update = async (plan: string, key: string, value: number) => {
+  const update = async (plan: string, key: string, value: number | boolean) => {
     const reason = await requestAdminReason(`changing the ${plan} plan`);
     if (!reason) return;
     setUpdatingPlan(plan);
@@ -46,7 +46,11 @@ export default function AdminPlans({ adminUserId }: { adminUserId: string }) {
                 <td><NumberInput value={plan.maxPagesStandard} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'maxPagesStandard', value)} /></td>
                 <td><NumberInput value={plan.maxPagesDeep} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'maxPagesDeep', value)} /></td>
                 <td><NumberInput value={plan.priority} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'priority', value)} /></td>
-                <td className="text-xs"><span className="block">PDF: {plan.pdfEnabled ? 'Yes' : 'No'}</span><span className="block text-muted-foreground">White label: {plan.whiteLabelEnabled ? 'Yes' : 'No'} / API: {plan.apiEnabled ? 'Yes' : 'No'}</span></td>
+                <td className="text-xs">
+                  <label className="flex items-center gap-2"><input type="checkbox" checked={Boolean(plan.exportsEnabled)} disabled={updatingPlan === plan.plan} onChange={(event) => void update(plan.plan, 'exportsEnabled', event.target.checked)} /> Exports</label>
+                  <label className="mt-1 flex items-center gap-2"><input type="checkbox" checked={Boolean(plan.pdfEnabled)} disabled={updatingPlan === plan.plan} onChange={(event) => void update(plan.plan, 'pdfEnabled', event.target.checked)} /> PDF</label>
+                  <label className="mt-1 flex items-center gap-2"><input type="checkbox" checked={Boolean(plan.scheduledAuditsEnabled)} disabled={updatingPlan === plan.plan} onChange={(event) => void update(plan.plan, 'scheduledAuditsEnabled', event.target.checked)} /> Scheduling</label>
+                </td>
               </tr>
             ))}
           </tbody>

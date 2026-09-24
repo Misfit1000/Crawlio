@@ -43,6 +43,17 @@ function hasSupabaseBrowserConfig() {
   return Boolean(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY);
 }
 
+function shouldHydrateAuthOnLoad() {
+  if (typeof window === 'undefined') return false;
+  const pathRequiresSession = /^\/(?:app|admin)(?:\/|$)/.test(window.location.pathname);
+  if (pathRequiresSession) return true;
+  try {
+    return Object.keys(window.localStorage).some((key) => key.startsWith('sb-') && key.includes('-auth-token'));
+  } catch {
+    return false;
+  }
+}
+
 async function getSupabaseClientOrThrow() {
   const { getSupabaseBrowserClient } = await import("../lib/supabase/client");
   const client = getSupabaseBrowserClient();
@@ -97,12 +108,14 @@ async function mapSupabaseUser(supabaseUser: SupabaseUser, dataService: Supabase
 
   try {
     const serverProfile = await fetchServerProfile(accessToken);
-    await dataService.initUserProfile(supabaseUser.id, {
-      email,
-      displayName: metadata.display_name || metadata.full_name || (email ? email.split('@')[0] : 'User'),
-    });
-    const extraData = await dataService.getUserProfile(supabaseUser.id) || {};
-    const profile = serverProfile || extraData;
+    let profile = serverProfile;
+    if (!profile) {
+      await dataService.initUserProfile(supabaseUser.id, {
+        email,
+        displayName: metadata.display_name || metadata.full_name || (email ? email.split('@')[0] : 'User'),
+      });
+      profile = await dataService.getUserProfile(supabaseUser.id) || {};
+    }
 
     return {
       id: supabaseUser.id,
@@ -139,14 +152,29 @@ async function mapSupabaseUser(supabaseUser: SupabaseUser, dataService: Supabase
   }
 }
 
+let recentHydration: { key: string; expiresAt: number; promise: Promise<User> } | null = null;
+
+function hydrateSupabaseUser(user: SupabaseUser, dataService: SupabaseDataService, accessToken?: string) {
+  const key = `${user.id}:${String(accessToken || '').slice(-24)}`;
+  if (recentHydration?.key === key && recentHydration.expiresAt > Date.now()) return recentHydration.promise;
+  const promise = mapSupabaseUser(user, dataService, accessToken);
+  recentHydration = { key, expiresAt: Date.now() + 5_000, promise };
+  return promise;
+}
+
+function clearRecentHydration() {
+  recentHydration = null;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(hasSupabaseBrowserConfig());
+  const [authRequested, setAuthRequested] = useState(shouldHydrateAuthOnLoad);
+  const [loading, setLoading] = useState(() => hasSupabaseBrowserConfig() && shouldHydrateAuthOnLoad());
   const [error, setError] = useState<string | null>(null);
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!hasSupabaseBrowserConfig()) {
+    if (!hasSupabaseBrowserConfig() || !authRequested) {
       setUser(null);
       setLoading(false);
       return;
@@ -159,16 +187,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const client = await getSupabaseClientOrThrow();
       const dataService = await loadSupabaseDataService();
 
-      const { data } = await client.auth.getUser();
-      const session = await client.auth.getSession();
+      const [{ data }, session] = await Promise.all([client.auth.getUser(), client.auth.getSession()]);
+      const hydratedUser = data.user ? await hydrateSupabaseUser(data.user, dataService, session.data.session?.access_token) : null;
       if (active) {
-        setUser(data.user ? await mapSupabaseUser(data.user, dataService, session.data.session?.access_token) : null);
+        setUser(hydratedUser);
         setLoading(false);
       }
 
-      const { data: subscription } = client.auth.onAuthStateChange(async (_event, session) => {
+      const { data: subscription } = client.auth.onAuthStateChange(async (event, session) => {
         if (!active) return;
-        setUser(session?.user ? await mapSupabaseUser(session.user, dataService, session.access_token) : null);
+        if (event === 'SIGNED_OUT' || !session?.user) clearRecentHydration();
+        const nextUser = session?.user ? await hydrateSupabaseUser(session.user, dataService, session.access_token) : null;
+        if (!active) return;
+        setUser(nextUser);
         setLoading(false);
       });
       unsubscribe = () => subscription.subscription.unsubscribe();
@@ -188,24 +219,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       cancelIdleWork();
       unsubscribe?.();
     };
-  }, []);
+  }, [authRequested]);
 
   const login = async (email: string, password: string) => {
     setError(null);
+    setAuthRequested(true);
+    setLoading(true);
     const client = await getSupabaseClientOrThrow();
 
-    const { error: signInError } = await client.auth.signInWithPassword({ email, password });
+    const { data, error: signInError } = await client.auth.signInWithPassword({ email, password });
     if (signInError) {
+      setLoading(false);
       if (signInError.message.toLowerCase().includes('invalid')) {
         throw new Error("Email or password is incorrect");
       }
       throw new Error('Unable to sign in. Please try again.');
     }
+    if (data.user) {
+      const dataService = await loadSupabaseDataService();
+      setUser(await hydrateSupabaseUser(data.user, dataService, data.session?.access_token));
+    }
+    setLoading(false);
   };
 
   const register = async (email: string, password: string, legalConsent: { accepted: boolean; version: string }) => {
     setError(null);
     if (!legalConsent.accepted) throw new Error('Accept the Terms and Privacy Notice to create an account.');
+    setAuthRequested(true);
     const client = await getSupabaseClientOrThrow();
     const acceptedAt = new Date().toISOString();
 
@@ -230,6 +270,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         privacyAcceptedAt: acceptedAt,
         legalVersion: legalConsent.version,
       });
+      if (data.session) setUser(await hydrateSupabaseUser(data.user, dataService, data.session.access_token));
     }
   };
 
@@ -257,6 +298,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const client = await getSupabaseClientOrThrow();
     const { error: signOutError } = await client.auth.signOut();
     if (signOutError) throw signOutError;
+    clearRecentHydration();
+    setUser(null);
   };
 
   return (

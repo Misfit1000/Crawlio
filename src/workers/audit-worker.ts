@@ -8,6 +8,7 @@ import { auditRepository } from '../lib/supabase/audit-repository';
 import { startWorkerHealthServer } from './audit-worker-health';
 import {
   WORKER_ENV_ERROR,
+  WORKER_HEARTBEAT_INTERVAL_MS,
   buildWorkerHeartbeat,
   createInitialWorkerState,
   loadWorkerConfig,
@@ -1033,8 +1034,13 @@ async function processAudit(audit: ResourceAuditDocument, workerId: string) {
 
 async function writeWorkerHeartbeat(state: AuditWorkerRuntimeState, patch?: Partial<AuditWorkerRuntimeState>) {
   if (patch) updateWorkerState(state, patch);
-  await auditRepository.upsertWorkerHeartbeat(buildWorkerHeartbeat(state));
+  const previous = heartbeatWriteQueues.get(state) || Promise.resolve();
+  const next = previous.catch(() => undefined).then(async () => { await auditRepository.upsertWorkerHeartbeat(buildWorkerHeartbeat(state)); });
+  heartbeatWriteQueues.set(state, next);
+  await next;
 }
+
+const heartbeatWriteQueues = new WeakMap<AuditWorkerRuntimeState, Promise<void>>();
 
 function createLeaseRefresher(auditId: string, workerId: string) {
   const refreshEveryMs = Math.max(5_000, Math.floor(AUDIT_LIMITS.lockLeaseMs / 2));
@@ -1071,7 +1077,7 @@ export async function runOneAudit(
   const audit = await auditRepository.claimNextQueuedAudit(workerId, runtimeState?.runtime || 'node-worker');
   if (!audit) {
     if (runtimeState) {
-      await writeWorkerHeartbeat(runtimeState, { status: 'idle', currentAuditId: null });
+      updateWorkerState(runtimeState, { status: 'idle', currentAuditId: null });
       logNoQueuedAudits();
     }
     return false;
@@ -1240,14 +1246,24 @@ export async function runAuditWorkerLoop() {
   console.log(`Polling interval: ${config.pollIntervalMs}ms`);
 
   workerReady = true;
+  await writeWorkerHeartbeat(state, { status: 'idle', currentAuditId: null, queuePollingStatus: 'active', databaseConnected: true, lastFatalWorkerError: null });
+  const heartbeatTimer = setInterval(() => {
+    void writeWorkerHeartbeat(state).catch((error) => {
+      console.error(`Periodic worker heartbeat failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }, WORKER_HEARTBEAT_INTERVAL_MS);
+  heartbeatTimer.unref?.();
   while (!shutdownRequested) {
     try {
-      await writeWorkerHeartbeat(state, { status: 'idle', currentAuditId: null, queuePollingStatus: 'active', databaseConnected: true, lastFatalWorkerError: null });
+      const recovering = state.queuePollingStatus === 'error' || !state.databaseConnected;
       const claimed = await runOneAudit(config.workerId, state);
+      if (recovering) {
+        await writeWorkerHeartbeat(state, { status: claimed ? state.status : 'idle', queuePollingStatus: 'active', databaseConnected: true, lastFatalWorkerError: null });
+      }
       if (!claimed) await wait(config.pollIntervalMs);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error || 'Worker polling failure');
-      updateWorkerState(state, { status: 'idle', currentAuditId: null, queuePollingStatus: 'error', databaseConnected: false, lastFatalWorkerError: detail });
+      await writeWorkerHeartbeat(state, { status: 'idle', currentAuditId: null, queuePollingStatus: 'error', databaseConnected: false, lastFatalWorkerError: detail }).catch(() => undefined);
       console.error(`Worker queue polling failed: ${detail}`);
       captureWorkerException(error, {
         jobStage: 'queue-polling',
@@ -1260,6 +1276,7 @@ export async function runAuditWorkerLoop() {
     }
   }
 
+  clearInterval(heartbeatTimer);
   await writeWorkerHeartbeat(state, { status: 'stopped', currentAuditId: null, queuePollingStatus: 'stopped' });
   healthServer?.close();
 }

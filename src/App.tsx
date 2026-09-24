@@ -11,6 +11,7 @@ import { BrandMark, LoadingSkeleton, ThemeToggle } from './components/ui/visual-
 import { MarketingShell, WorkspaceShell } from './components/layout/ProductShells';
 import { useLocation, useNavigate } from './app/router';
 import { BRAND } from './lib/brand';
+import { activateBrowserMonitoringForPath } from './lib/monitoring/sentry-browser';
 import {
   TAB_PATHS,
   isWorkspacePath,
@@ -73,6 +74,10 @@ export default function App() {
     ? requestedLiveSection as AuditWorkspaceSection
     : 'overview';
   const auditStartGuardRef = useRef(createAuditSubmitGuard());
+
+  useEffect(() => {
+    activateBrowserMonitoringForPath(pathname);
+  }, [pathname]);
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const activeTab = tabForPath(pathname);

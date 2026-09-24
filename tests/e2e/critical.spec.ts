@@ -56,7 +56,7 @@ test.describe('guest audit integration', () => {
       await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ success: true, data: { auditId: AUDIT_ID, status: 'queued', pageLimit: 5 } }) });
     });
     await page.route(`**/api/tools/audit/result/${AUDIT_ID}`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: auditSnapshot(terminal ? 'completed' : 'queued') }) }));
-    await page.route(`**/api/tools/audit/status/${AUDIT_ID}`, (route) => {
+    await page.route(`**/api/tools/audit/status/${AUDIT_ID}**`, (route) => {
       statusCalls += 1;
       terminal = statusCalls >= 3;
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: auditSnapshot(terminal ? 'completed' : 'running') }) });
@@ -69,7 +69,7 @@ test.describe('guest audit integration', () => {
     await page.getByRole('button', { name: 'Start audit' }).evaluate((button: HTMLButtonElement) => { button.click(); button.click(); });
     await expect(page).toHaveURL(`/audit/live/${AUDIT_ID}`);
     await expect.poll(() => starts).toBe(1);
-    await expect(page.getByText('Checking your site').first()).toBeVisible();
+    await expect(page.getByText(/Waiting to start|Checking your site/).first()).toBeVisible();
     await expect(page.getByText('Report ready', { exact: true }).first()).toBeVisible({ timeout: 12_000 });
     await expect(page.getByText('Final score').first()).toBeVisible();
     await expect(page.getByText('82', { exact: true }).first()).toBeVisible();

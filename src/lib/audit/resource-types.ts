@@ -153,6 +153,15 @@ export interface ResourceAuditLiveData {
   finalReport?: ResourceAuditReport | null;
 }
 
+export interface ResourceAuditLivePatch {
+  partial: true;
+  audit: ResourceAuditDocument;
+  latestEvents?: ResourceAuditEvent[];
+  latestPages?: ResourceAuditPage[];
+  latestIssues?: ResourceAuditIssue[];
+  finalReport?: ResourceAuditReport | null;
+}
+
 export type AuditReportSummary = Pick<ResourceAuditReport, 'scores' | 'summary' | 'generatedAt'>;
 
 export interface AuditHistoryItem<TReport = ResourceAuditReport> {

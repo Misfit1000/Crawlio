@@ -4,6 +4,7 @@ import { Router } from 'express';
 import { createAdminReadRouter } from './admin/read-routes';
 import { normalizeDomainInput, normalizeUserUrl } from '../lib/seo/url-utils';
 import { isCompletedAuditStatus } from '../lib/audit/audit-time';
+import { planAuditLiveDelta } from '../lib/audit/live-delta';
 import { generateKeywords } from '../lib/keywords/generator';
 import { clusterKeywords } from '../lib/keywords/clustering';
 import { buildContentBrief } from '../lib/keywords/content-brief';
@@ -29,7 +30,6 @@ import { renderBlogArticleHtml } from '../lib/blog/render';
 import { renderBlogListingHtml } from '../lib/blog/public-render';
 import { blogAutomationRepository } from '../lib/blog/automation-repository';
 import { blogJobIdempotencyKey, validateManualBatch } from '../lib/blog/automation';
-import { importBlogImage } from '../lib/blog/images';
 import { getGroqBlogConfiguration, getSafeGroqDiagnostics, GROQ_DEFAULT_STRUCTURED_MODEL, GROQ_DEFAULT_WRITER_MODEL, testGroqProvider } from '../lib/blog/server/groq';
 import { dispatchVercelBlogStages, getVercelBlogRuntimeInfo, recoverAndDispatchVercelBlogWork } from '../lib/blog/server/vercel-workflow';
 import { normalizeBlogArticleType } from '../lib/blog/length-policy';
@@ -39,7 +39,6 @@ import { blogSourceRepository } from '../lib/blog/source-management';
 import { blogEditorRepository, BlogDraftConflictError } from '../lib/blog/editor-repository';
 import { buildBlogReadiness } from '../lib/blog/editor-experience';
 import { applySafeBlogFixes } from '../lib/blog/editor-safe-fixes';
-import { researchSourceUrls } from '../lib/blog/research';
 import { suggestBlogHeadingStructure } from '../lib/blog/server/editor-assistance';
 import { normalizePublicBlogSourceUrl } from '../lib/blog/source-url';
 import { indexNowKey, notifyIndexNow } from '../lib/blog/indexnow';
@@ -57,7 +56,6 @@ import { publicVersionPayload } from '../lib/platform/version';
 import { buildPublicAuditExport, csvRow } from '../lib/report/export';
 import { BRAND } from '../lib/brand';
 import { buildOperationalHealth, maybeSendOperationalAlert } from '../lib/operations/health';
-import { getPublicLinkSignals } from '../lib/backlinks/public-link-signals';
 import {
   findingWorkflowKey,
   isFindingPriorityOverride,
@@ -68,6 +66,7 @@ import {
   flushNodeMonitoring,
 } from '../lib/monitoring/sentry-node';
 import { resolveSentryBuildConfiguration } from '../lib/monitoring/sentry-build';
+import { createPublicPlanProjection } from '../lib/plans/public-plan-presentation';
 import { listProjectOverview, updateProjectSettings, upsertProject } from '../lib/projects/service';
 import {
   completeSearchConsoleAuthorization,
@@ -110,6 +109,7 @@ apiRouter.use('/blog/scheduler', durableRateLimit({ namespace: 'blog-scheduler',
 apiRouter.use('/audit/export', durableRateLimit({ namespace: 'report-export', limit: 10, windowSeconds: 300 }));
 apiRouter.use('/audit/cancel', durableRateLimit({ namespace: 'audit-cancel', limit: 10, windowSeconds: 300 }));
 apiRouter.use('/domain/link-signals', createRateLimiter({ namespace: 'public-link-signals', windowMs: 60 * 60 * 1000, maxRequests: 20 }));
+apiRouter.use('/plans/public', createRateLimiter({ namespace: 'public-plans', windowMs: 60 * 60 * 1000, maxRequests: 120 }));
 apiRouter.use('/projects', durableRateLimit({ namespace: 'projects', limit: 90, windowSeconds: 60 }));
 apiRouter.use('/search-console', durableRateLimit({ namespace: 'search-console', limit: 30, windowSeconds: 300 }));
 apiRouter.use(['/projects', '/search-console'], (_req, res, next) => {
@@ -498,6 +498,27 @@ apiRouter.get('/version', asyncJsonRoute(async (_req, res) => {
   res.json({ success: true, data: publicVersionPayload() });
 }));
 
+apiRouter.get('/plans/public', asyncJsonRoute(async (req, res) => {
+  const client = requireSupabaseAdminClient();
+  const { data, error } = await client
+    .from('plan_limits')
+    .select('plan,daily_audits,monthly_audits,max_pages_quick,max_pages_standard,max_pages_deep,allowed_modes,exports_enabled,pdf_enabled,scheduled_audits_enabled,updated_at')
+    .in('plan', ['free', 'paid', 'agency']);
+  if (error) throw error;
+  const latestUpdate = (data || [])
+    .map((row: any) => String(row.updated_at || ''))
+    .filter(Boolean)
+    .sort()
+    .at(-1) || new Date().toISOString();
+  const projection = createPublicPlanProjection(data || [], latestUpdate);
+  const serialized = JSON.stringify(projection);
+  const etag = `\"${createHash('sha256').update(serialized).digest('base64url')}\"`;
+  res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=60, must-revalidate');
+  res.setHeader('ETag', etag);
+  if (firstHeaderValue(req.headers?.['if-none-match']) === etag) return res.status(304).end();
+  res.json({ success: true, data: projection });
+}));
+
 apiRouter.get('/admin/diagnostics', asyncJsonRoute(async (req, res) => {
   if (!(await requireAdminRequester(req, res))) return;
   const client = requireSupabaseAdminClient();
@@ -661,8 +682,13 @@ apiRouter.post('/admin/plans/:plan', asyncJsonRoute(async (req, res) => {
   if (!requester) return;
   const reason = String(req.body?.reason || '').trim();
   if (reason.length < 4 || reason.length > 500) throw new ApiError('ADMIN_REASON_REQUIRED', 'Provide a reason between 4 and 500 characters.', 400);
-  const allowedKeys = new Set(['daily_audits', 'monthly_audits', 'max_pages_quick', 'max_pages_standard', 'max_pages_deep', 'audit_timeout_seconds', 'concurrency', 'max_events_per_audit', 'max_issues_per_audit', 'priority']);
-  const patch = Object.fromEntries(Object.entries(req.body?.patch || {}).filter(([key, value]) => allowedKeys.has(key) && Number.isFinite(Number(value))).map(([key, value]) => [key, Number(value)]));
+  const numericKeys = new Set(['daily_audits', 'monthly_audits', 'max_pages_quick', 'max_pages_standard', 'max_pages_deep', 'audit_timeout_seconds', 'concurrency', 'max_events_per_audit', 'max_issues_per_audit', 'priority']);
+  const booleanKeys = new Set(['exports_enabled', 'pdf_enabled', 'scheduled_audits_enabled']);
+  const patch: Record<string, number | boolean> = {};
+  for (const [key, value] of Object.entries(req.body?.patch || {})) {
+    if (numericKeys.has(key) && Number.isFinite(Number(value))) patch[key] = Number(value);
+    if (booleanKeys.has(key) && typeof value === 'boolean') patch[key] = value;
+  }
   if (!Object.keys(patch).length) throw new ApiError('EMPTY_ADMIN_UPDATE', 'No supported plan fields were provided.', 400);
   const client = requireSupabaseAdminClient();
   const { data: before, error: readError } = await client.from('plan_limits').select('*').eq('plan', req.params.plan).maybeSingle();
@@ -727,7 +753,7 @@ apiRouter.get('/blog/posts', asyncJsonRoute(async (req, res) => {
     blogRepository.listPublished({ query: String(req.query.q || ''), limit: Number(req.query.limit || 12), offset: Number(req.query.offset || 0) }),
     blogRepository.listPublishedTopics(),
   ]);
-  res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=3600');
   res.json({ success: true, data: { ...result, topics } });
 }));
 
@@ -740,7 +766,7 @@ apiRouter.get('/blog/index.html', asyncJsonRoute(async (req, res) => {
     blogRepository.listPublishedTopics(),
   ]);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=3600');
   res.status(200).send(renderBlogListingHtml({
     origin: canonicalSiteOrigin(req),
     posts: result.posts,
@@ -762,7 +788,7 @@ apiRouter.get('/blog/topic/:topic', asyncJsonRoute(async (req, res) => {
   }
   const result = await blogRepository.listPublished({ topic: selectedTopic.name, limit: pageSize, offset: (page - 1) * pageSize });
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=3600');
   res.status(200).send(renderBlogListingHtml({
     origin: canonicalSiteOrigin(req),
     posts: result.posts,
@@ -777,21 +803,21 @@ apiRouter.get('/blog/topic/:topic', asyncJsonRoute(async (req, res) => {
 apiRouter.get('/blog/sitemap.xml', asyncJsonRoute(async (req, res) => {
   const xml = await renderBlogSitemap(canonicalSiteOrigin(req));
   res.setHeader('Content-Type', 'application/xml; charset=utf-8');
-  res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=3600');
   res.status(200).send(xml);
 }));
 
 apiRouter.get('/blog/rss.xml', asyncJsonRoute(async (req, res) => {
   const xml = await renderBlogRss(canonicalSiteOrigin(req));
   res.setHeader('Content-Type', 'application/rss+xml; charset=utf-8');
-  res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=3600');
   res.status(200).send(xml);
 }));
 
 apiRouter.get('/blog/news-sitemap.xml', asyncJsonRoute(async (req, res) => {
   const xml = await renderBlogNewsSitemap(canonicalSiteOrigin(req));
   res.setHeader('Content-Type', 'application/xml; charset=utf-8');
-  res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=3600');
   res.status(200).send(xml);
 }));
 
@@ -846,7 +872,7 @@ apiRouter.get('/blog/html/:slug', asyncJsonRoute(async (req, res) => {
     post.relatedArticles = related.map((item) => ({ postId: item.id, slug: item.slug, title: item.title, reason: item.topicCluster ? `More guidance about ${item.topicCluster}.` : '' }));
   }
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=3600');
   res.status(200).send(renderBlogArticleHtml(post, canonicalSiteOrigin(req)));
 }));
 
@@ -857,7 +883,7 @@ apiRouter.get('/blog/posts/:slug', asyncJsonRoute(async (req, res) => {
     const related = await blogRepository.relatedPublished(post, 4);
     post.relatedArticles = related.map((item) => ({ postId: item.id, slug: item.slug, title: item.title, reason: item.topicCluster ? `More guidance about ${item.topicCluster}.` : '' }));
   }
-  res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+  res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=3600');
   res.json({ success: true, data: { post } });
 }));
 
@@ -881,6 +907,7 @@ apiRouter.post('/admin/blog/source/inspect', asyncJsonRoute(async (req, res) => 
   const sourceUrl = requestedBlogSourceUrl(req.body?.sourceUrl);
   let source;
   try {
+    const { researchSourceUrls } = await import('../lib/blog/research');
     [source] = await researchSourceUrls([sourceUrl]);
   } catch {
     throw new ApiError('BLOG_SOURCE_UNAVAILABLE', 'Crawlio could not safely read usable source details from that URL.', 422);
@@ -1297,6 +1324,7 @@ apiRouter.post('/admin/blog/batches', asyncJsonRoute(async (req, res) => {
 apiRouter.post('/admin/blog/images/import', asyncJsonRoute(async (req, res) => {
   const requester = await requireAdminRequester(req, res);
   if (!requester) return;
+  const { importBlogImage } = await import('../lib/blog/images');
   const image = await importBlogImage(req.body || {});
   await logBlogAction(requester.userId, 'import_blog_image', String((image as any).id), { articleId: req.body?.articleId || null, sourceUrl: (image as any).source_url });
   res.status(201).json({ success: true, data: { image } });
@@ -1769,6 +1797,29 @@ apiRouter.get('/audit/status/:id', asyncJsonRoute(async (req, res) => {
   res.setHeader('Cache-Control', 'private, no-store');
   const audit = await auditRepository.getAudit(req.params.id);
   if (!audit || !(await canAccessAudit(req, audit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
+  if (String(req.query.delta || '') === '1') {
+    const delta = planAuditLiveDelta(audit, {
+      pagesCrawled: Number(req.query.knownPagesCrawled || 0),
+      issuesFound: Number(req.query.knownIssuesFound || 0),
+      status: String(req.query.knownStatus || ''),
+      updatedAt: String(req.query.knownUpdatedAt || ''),
+      hasReport: String(req.query.hasReport || '') === '1',
+    });
+    const [latestEvents, latestPages, latestIssues, finalReport] = await Promise.all([
+      delta.eventsNeeded ? auditRepository.getLatestEvents(audit.id, 50) : Promise.resolve(undefined),
+      delta.pagesChanged ? auditRepository.getLatestPages(audit.id, 100) : Promise.resolve(undefined),
+      delta.issuesChanged ? auditRepository.getLatestIssues(audit.id, 100) : Promise.resolve(undefined),
+      delta.reportNeeded ? auditRepository.getFinalReport(audit.id) : Promise.resolve(undefined),
+    ]);
+    return res.json({ success: true, data: {
+      partial: true,
+      audit,
+      ...(latestEvents ? { latestEvents } : {}),
+      ...(latestPages ? { latestPages } : {}),
+      ...(latestIssues ? { latestIssues } : {}),
+      ...(finalReport !== undefined ? { finalReport } : {}),
+    } });
+  }
   const liveData = await auditRepository.getLiveData(req.params.id, audit);
   res.json({ success: true, data: liveData });
 }));
@@ -2042,6 +2093,7 @@ apiRouter.get('/domain/link-signals', asyncJsonRoute(async (req, res) => {
   const domain = normalized.hostname.replace(/^www\./, '');
 
   try {
+    const { getPublicLinkSignals } = await import('../lib/backlinks/public-link-signals');
     const signals = await getPublicLinkSignals(domain);
     res.setHeader('Cache-Control', signals.partial
       ? 'public, max-age=60, s-maxage=900, stale-while-revalidate=3600'

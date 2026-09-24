@@ -35,6 +35,7 @@
     "smoke:live-audit-scoring": "tsx scripts/smoke-live-audit-scoring.mts",
     "smoke:live-audit-presentation": "tsx scripts/smoke-live-audit-presentation.mts",
     "smoke:plan-presentation": "tsx scripts/smoke-plan-presentation.mts",
+    "smoke:performance-optimizations": "tsx scripts/smoke-performance-optimizations.mts",
     "smoke:crawler-safety": "tsx scripts/smoke-crawler-safety.mts",
     "smoke:worker-batching": "tsx scripts/smoke-worker-batching.mts",
     "smoke:worker-ownership": "tsx scripts/smoke-worker-ownership.mts",

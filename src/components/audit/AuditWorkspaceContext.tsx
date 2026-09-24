@@ -104,6 +104,7 @@ export function AuditWorkspaceProvider({ auditId, children }: { auditId: string;
             setConnection(nextConnection);
             if (nextConnection.status !== 'error') setError(null);
           },
+          merged,
         );
       })
       .catch((nextError) => {
