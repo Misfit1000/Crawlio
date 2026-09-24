@@ -1,68 +1,33 @@
-# Premium experience: implementation checkpoint
+# Premium experience release record
 
-## Implemented
+## Customer and admin changes
 
-- Editorial homepage with an illustrative animated website-to-evidence diagram,
-  pause control, hidden-tab/offscreen suspension, and reduced-motion support.
-- Removed the static score-dashboard hero and demonstration category scores.
-- Selectable, evidence-driven page map in live and completed audit workspaces.
-  Pages are grouped by recorded crawl depth; discovery sources are shown only
-  when present in the collected data.
-- Removed the floating live-audit overlay and its empty spacer.
-- Shared measurement transitions, transform-based progress bars, refreshed
-  surfaces and typography, and a more compact navigation hierarchy.
-- Mobile navigation focus containment, Escape handling, and focus restoration.
-- Admin completion/failure metrics distinguish failed reads from zero.
-- Initial audit snapshots are reused by subscriptions. Guest audits do not open
-  an unnecessary Realtime channel when ownership is known.
-- Concurrent initial reads are deduplicated by URL and authentication headers.
-  Neither responses nor identity keys remain cached after settlement.
-- Polling resumes on visibility, does not overlap, and stops on permanent access
-  errors. Existing terminal guards and final-report loading remain intact.
-- Snapshot APIs authorize before reading evidence, reuse the authorized audit
-  row, read evidence concurrently, and skip report queries for active audits.
-- Optional history summaries omit full pages and export payloads. Existing full
-  history responses remain the default; Reports and History request summaries.
+- Rebuilt the public homepage around a conceptual, controllable audit scene rather than demonstration scores. It pauses when hidden or offscreen and respects reduced motion.
+- Consolidated live audit status, coverage, provisional scores, findings, and observed-page visualization. The page map groups actual pages by crawl depth; selection opens recorded evidence.
+- Made completed findings full-width, presented measured score factors as readable bars, and kept unavailable measurements distinct from zero.
+- Centered the signed-in dashboard and projects on the latest audit and next action. Clarified imports, ranking CSV, and search-data states without fabricating provider data.
+- Aligned server-rendered blog listings and articles with the customer light/dark visual system while keeping HTML crawlable and script-free.
+- Clarified admin sections and error/empty states; preserved all existing role checks and operations.
+- Tightened responsive navigation, focus handling, contained scrolling, button feedback, and light/dark contrast.
 
-## Validation
+## Request and resource changes
 
-- TypeScript, production build, bundle budgets, and browser-secret/source-map
-  checks passed.
-- Critical and experience browser suite: 11 passed before the final navigation
-  refinement. Critical plus premium suite: 8 passed after that refinement.
-- New browser tests cover 390/768/1440 px homepage layouts in both themes,
-  pause control, page evidence selection, duplicate startup reads, and stopping
-  polling after a permanent access error.
-- Focused smoke checks passed: snapshot efficiency, history summaries and default
-  compatibility, live scoring/presentation, terminal state, Realtime fallback,
-  exports, routing, and plans/admin.
-- SEO and security package verification passed. npm audit: zero vulnerabilities.
+- An active audit snapshot now makes four repository reads instead of five. It authorizes the audit first, reads evidence concurrently, and does not query the report table until terminal state.
+- The initial audit snapshot is reused when subscribing. Guest startup no longer makes an immediate duplicate poll or opens an unnecessary Realtime channel. Polling remains the intended guest-access path; it resumes on tab focus and stops on permanent access errors.
+- Concurrent identical reads are deduplicated only within one authenticated session and are not cached after settlement. History lists request bounded summaries; full evidence remains available when a report opens.
+- Editor, PDF, admin, and report-heavy code remains lazy. Motion uses local state and CSS; it creates no network requests or database writes.
 
-## Resource evidence and limits
+## Validation and evidence
 
-- An active snapshot now requires four repository reads instead of five. Child
-  evidence reads execute concurrently after authorization. This is a code/test
-  result, not a production database-telemetry measurement.
-- The guest-start browser test observes one initial snapshot request before the
-  normal polling interval. Animation introduces no fetch or database operation.
-- Initial local build inventory: 1,906,024 total JavaScript bytes across all
-  chunks. Current inventory: 1,911,977 bytes. Most chunks are lazy loaded; this
-  total is not the initial transferred homepage JavaScript budget.
-- No measured production LCP, CLS, INP, worker memory, database-write baseline,
-  or Vercel billing reduction is claimed.
+- TypeScript check, production build, SEO/security verification, dependency audit, selected smoke suites, and critical/experience browser tests passed.
+- Browser captures cover 390, 768, and 1440 px in light and dark themes with no horizontal overflow. Focused SSR blog tests cover both listing and article at those widths.
+- The feature branch was deployed to a protected Vercel preview and the signed-in browser verified the homepage interactions and crawlable blog route. Anonymous performance tools reach Vercel authentication instead of the preview app, so those results were discarded.
+- Pre-release public production baseline at `https://crawlio1.vercel.app/` on 2026-09-24: 9 homepage browser requests and 323,947 transferred JavaScript bytes cold; 9 browser requests and 0 transferred JavaScript bytes on a cache-warm repeat. These are browser-network measurements, not Vercel billing or database telemetry.
+- Local candidate check: 9 homepage requests and 313,478 transferred JavaScript bytes cold. Local and production latency are not directly comparable. A same-host production follow-up is required after promotion.
 
-## Not yet complete
+## Known limits
 
-- The full screen-by-screen editorial redesign, particularly authenticated
-  dashboard/project compositions, imports/search data, blog and admin polish.
-- Comprehensive before/after screenshots and motion recordings for every target
-  screen, including authenticated admin workflows.
-- Cold/repeat production request and transfer comparisons, API latency and worker
-  resource measurements, and the initial-homepage-JavaScript release gate.
-- Preview deployment and production promotion. The Vercel CLI had no saved
-  authentication; its automatically started login was cancelled. Production
-  was not changed as part of this checkpoint.
-
-No schema migration, worker-contract change, new external service, or fabricated
-audit result was introduced. Keep this work on the feature branch until the
-remaining release gates are satisfied.
+- No field LCP, CLS, INP, worker memory, database-read/write, or CDN cache-hit measurements are available. Do not infer billing savings from request counts alone.
+- Live authenticated admin and audit completion journeys require accounts and active audit infrastructure; automated checks cover representative route, state, role, and export behavior but cannot substitute for a production operator test.
+- Site preview compositions are labeled metadata reconstructions when a genuine screenshot is unavailable. Search rankings, traffic, and backlinks are never invented.
+- No schema migration, worker contract change, paid integration, or new monitoring service is part of this release.

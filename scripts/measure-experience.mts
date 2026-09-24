@@ -47,7 +47,7 @@ try {
   const captures = [];
   for (const width of [390, 768, 1440]) {
     for (const theme of ['light', 'dark'] as const) {
-      const captureContext = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: 'reduce' });
+      const captureContext = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: theme, reducedMotion: 'reduce' });
       const capturePage = await captureContext.newPage();
       await capturePage.addInitScript((mode) => localStorage.setItem('crawlio-theme-v1', mode), theme);
       await capturePage.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 });
