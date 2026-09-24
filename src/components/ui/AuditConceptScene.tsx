@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowRight, FileCheck2, Globe, Pause, Play, Search, ShieldCheck, Waypoints } from 'lucide-react';
+import { ArrowRight, FileCheck2, Globe, Search, ShieldCheck, Waypoints } from 'lucide-react';
 
 const stages = [
   { icon: Globe, title: 'Discover', detail: 'Find public pages and follow their links.', items: ['Homepage', 'Linked pages', 'Sitemap'] },
@@ -25,7 +25,7 @@ export function AuditConceptScene() {
   return <div ref={root} className="audit-concept" data-paused={paused || !visible}>
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-5">
       <div className="flex items-center gap-3"><Waypoints className="h-5 w-5 text-accent" /><h2 className="text-base font-semibold">How an audit works</h2><span className="text-xs text-muted-foreground">Illustrative workflow</span></div>
-      <button type="button" className="quiet-button min-h-10 px-3 text-xs" onClick={() => setPaused(!paused)} aria-pressed={paused}>{paused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}{paused ? 'Play animation' : 'Pause animation'}</button>
+      <button type="button" className="quiet-button min-h-10 px-3 text-xs" onClick={() => setPaused(!paused)} aria-pressed={paused}>{paused ? 'Play animation' : 'Pause animation'}</button>
     </div>
     <svg className="concept-network" viewBox="0 0 1120 190" role="img" aria-label="Illustration: a website connects to discovered pages, checks, and an actionable report">
       <g className="concept-wires" fill="none" stroke="currentColor" strokeWidth="2">
@@ -49,7 +49,7 @@ export function AuditConceptScene() {
     </svg>
     <ol className="concept-stages">
       {stages.map((stage, index) => <li key={stage.title} className="concept-stage" style={{ '--stage': index } as React.CSSProperties}>
-        <div className="concept-route" aria-hidden="true"><ArrowRight className="hidden md:block" /><ArrowDown className="md:hidden" /></div>
+        <div className="concept-route" aria-hidden="true"><ArrowRight className="rotate-90 md:rotate-0" /></div>
         <div className="flex items-center gap-4"><span className="concept-icon"><stage.icon className="h-6 w-6" /></span><span className="text-xs font-semibold uppercase text-muted-foreground">Step {index + 1}</span></div>
         <h3 className="mt-5 text-2xl font-semibold">{stage.title}</h3>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">{stage.detail}</p>

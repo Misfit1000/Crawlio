@@ -88,23 +88,21 @@ const findingExamples = [
 
 const workflow = [
   ['01', 'Audit the website', 'The address is validated and one queue job is created.'],
-  ['02', 'Group related findings', 'Repeated page-level observations become one finding with measurable reach.'],
-  ['03', 'Review evidence', 'Open affected pages, source URLs, response details, and collected metadata.'],
-  ['04', 'Set the priority', 'Severity, page reach, confidence, and evidence determine the order.'],
-  ['05', 'Track the work', 'Set a workflow status and keep implementation notes beside the finding.'],
-  ['06', 'Compare the next audit', 'See which findings are new, resolved, or still present.'],
+  ['02', 'Review evidence', 'Open affected pages, response details, and collected metadata.'],
+  ['03', 'Track the work', 'Set a status and keep notes beside each finding.'],
+  ['04', 'Compare the next audit', 'See what is new, resolved, or still open.'],
 ];
 
 const faqs = [
-  ['What does an audit check?', 'The audit reviews on-page SEO, technical delivery, crawlability, internal links, metadata, headings, indexing directives, redirects, structured data, page accessibility, performance signals, and passive browser protections.'],
-  ['Can Crawlio audit JavaScript-rendered pages?', 'The audit analyses the public response it can retrieve. Content that appears only after complex browser execution may have limited evidence, and the report will show that limitation rather than inventing a result.'],
+  ['What does an audit check?', 'On-page SEO, technical delivery, crawlability, links, metadata, headings, indexing, redirects, structured data, accessibility, performance signals, and passive security.'],
+  ['Can Crawlio audit JavaScript-rendered pages?', 'It analyses retrievable public responses. Browser-only content may have limited evidence; the report shows that limitation.'],
   ['Does it estimate rankings or traffic?', 'No. Rankings, traffic, backlinks, and search volume appear only when they come from data you import or a real provider.'],
-  ['What does completed with warnings mean?', 'The report contains useful collected evidence, but one or more pages or checks were blocked, unavailable, or stopped by a safe audit limit. Those gaps remain visible.'],
-  ['Is the security audit a penetration test?', 'No. Passive security observations are not penetration testing. The audit reads public responses and browser-protection signals without exploitation or attack traffic.'],
-  ['Are private or internal websites supported?', 'No. Audits are restricted to public websites. Private network addresses, local services, and authenticated internal pages are blocked by safety controls.'],
-  ['How is audit data stored?', 'Crawlio stores job state, page summaries, findings, events, and report data. Complete raw HTML is not retained, and metadata previews are not screenshots.'],
-  ['Does AI decide audit scores?', 'No. Audit findings and scores come from deterministic checks. Optional AI-assisted drafting is limited to administrator blog tools and still requires editorial review.'],
-  ['Can I delete an audit or account?', 'Account owners can remove stored audits and request account deletion from the workspace settings. Retention and deletion boundaries are explained in the privacy policy.'],
+  ['What does completed with warnings mean?', 'The report has useful evidence, but some pages or checks were blocked, unavailable, or stopped by a safe limit. Those gaps remain visible.'],
+  ['Is the security audit a penetration test?', 'No. It reads public browser-protection signals without exploitation or attack traffic.'],
+  ['Are private or internal websites supported?', 'No. Private addresses, local services, and authenticated pages are blocked by safety controls.'],
+  ['How is audit data stored?', 'Crawlio stores audit state, page summaries, findings, and reports, not raw HTML. Metadata previews are not screenshots.'],
+  ['Does AI decide audit scores?', 'No. Scores use deterministic checks. Optional AI drafting is limited to admin blog tools and requires editorial review.'],
+  ['Can I delete an audit or account?', 'Owners can remove audits or request account deletion in Settings. See the privacy policy for retention details.'],
 ];
 
 export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigate }: Props) {
