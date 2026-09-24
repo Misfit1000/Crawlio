@@ -22,8 +22,10 @@
 - TypeScript check, production build, SEO/security verification, dependency audit, selected smoke suites, and critical/experience browser tests passed.
 - Browser captures cover 390, 768, and 1440 px in light and dark themes with no horizontal overflow. Focused SSR blog tests cover both listing and article at those widths.
 - The feature branch was deployed to a protected Vercel preview and the signed-in browser verified the homepage interactions and crawlable blog route. Anonymous performance tools reach Vercel authentication instead of the preview app, so those results were discarded.
-- Pre-release public production baseline at `https://crawlio1.vercel.app/` on 2026-09-24: 9 homepage browser requests and 323,947 transferred JavaScript bytes cold; 9 browser requests and 0 transferred JavaScript bytes on a cache-warm repeat. These are browser-network measurements, not Vercel billing or database telemetry.
-- Local candidate check: 9 homepage requests and 313,478 transferred JavaScript bytes cold. Local and production latency are not directly comparable. A same-host production follow-up is required after promotion.
+- Pre-release public production baseline at `https://crawlio1.vercel.app/` on 2026-09-24: 9 homepage browser requests and 323,947 transferred JavaScript bytes cold; 9 browser requests and 0 transferred JavaScript bytes on a cache-warm repeat.
+- Final same-host production check on 2026-09-24, commit `256b094`: 9 requests and 323,884 transferred JavaScript bytes cold; 9 requests and 0 transferred JavaScript bytes on a cache-warm repeat. Decoded JavaScript fell from 1,037,392 to 1,036,637 bytes. The 63-byte transfer reduction is small but clears the no-increase gate. These are browser-network measurements, not Vercel billing or database telemetry.
+- Local and production latency are not directly comparable. Same-host cold load elapsed time varied between runs, so no latency improvement is claimed.
+- Vercel reports the final `main` deployment Ready. Public `/`, `/blog`, and `/sitemap.xml` returned HTTP 200; the blog delivered server-rendered content and a canonical link. Final production captures at 390, 768, and 1440 px showed no horizontal overflow in either theme.
 
 ## Known limits
 
