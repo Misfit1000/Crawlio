@@ -114,6 +114,7 @@ export default function Dashboard(props: DashboardProps) {
         actions={<button type="button" onClick={props.onOpenSeoAudit} className="trust-button"><Rocket className="h-4 w-4" /> Start new audit</button>}
       />
       {user && <ProjectCockpit onStartAudit={props.onOpenSeoAudit || (() => undefined)} onOpenReports={props.onOpenReports || (() => undefined)} />}
+      {!user && <>
       <SurfaceCard className="p-0">
         <div className="grid lg:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
           <div className="p-6 md:p-8">
@@ -177,6 +178,7 @@ export default function Dashboard(props: DashboardProps) {
         <MetricCard label="Open fixes" value={latest?.issuesFound ?? '--'} detail={latest ? `${latest.criticalCount} fix now, ${latest.highCount} high priority` : 'No findings stored'} icon={<AlertTriangle className="h-5 w-5" />} tone={latest?.criticalCount ? 'red' : latest ? 'yellow' : 'accent'} />
         <MetricCard label="Saved audits" value={history.length || '--'} detail={history.length ? `${new Set(history.map((entry) => entry.normalizedUrl)).size} audited site(s)` : 'History is stored in this browser'} icon={<History className="h-5 w-5" />} />
       </div>
+      </>}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
         <SurfaceCard className="p-5 md:p-6">
@@ -248,7 +250,7 @@ export default function Dashboard(props: DashboardProps) {
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
             <SurfaceCard className="p-5 md:p-6">
               {latest.scoreSource === 'final_report' && latestScores ? (
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid gap-x-8 sm:grid-cols-2">
                   <CategoryGradeCard label="On-page SEO" score={latestScores.seo} description="Content and metadata findings." icon={<Search className="h-4 w-4" />} />
                   <CategoryGradeCard label="Technical SEO" score={latestScores.technical} description="Technical delivery findings." icon={<Gauge className="h-4 w-4" />} />
                   <CategoryGradeCard label="Crawlability" score={latestScores.crawlability} description="Search engine access signals." icon={<Layers className="h-4 w-4" />} />

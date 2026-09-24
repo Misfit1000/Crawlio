@@ -32,6 +32,7 @@ export default function SearchData() {
   const [properties, setProperties] = useState<Array<{ id: string; siteUrl: string; lastSyncedAt: string | null; lastSyncStatus: string; lastSyncError?: string | null }>>([]);
   const [propertyId, setPropertyId] = useState('');
   const [configured, setConfigured] = useState<boolean | null>(null);
+  const [connectionError, setConnectionError] = useState('');
   const [source, setSource] = useState<'csv' | 'search-console'>('csv');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
@@ -52,15 +53,16 @@ export default function SearchData() {
       .then((response) => {
         if (!active) return;
         if (!response.success) {
-          setConfigured(false);
+          setConnectionError('Search Console status could not be loaded. Your local CSV data remains available.');
           return;
         }
+        setConnectionError('');
         const data = response.data.data || response.data;
         setConfigured(Boolean(data.configured));
         setProperties(data.properties || []);
         setPropertyId((current) => current || data.properties?.[0]?.id || '');
       })
-      .catch(() => active && setConfigured(false));
+      .catch(() => { if (active) setConnectionError('Search Console status could not be loaded. Your local CSV data remains available.'); });
     return () => { active = false; };
   }, []);
 
@@ -71,14 +73,18 @@ export default function SearchData() {
     getAuthHeaders()
       .then((headers) => safeJsonFetch<any>(API_ROUTES.searchConsoleData(propertyId), { headers }))
       .then((response) => {
-        if (!active || !response.success) return;
+        if (!active) return;
+        if (!response.success) {
+          setError('Search Console rows could not be loaded. Previously imported data remains visible.');
+          return;
+        }
         const data = response.data.data || response.data;
         const normalized = (data.rows || []).map((row: any) => ({ ...row, ctr: `${(Number(row.ctr || 0) * 100).toFixed(2)}%` }));
         setRows(normalized.filter((row: any) => row.period === 'current'));
         setPreviousRows(normalized.filter((row: any) => row.period === 'previous'));
         setSource('search-console');
       })
-      .catch(() => undefined)
+      .catch(() => { if (active) setError('Search Console rows could not be loaded. Previously imported data remains visible.'); })
       .finally(() => active && setBusy(''));
     return () => { active = false; };
   }, [propertyId]);
@@ -166,16 +172,17 @@ export default function SearchData() {
       <SurfaceCard className="p-5 md:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div><div className="flex items-center gap-2"><Cable className="h-5 w-5 text-accent" /><h2 className="text-lg font-semibold">Google Search Console</h2></div><p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">Connect an account you control to load real clicks, impressions, CTR, and average position. OAuth credentials and tokens remain server-only.</p></div>
-          {configured === null ? <StatusBadge tone="neutral"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking connection</StatusBadge> : configured === false ? <StatusBadge tone="warning">Server setup required</StatusBadge> : properties.length ? <div className="flex flex-col gap-2 sm:flex-row"><select className="suite-input min-w-64" value={propertyId} onChange={(event) => setPropertyId(event.target.value)}>{properties.map((property) => <option value={property.id} key={property.id}>{property.siteUrl}</option>)}</select><button type="button" className="trust-button" onClick={() => void sync()} disabled={!propertyId || busy === 'sync'}>{busy === 'sync' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Sync 28 days</button><button type="button" className="quiet-button" onClick={() => void disconnect()} disabled={busy === 'disconnect'} aria-label="Disconnect Search Console"><Unplug className="h-4 w-4" /></button></div> : <button type="button" className="trust-button" onClick={() => void connect()} disabled={busy === 'connect'}>{busy === 'connect' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Cable className="h-4 w-4" />} Connect Search Console</button>}
+          {connectionError ? <StatusBadge tone="danger">Status unavailable</StatusBadge> : configured === null ? <StatusBadge tone="neutral"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking connection</StatusBadge> : configured === false ? <StatusBadge tone="warning">Server setup required</StatusBadge> : properties.length ? <div className="flex flex-col gap-2 sm:flex-row"><select className="suite-input min-w-64" value={propertyId} onChange={(event) => setPropertyId(event.target.value)}>{properties.map((property) => <option value={property.id} key={property.id}>{property.siteUrl}</option>)}</select><button type="button" className="trust-button" onClick={() => void sync()} disabled={!propertyId || busy === 'sync'}>{busy === 'sync' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Sync 28 days</button><button type="button" className="quiet-button" onClick={() => void disconnect()} disabled={busy === 'disconnect'} aria-label="Disconnect Search Console"><Unplug className="h-4 w-4" /></button></div> : <button type="button" className="trust-button" onClick={() => void connect()} disabled={busy === 'connect'}>{busy === 'connect' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Cable className="h-4 w-4" />} Connect Search Console</button>}
         </div>
         {configured === false && <p className="mt-3 text-xs text-muted-foreground">Add the three documented Search Console server variables in Vercel, then redeploy. CSV imports continue to work without them.</p>}
+        {connectionError && <p role="status" className="mt-3 text-sm text-muted-foreground">{connectionError}</p>}
         {error && <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-sm text-red-700 dark:text-red-300">{error}</div>}
       </SurfaceCard>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Measured rows" value={rows.length} detail={source === 'search-console' ? 'From Google Search Console' : 'From local CSV imports'} icon={<BarChart3 className="h-6 w-6" />} tone="accent" />
         <MetricCard label="Queries" value={summary.queries || '-'} detail="Unique measured queries" icon={<Search className="h-6 w-6" />} tone="green" />
-        <MetricCard label="Clicks" value={summary.clicks || '-'} detail={`${summary.impressions || 0} impressions`} icon={<MousePointerClick className="h-6 w-6" />} tone="green" />
+        <MetricCard label="Clicks" value={rows.length ? summary.clicks : '-'} detail={`${summary.impressions} impressions`} icon={<MousePointerClick className="h-6 w-6" />} tone="green" />
         <MetricCard label="Average position" value={summary.avgPosition ? summary.avgPosition.toFixed(1) : '-'} detail="Only when present in measured data" icon={<TrendingUp className="h-6 w-6" />} tone="yellow" />
       </div>
 

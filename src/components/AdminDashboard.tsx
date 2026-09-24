@@ -28,8 +28,20 @@ const tabs: Array<{ id: AdminTab; label: string; icon: any; path: string }> = [
   { id: 'diagnostics', label: 'Diagnostics', icon: Gauge, path: '/admin/diagnostics' },
   { id: 'settings', label: 'Settings', icon: Settings, path: '/admin/settings' },
   { id: 'plans', label: 'Plans', icon: ShieldAlert, path: '/admin/plans' },
-  { id: 'blog', label: 'Blog', icon: BookOpen, path: '/admin/blog' },
+  { id: 'blog', label: 'Content', icon: BookOpen, path: '/admin/blog' },
 ];
+
+const sectionDescriptions: Record<AdminTab, string> = {
+  overview: 'Recent platform activity, audit outcomes, and audit-engine status in one place.',
+  users: 'Find accounts, review access, and apply guarded account actions.',
+  audits: 'Inspect audit evidence and lifecycle state before taking action.',
+  queue: 'Review waiting and active work without interrupting healthy jobs.',
+  workers: 'Check audit-engine registration and heartbeat freshness.',
+  diagnostics: 'Inspect service readiness and operational signals.',
+  settings: 'Manage platform configuration and administrator resources.',
+  plans: 'Review plan availability, quotas, and account entitlements.',
+  blog: 'Write, review, schedule, and publish editorial content.',
+};
 
 function tabFromPath(pathname: string) {
   const match = pathname.match(/^\/admin\/([^/]+)/);
@@ -42,6 +54,7 @@ export default function AdminDashboard() {
   const location = useLocation();
   const navigate = useNavigate();
   const activeTab = tabFromPath(location.pathname);
+  const activeLabel = tabs.find((tab) => tab.id === activeTab)?.label || 'Overview';
 
   if (!user || user.role !== 'admin') {
     return (
@@ -58,7 +71,7 @@ export default function AdminDashboard() {
 
   return (
     <AdminActionProvider><div className="admin-workspace space-y-6">
-      <PageHeader eyebrow="Operations" icon={Activity} title="Admin control center" description="Monitor the audit platform, manage access and plans, recover queued work, and publish reviewed guidance." metadata={<><span className="suite-chip"><ShieldAlert className="h-3.5 w-3.5" /> Server-verified admin</span><span className="suite-chip">{tabs.find((tab) => tab.id === activeTab)?.label}</span><BlogNotificationInbox /></>} />
+      <PageHeader eyebrow="Admin control center" icon={Activity} title={activeTab === 'overview' ? 'Operations overview' : activeLabel} description={sectionDescriptions[activeTab]} metadata={<><span className="suite-chip"><ShieldAlert className="h-3.5 w-3.5" /> Server-verified admin</span><BlogNotificationInbox /></>} />
 
       <UiPanel className="flex max-w-full gap-1 overflow-x-auto p-1.5 lg:hidden" as="nav">
         {tabs.map((tab) => {

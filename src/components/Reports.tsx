@@ -390,7 +390,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
           <SurfaceCard className="p-5 md:p-6">
             <h3 className="text-lg font-semibold">Section grades</h3>
             <p className="mt-1 text-sm text-muted-foreground">A-F uses A: 90-100, B: 80-89, C: 70-79, D: 60-69, E: 50-59, F: below 50.</p>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="mt-5 grid gap-x-8 sm:grid-cols-2">
               <CategoryGradeCard label="On-page SEO" score={scores.seo} description="Metadata and page content." icon={<Search className="h-4 w-4" />} />
               <CategoryGradeCard label="Technical SEO" score={scores.technical} description="Technical delivery checks." icon={<Wrench className="h-4 w-4" />} />
               <CategoryGradeCard label="Crawlability" score={scores.crawlability} description="Discovery and index signals." icon={<Globe2 className="h-4 w-4" />} />
@@ -431,7 +431,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
           <p className="mt-1 text-sm text-muted-foreground">Repeated findings are grouped by issue type and ordered by priority and affected pages.</p>
         </div>
         {recommendations.length ? (
-          <div className="grid gap-3 xl:grid-cols-2">
+          <div className="grid gap-3">
             {recommendations.slice(0, 5).map((group) => {
               const representative = groupRepresentative(group, issues);
               const insight = representative ? buildIssueInsight(representative) : null;
@@ -470,7 +470,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
             {section.id === 'security' && <p className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-3 text-xs leading-5 text-muted-foreground">Crawlio checks public HTTPS and browser protection signals only. It does not scan ports, submit attack payloads, brute-force credentials, or attempt exploitation.</p>}
 
             {sectionFindings.length ? (
-              <div className="grid gap-3 xl:grid-cols-2">
+              <div className="grid gap-3">
                 {sectionFindings.map((group) => {
                   const representative = groupRepresentative(group, issues);
                   const insight = representative ? buildIssueInsight(representative) : null;

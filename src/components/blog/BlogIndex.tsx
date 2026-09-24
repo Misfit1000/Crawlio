@@ -88,8 +88,8 @@ export default function BlogIndex() {
               <p className="mt-2 text-sm text-muted-foreground">{result.total} published article{result.total === 1 ? '' : 's'}</p>
             </div>
             <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-              {result.posts.map((post) => (
-                <article key={post.id} className="suite-panel flex min-w-0 flex-col overflow-hidden">
+              {result.posts.map((post, index) => (
+                <article key={post.id} className={`suite-panel blog-article-card flex min-w-0 flex-col overflow-hidden ${index === 0 && post.ogImageUrl ? 'blog-featured' : ''}`}>
                   {post.ogImageUrl ? <img src={post.ogImageUrl} alt={`Featured image for ${post.title}`} className="aspect-[16/9] w-full border-b border-border object-cover" loading="lazy" /> : (
                     <div className="flex aspect-[16/7] items-end border-b border-border bg-muted p-5">
                       <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent/10 text-accent"><BookOpen className="h-5 w-5" /></div>

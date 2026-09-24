@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import { Database, CheckCircle2, AlertTriangle, FileSpreadsheet, Link2, MousePointerClick, Search } from "lucide-react";
+import { Database, CheckCircle2, AlertTriangle, FileSpreadsheet, Link2, MousePointerClick, Search, Upload } from "lucide-react";
 import Papa from 'papaparse';
 import { Notice, PageHeader } from './ui/page-system';
 
@@ -45,16 +45,28 @@ export default function Imports() {
   const handleCsv = (e: React.ChangeEvent<HTMLInputElement>, setter: any, storageKey: string) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = '';
+    if (file.size > 10 * 1024 * 1024) {
+      setError('This CSV is over 10 MB. Export a smaller date range or split the file before importing.');
+      return;
+    }
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
+      preview: 20_001,
       complete: (results) => {
         if (results.errors.length > 0) {
           setError(results.errors[0].message);
+        } else if (results.data.length > 20_000) {
+          setError('This CSV has more than 20,000 rows. Import a smaller date range to keep the workspace responsive.');
         } else {
-          setter(results.data);
-          localStorage.setItem(storageKey, JSON.stringify(results.data));
-          setError(null);
+          try {
+            localStorage.setItem(storageKey, JSON.stringify(results.data));
+            setter(results.data);
+            setError(null);
+          } catch {
+            setError('The browser could not store this CSV. Clear older imports or use a smaller export. Your previous data was kept.');
+          }
         }
       }
     });
@@ -79,62 +91,44 @@ export default function Imports() {
 
       {error && <Notice tone="danger" title="Import failed">{error}</Notice>}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+      <section aria-label="CSV import sources" className="grid grid-cols-1 gap-4 lg:grid-cols-3">
 
         {/* GSC Import */}
-        <div className="trust-card p-6 text-center space-y-4">
-          <FileSpreadsheet className="w-8 h-8 mx-auto text-accent" />
-          <h3 className="font-bold text-lg font-display">GSC / Bing Import</h3>
-          <p className="text-sm text-muted-foreground">Import Query or Page performance CSVs from Search Console.</p>
+        <div className="trust-card flex min-w-0 flex-col p-6">
+          <FileSpreadsheet className="h-7 w-7 text-accent" aria-hidden="true" />
+          <h2 className="mt-5 text-lg font-semibold">Search performance</h2>
+          <p className="mt-2 flex-1 text-sm leading-6 text-muted-foreground">Queries and pages from your Google Search Console or Bing export.</p>
           <input type="file" accept=".csv" className="hidden" ref={gscFileRef} onChange={e => handleCsv(e, setGscData, 'seo_gsc_data')} />
-          {gscData.length > 0 ? (
-            <div className="text-green-500 flex flex-col items-center gap-2">
-              <CheckCircle2 className="w-6 h-6" />
-              <p className="text-sm font-medium">{gscData.length} rows imported</p>
-            </div>
-          ) : (
-            <button onClick={() => gscFileRef.current?.click()} className="quiet-button w-full">
-              Select CSV File
-            </button>
-          )}
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+            <span className="text-sm font-medium text-muted-foreground">{gscData.length ? <><CheckCircle2 className="mr-1 inline h-4 w-4 text-emerald-600" />{gscData.length.toLocaleString()} rows</> : 'No import yet'}</span>
+            <button type="button" onClick={() => gscFileRef.current?.click()} className="quiet-button"><Upload className="h-4 w-4" />{gscData.length ? 'Replace CSV' : 'Import CSV'}</button>
+          </div>
         </div>
 
         {/* Keywords Import */}
-        <div className="trust-card p-6 text-center space-y-4">
-          <Database className="w-8 h-8 mx-auto text-accent" />
-          <h3 className="font-bold text-lg font-display">Keyword Metrics CSV</h3>
-          <p className="text-sm text-muted-foreground">Import Google Keyword Planner or Rank snapshot CSVs.</p>
+        <div className="trust-card flex min-w-0 flex-col p-6">
+          <Search className="h-7 w-7 text-accent" aria-hidden="true" />
+          <h2 className="mt-5 text-lg font-semibold">Keyword positions</h2>
+          <p className="mt-2 flex-1 text-sm leading-6 text-muted-foreground">Your keyword planner or ranking snapshot. Positions are shown only when present in the file.</p>
           <input type="file" accept=".csv" className="hidden" ref={kwFileRef} onChange={e => handleCsv(e, setKeywordData, 'seo_keyword_data')} />
-          {keywordData.length > 0 ? (
-            <div className="text-green-500 flex flex-col items-center gap-2">
-              <CheckCircle2 className="w-6 h-6" />
-              <p className="text-sm font-medium">{keywordData.length} rows imported</p>
-            </div>
-          ) : (
-            <button onClick={() => kwFileRef.current?.click()} className="quiet-button w-full">
-              Select CSV File
-            </button>
-          )}
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+            <span className="text-sm font-medium text-muted-foreground">{keywordData.length ? <><CheckCircle2 className="mr-1 inline h-4 w-4 text-emerald-600" />{keywordData.length.toLocaleString()} rows</> : 'No import yet'}</span>
+            <button type="button" onClick={() => kwFileRef.current?.click()} className="quiet-button"><Upload className="h-4 w-4" />{keywordData.length ? 'Replace CSV' : 'Import CSV'}</button>
+          </div>
         </div>
 
         {/* Backlinks Import */}
-        <div className="trust-card p-6 text-center space-y-4">
-          <Database className="w-8 h-8 mx-auto text-accent" />
-          <h3 className="font-bold text-lg font-display">Backlinks CSV</h3>
-          <p className="text-sm text-muted-foreground">Import backlink exports from Google Search Console, Bing, or another provider.</p>
+        <div className="trust-card flex min-w-0 flex-col p-6">
+          <Link2 className="h-7 w-7 text-accent" aria-hidden="true" />
+          <h2 className="mt-5 text-lg font-semibold">Backlink evidence</h2>
+          <p className="mt-2 flex-1 text-sm leading-6 text-muted-foreground">Source pages, targets, and anchors from a backlink export you provide.</p>
           <input type="file" accept=".csv" className="hidden" ref={blFileRef} onChange={e => handleCsv(e, setBacklinkData, 'seo_backlink_data')} />
-          {backlinkData.length > 0 ? (
-            <div className="text-green-500 flex flex-col items-center gap-2">
-              <CheckCircle2 className="w-6 h-6" />
-              <p className="text-sm font-medium">{backlinkData.length} rows imported</p>
-            </div>
-          ) : (
-            <button onClick={() => blFileRef.current?.click()} className="quiet-button w-full">
-              Select CSV File
-            </button>
-          )}
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+            <span className="text-sm font-medium text-muted-foreground">{backlinkData.length ? <><CheckCircle2 className="mr-1 inline h-4 w-4 text-emerald-600" />{backlinkData.length.toLocaleString()} rows</> : 'No import yet'}</span>
+            <button type="button" onClick={() => blFileRef.current?.click()} className="quiet-button"><Upload className="h-4 w-4" />{backlinkData.length ? 'Replace CSV' : 'Import CSV'}</button>
+          </div>
         </div>
-      </div>
+      </section>
 
       {(keywordData.length > 0 || backlinkData.length > 0 || gscData.length > 0) && (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">

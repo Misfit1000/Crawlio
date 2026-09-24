@@ -121,16 +121,24 @@ export function CategoryGradeCard({
   description: string;
   icon?: React.ReactNode;
 }) {
+  const measured = score != null && Number.isFinite(score);
+  const boundedScore = measured ? Math.max(0, Math.min(100, score)) : 0;
+  const tone = reportScoreTone(score);
   return (
-    <div className="rounded-xl border border-border bg-background/65 p-4">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="font-semibold">{label}</div>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
+    <div className="score-factor min-w-0 border-b border-border py-4 last:border-b-0" data-tone={tone}>
+      <div className="flex min-w-0 items-start gap-3">
+        {icon && <div className="score-factor-icon shrink-0" aria-hidden="true">{icon}</div>}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline justify-between gap-3">
+            <div className="font-semibold">{label}</div>
+            <div className="shrink-0 text-base font-bold tabular-nums">{measured ? `${Math.round(score)}/100` : 'Not measured'}</div>
+          </div>
+          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{description}</p>
+          <div className="score-factor-track mt-3" role="img" aria-label={`${label}: ${measured ? `${Math.round(score)} out of 100` : 'not measured'}`}>
+            {measured && <span className="score-factor-fill" style={{ width: `${boundedScore}%` }} />}
+          </div>
         </div>
-        {icon && <div className="shrink-0 rounded-lg bg-muted p-2 text-accent">{icon}</div>}
       </div>
-      <AuditGrade score={score} label="Section grade" compact />
     </div>
   );
 }

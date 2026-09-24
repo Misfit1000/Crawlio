@@ -92,18 +92,32 @@ export default function RankTracker() {
   const handleCsv = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    event.target.value = '';
+    if (file.size > 10 * 1024 * 1024) {
+      setError('This CSV is over 10 MB. Export a smaller date range or split the file.');
+      return;
+    }
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
+      preview: 20_001,
       complete: (results) => {
         if (results.errors.length > 0) {
           setError(results.errors[0].message);
           return;
         }
+        if (results.data.length > 20_000) {
+          setError('This CSV has more than 20,000 rows. Import a smaller date range to keep the workspace responsive.');
+          return;
+        }
         const normalized = normalizeRows(results.data, 'Rankings CSV');
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(results.data));
-        setRows(normalized);
-        setError(null);
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(results.data));
+          setRows(normalized);
+          setError(null);
+        } catch {
+          setError('The browser could not store this CSV. Your previous ranking data was kept.');
+        }
       },
     });
   };
@@ -130,7 +144,7 @@ export default function RankTracker() {
         <MetricCard label="Imported rows" value={rows.length} detail="Only real imported data" icon={<FileSpreadsheet className="h-6 w-6" />} tone="accent" />
         <MetricCard label="Keywords found" value={summary.keywords} detail="Unique queries/keywords" icon={<Search className="h-6 w-6" />} tone="green" />
         <MetricCard label="Average position" value={summary.avgPosition === null ? '-' : summary.avgPosition.toFixed(1)} detail={`${summary.positioned} rows with positions`} icon={<BarChart3 className="h-6 w-6" />} tone="yellow" />
-        <MetricCard label="Clicks" value={summary.totalClicks || '-'} detail={`${summary.totalImpressions || 0} impressions`} icon={<CheckCircle2 className="h-6 w-6" />} tone="green" />
+        <MetricCard label="Clicks" value={rows.length ? summary.totalClicks : '-'} detail={`${summary.totalImpressions} impressions`} icon={<CheckCircle2 className="h-6 w-6" />} tone="green" />
       </div>
 
       {rows.length === 0 ? (
@@ -158,7 +172,7 @@ export default function RankTracker() {
             <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               <div>
                 <h3 className="text-xl font-bold">Best visible positions</h3>
-                <p className="text-sm text-muted-foreground">Lower bars are better because position 1 is the top result.</p>
+                <p className="text-sm text-muted-foreground">Longer bars indicate a better position within the top 100. The position number is the imported value.</p>
               </div>
               <StatusBadge tone="success">Real imported rows</StatusBadge>
             </div>
@@ -169,8 +183,8 @@ export default function RankTracker() {
                 return (
                   <div key={`${row.keyword}-${row.url}-${index}`} className="grid gap-2 md:grid-cols-[220px_1fr_72px] md:items-center">
                     <div className="truncate text-sm font-bold">{row.keyword || row.url || 'Imported row'}</div>
-                    <div className="h-3 overflow-hidden rounded-full bg-muted">
-                      <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-accent" style={{ width: `${width}%` }} />
+                    <div className="h-3 overflow-hidden rounded-full bg-muted" role="img" aria-label={`Imported position ${position.toFixed(1)} for ${row.keyword || row.url}`}>
+                      <div className="score-factor-fill" style={{ width: `${width}%` }} />
                     </div>
                     <div className="text-sm font-bold text-accent">#{position.toFixed(1)}</div>
                   </div>
