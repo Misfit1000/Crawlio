@@ -1766,9 +1766,10 @@ apiRouter.get('/audit/events/:id', asyncJsonRoute(async (req, res) => {
 
 
 apiRouter.get('/audit/status/:id', asyncJsonRoute(async (req, res) => {
-  const liveData = await auditRepository.getLiveData(req.params.id);
-  if (!liveData.audit || !(await canAccessAudit(req, liveData.audit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
   res.setHeader('Cache-Control', 'private, no-store');
+  const audit = await auditRepository.getAudit(req.params.id);
+  if (!audit || !(await canAccessAudit(req, audit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
+  const liveData = await auditRepository.getLiveData(req.params.id, audit);
   res.json({ success: true, data: liveData });
 }));
 
@@ -1781,9 +1782,10 @@ apiRouter.post('/audit/cancel/:id', asyncJsonRoute(async (req, res) => {
 }));
 
 apiRouter.get('/audit/result/:id', asyncJsonRoute(async (req, res) => {
-  const liveData = await auditRepository.getLiveData(req.params.id);
-  if (!liveData.audit || !(await canAccessAudit(req, liveData.audit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
   res.setHeader('Cache-Control', 'private, no-store');
+  const audit = await auditRepository.getAudit(req.params.id);
+  if (!audit || !(await canAccessAudit(req, audit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
+  const liveData = await auditRepository.getLiveData(req.params.id, audit);
   res.json({ success: true, data: liveData });
 }));
 
@@ -1949,6 +1951,7 @@ apiRouter.delete('/audit/:id', durableRateLimit({ namespace: 'audit-delete', lim
 }));
 
 apiRouter.get('/audits/history', asyncJsonRoute(async (req, res) => {
+  res.setHeader('Cache-Control', 'private, no-store');
   const requester = await getRequester(req);
   if (!requester.userId) return res.status(401).json({ success: false, error: 'Authentication required.' });
   const allowedStatuses = new Set(['queued', 'running', 'completed', 'completed_with_warnings', 'failed', 'cancelled', 'abandoned']);
@@ -1960,6 +1963,7 @@ apiRouter.get('/audits/history', asyncJsonRoute(async (req, res) => {
     status,
     hostname,
     includeArchived: req.query.archived === 'true',
+    summaryOnly: req.query.view === 'summary',
     limit: Number(req.query.limit || 25),
     offset: Number(req.query.offset || 0),
   });

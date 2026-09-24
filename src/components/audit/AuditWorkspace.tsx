@@ -15,6 +15,7 @@ import { EmptyState, MetricBarChart, MetricCard, SitePreviewSection, StatusBadge
 import { Notice } from '../ui/page-system';
 import AuditActivityPanel from './AuditActivityPanel';
 import { AuditExecutiveSummary, PriorityRecommendations, type AuditCategoryScore } from './AuditExecutiveSummary';
+import { AuditPageMap } from './AuditPageMap';
 import { AuditWorkspaceProvider, useAuditWorkspace } from './AuditWorkspaceContext';
 import FindingWorkspace from './FindingWorkspace';
 import { AuditReportReadyNote, AuditTerminalState } from './AuditTerminalState';
@@ -220,6 +221,7 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
       </nav>
 
       <AuditExecutiveSummary audit={audit} score={scores.overall} scoreDetail="Calculated from stored audit evidence" categoryScores={section === 'overview' ? categoryScores : []} unavailableChecks={unavailableChecks} />
+      {section === 'overview' && <AuditPageMap pages={data.latestPages} issues={data.latestIssues} />}
       <PriorityRecommendations issues={section === 'overview' ? data.latestIssues : issues} statuses={checklist} onViewFindings={() => document.getElementById('finding-workspace-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
 
       {section === 'overview' && <>

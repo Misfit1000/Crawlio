@@ -40,7 +40,7 @@ import {
   type RecommendationGroup,
   type ReportSectionId,
 } from '../lib/audit/report-insights';
-import type { AuditHistoryPage, ResourceAuditIssue, ResourceAuditLiveData, ResourceAuditPage } from '../lib/audit/resource-types';
+import type { AuditHistoryPage, AuditReportSummary, ResourceAuditIssue, ResourceAuditLiveData, ResourceAuditPage } from '../lib/audit/resource-types';
 import { downloadAuditExport } from '../lib/http/download';
 import { safeJsonFetch } from '../lib/http/safe-json';
 import { isCompletedAuditStatus } from '../lib/audit/audit-time';
@@ -161,12 +161,12 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
     let active = true;
     const requestedId = window.localStorage.getItem('crawlio_selected_report_id') || window.localStorage.getItem('seointel_selected_report_id');
     getAuditAccessHeaders()
-      .then((headers) => safeJsonFetch<any>(`${API_ROUTES.auditHistory}?limit=100`, { headers }))
+      .then((headers) => safeJsonFetch<any>(`${API_ROUTES.auditHistory}?limit=100&view=summary`, { headers }))
       .then((response) => {
         if (!active || !response.success) throw new Error((response as any).error || 'Stored audit history is unavailable.');
-        const page = (response.data.data || response.data) as AuditHistoryPage;
+        const page = (response.data.data || response.data) as AuditHistoryPage<AuditReportSummary>;
         const entries = page.items
-          .map((item) => buildHistoryEntry({ audit: item.audit, latestEvents: [], latestPages: item.finalReport?.pages || [], latestIssues: item.finalReport?.topIssues || [], finalReport: item.finalReport }))
+          .map((item) => buildHistoryEntry({ audit: item.audit, latestEvents: [], latestPages: [], latestIssues: [], finalReport: item.finalReport }))
           .filter((entry): entry is AuditHistoryEntry => Boolean(entry));
         setHistory(entries);
         setSelectedId(entries.some((entry) => entry.auditId === requestedId) ? requestedId : entries[0]?.auditId || null);

@@ -33,7 +33,7 @@ export function MarketingShell({
     ['Features', `${navigationBase}#features`],
     ['How it works', `${navigationBase}#how-it-works`],
     ['Pricing', `${navigationBase}#pricing`],
-    ['Reports', `${navigationBase}#reports`],
+    ['Reports', `${navigationBase}#example-report`],
     ['Blog', '/blog'],
   ];
   const auditHref = `${navigationBase}#start-audit`;

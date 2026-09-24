@@ -5,19 +5,19 @@ import { auditWorkspacePath } from '../../app/routes';
 import { isCompletedAuditStatus } from '../../lib/audit/audit-time';
 import { API_ROUTES } from '../../lib/api/routes';
 import { getAuditAccessHeaders } from '../../lib/api/auth-headers';
-import type { AuditHistoryPage } from '../../lib/audit/resource-types';
+import type { AuditHistoryPage, AuditReportSummary } from '../../lib/audit/resource-types';
 import { safeJsonFetch } from '../../lib/http/safe-json';
 import { EmptyState, StatusBadge, SurfaceCard } from '../ui/visual-system';
 import { Notice, PageHeader } from '../ui/page-system';
 
-function scoreFor(item: AuditHistoryPage['items'][number]) {
+function scoreFor(item: AuditHistoryPage<AuditReportSummary>['items'][number]) {
   const raw = item.finalReport?.scores?.overall;
   const score = Number(raw);
   return raw == null || !Number.isFinite(score) ? null : Math.round(score);
 }
 
 export default function AuditHistoryPageView({ onStartAudit }: { onStartAudit: () => void }) {
-  const [history, setHistory] = useState<AuditHistoryPage | null>(null);
+  const [history, setHistory] = useState<AuditHistoryPage<AuditReportSummary> | null>(null);
   const [status, setStatus] = useState('');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -31,7 +31,7 @@ export default function AuditHistoryPageView({ onStartAudit }: { onStartAudit: (
     let active = true;
     setLoading(true);
     setError(null);
-    const params = new URLSearchParams({ limit: '12', offset: String(page * 12) });
+    const params = new URLSearchParams({ limit: '12', offset: String(page * 12), view: 'summary' });
     if (status) params.set('status', status);
     if (includeArchived) params.set('archived', 'true');
     getAuditAccessHeaders()
@@ -39,7 +39,7 @@ export default function AuditHistoryPageView({ onStartAudit }: { onStartAudit: (
       .then((response) => {
         if (!active) return;
         if (!response.success) throw new Error((response as any).error || 'Audit history is unavailable.');
-        setHistory((response.data.data || response.data) as AuditHistoryPage);
+        setHistory((response.data.data || response.data) as AuditHistoryPage<AuditReportSummary>);
       })
       .catch((nextError) => active && setError(nextError instanceof Error ? nextError.message : 'Audit history is unavailable.'))
       .finally(() => active && setLoading(false));

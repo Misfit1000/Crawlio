@@ -152,7 +152,7 @@ function writeAuditHistory(entries: AuditHistoryEntry[]) {
   window.localStorage.setItem(HISTORY_KEY, JSON.stringify(entries.slice(0, 40)));
 }
 
-export function buildHistoryEntry(data: ResourceAuditLiveData): AuditHistoryEntry | null {
+export function buildHistoryEntry(data: Omit<ResourceAuditLiveData, 'finalReport'> & { finalReport?: Pick<NonNullable<ResourceAuditLiveData['finalReport']>, 'scores'> | null }): AuditHistoryEntry | null {
   const audit = data.audit;
   if (!audit) return null;
   const scores = extractReportScores(data.finalReport?.scores);

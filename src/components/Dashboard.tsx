@@ -109,8 +109,8 @@ export default function Dashboard(props: DashboardProps) {
       <PageHeader
         eyebrow="Workspace overview"
         icon={Gauge}
-        title="Website audit workspace"
-        description="Review current plan usage, measured website health, recent audit history, and the next fixes that deserve attention."
+        title="Your next move starts here."
+        description="Recent results, the changes that matter, and what to work on next."
         actions={<button type="button" onClick={props.onOpenSeoAudit} className="trust-button"><Rocket className="h-4 w-4" /> Start new audit</button>}
       />
       {user && <ProjectCockpit onStartAudit={props.onOpenSeoAudit || (() => undefined)} onOpenReports={props.onOpenReports || (() => undefined)} />}
@@ -121,9 +121,9 @@ export default function Dashboard(props: DashboardProps) {
               <StatusBadge tone={plan === 'free' ? 'warning' : 'success'}>{plan} plan</StatusBadge>
               <StatusBadge tone="accent">{plan === 'free' ? 'Quick audits' : 'Full audits'}</StatusBadge>
             </div>
-            <h2 className="mt-5 max-w-3xl text-2xl font-semibold leading-tight md:text-3xl">Audit results and next actions in one place</h2>
+            <h2 className="mt-5 max-w-3xl text-2xl font-semibold leading-tight md:text-3xl">{latest ? latest.hostname : 'Get a clear starting point.'}</h2>
             <p className="mt-3 max-w-3xl text-base leading-7 text-muted-foreground">
-              Run a live website scan, review the highest-priority fixes, and return to measured results without mixing in unsupported ranking or backlink data.
+              {latest ? `${latest.issuesFound} findings across ${latest.pagesCrawled} analyzed pages. Open the report to prioritize the work and review supporting evidence.` : 'Start with your website address. Your first audit brings page coverage, measured scores, and recommended fixes into this workspace.'}
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <button type="button" onClick={props.onOpenSeoAudit} className="trust-button">

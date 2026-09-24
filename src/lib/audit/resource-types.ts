@@ -153,13 +153,15 @@ export interface ResourceAuditLiveData {
   finalReport?: ResourceAuditReport | null;
 }
 
-export interface AuditHistoryItem {
+export type AuditReportSummary = Pick<ResourceAuditReport, 'scores' | 'summary' | 'generatedAt'>;
+
+export interface AuditHistoryItem<TReport = ResourceAuditReport> {
   audit: ResourceAuditDocument;
-  finalReport: ResourceAuditReport | null;
+  finalReport: TReport | null;
 }
 
-export interface AuditHistoryPage {
-  items: AuditHistoryItem[];
+export interface AuditHistoryPage<TReport = ResourceAuditReport> {
+  items: AuditHistoryItem<TReport>[];
   total: number;
   limit: number;
   offset: number;

@@ -1,4 +1,5 @@
 import React from 'react';
+import { UpdatedValue } from './UpdatedValue';
 import { AlertTriangle, CheckCircle2, ChevronDown, Globe, Monitor, Moon, ScanSearch, Search, ShieldCheck, Smartphone, Sun } from 'lucide-react';
 import { safePreviewMediaUrl } from '../../lib/audit/preview-model';
 import { gradeRangeLabel, scoreToGrade, scoreTone as reportScoreTone } from '../../lib/audit/report-insights';
@@ -278,7 +279,7 @@ export function ProgressBar({
         </div>
       )}
       <div className="h-2.5 overflow-hidden rounded-full bg-muted shadow-inner">
-        <div className={`h-full rounded-full ${colors[tone]} shadow-sm transition-all duration-700 ease-out`} style={{ width: `${safeValue}%` }} />
+        <div className={`h-full origin-left rounded-full ${colors[tone]} shadow-sm transition-transform duration-300 ease-out`} style={{ transform: `scaleX(${safeValue / 100})` }} />
       </div>
     </div>
   );
@@ -633,7 +634,7 @@ export function MetricCard({
       <div className="flex items-center justify-between gap-4">
         <div>
           <div className="text-sm font-medium text-muted-foreground">{label}</div>
-          <div className="mt-1 text-3xl font-bold">{value}</div>
+          <div className="mt-2 text-3xl font-semibold tabular-nums"><UpdatedValue value={value} /></div>
           {detail && <div className="mt-1 text-xs text-muted-foreground">{detail}</div>}
         </div>
         {icon && <div className={`rounded-xl p-3 ${tones[tone]}`}>{icon}</div>}

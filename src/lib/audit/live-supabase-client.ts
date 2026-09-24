@@ -170,6 +170,7 @@ function pollAuditLiveData(
   onError?: (error: Error) => void,
   onConnectionChange?: (state: LiveAuditConnectionState) => void,
   reason = 'Using HTTP polling for live audit updates.',
+  deferFirstPoll = false,
 ) {
   let cancelled = false;
   onConnectionChange?.({
@@ -181,18 +182,26 @@ function pollAuditLiveData(
   let interval: number | undefined;
   let failures = 0;
   let controller: AbortController | undefined;
+  let inFlight = false;
+  const onVisibility = () => {
+    if (document.hidden || cancelled || inFlight) return;
+    if (interval != null) window.clearTimeout(interval);
+    void poll();
+  };
   const stop = () => {
     cancelled = true;
+    document.removeEventListener('visibilitychange', onVisibility);
     controller?.abort();
     if (interval != null) window.clearTimeout(interval);
   };
   const poll = async () => {
-    if (cancelled) return;
+    if (cancelled || inFlight) return;
     if (document.hidden) {
       interval = window.setTimeout(poll, Math.max(15000, AUDIT_LIMITS.livePollIntervalMs));
       return;
     }
     controller = new AbortController();
+    inFlight = true;
     const timeout = window.setTimeout(() => controller?.abort(), 15000);
     try {
       const response = await safeJsonFetch<any>(API_ROUTES.auditStatus(auditId), { headers: await getAuditAccessHeaders(), signal: controller.signal });
@@ -217,6 +226,7 @@ function pollAuditLiveData(
           lastUpdateAt: Date.now(),
         });
         onError?.(new Error(message));
+        if ('status' in response && [401, 403, 404, 410].includes(response.status ?? 0)) stop();
       }
     } catch (error: any) {
       if (cancelled) return;
@@ -230,11 +240,14 @@ function pollAuditLiveData(
       });
       onError?.(nextError);
     } finally {
+      inFlight = false;
       window.clearTimeout(timeout);
       if (!cancelled) interval = window.setTimeout(poll, Math.min(30000, AUDIT_LIMITS.livePollIntervalMs * 2 ** Math.min(failures, 3)));
     }
   };
-  void poll();
+  document.addEventListener('visibilitychange', onVisibility);
+  if (deferFirstPoll) interval = window.setTimeout(poll, AUDIT_LIMITS.livePollIntervalMs);
+  else void poll();
   return stop;
 }
 
@@ -244,20 +257,22 @@ export function subscribeToAuditLiveData(
   callback: (data: ResourceAuditLiveData) => void,
   onError?: (error: Error) => void,
   onConnectionChange?: (state: LiveAuditConnectionState) => void,
+  initialSnapshot?: ResourceAuditLiveData,
 ) {
   const client = getSupabaseBrowserClient();
 
-  if (!client) {
+  if (!client || (initialSnapshot?.audit && !initialSnapshot.audit.userId)) {
     return pollAuditLiveData(
       auditId,
       callback,
       onError,
       onConnectionChange,
       'Live updates are using automatic refresh.',
+      Boolean(initialSnapshot?.audit),
     );
   }
 
-  let liveData: ResourceAuditLiveData = {
+  let liveData: ResourceAuditLiveData = initialSnapshot ?? {
     audit: null,
     latestEvents: [],
     latestPages: [],
@@ -301,7 +316,7 @@ export function subscribeToAuditLiveData(
     }, onError, onConnectionChange, message);
   };
 
-  getAuditAccessHeaders()
+  if (!initialSnapshot) getAuditAccessHeaders()
     .then((headers) => safeJsonFetch<any>(API_ROUTES.auditStatus(auditId), { headers }))
     .then((response) => {
       if (!closed && response.success) {

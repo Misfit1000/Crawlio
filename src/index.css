@@ -17,13 +17,13 @@
 
 @layer base {
   :root {
-    --background: #f7f8fb;
-    --foreground: #172033;
+    --background: #f6f7f9;
+    --foreground: #192127;
     --card: #ffffff;
     --card-foreground: #172033;
     --surface-raised: #ffffff;
-    --surface-inset: #eef3fa;
-    --border: #dfe6f1;
+    --surface-inset: #f0f3f6;
+    --border: #dce2e8;
     --border-strong: #c9d4e5;
     --accent: #2859ed;
     --accent-hover: #2457cc;
@@ -91,6 +91,38 @@
   }
 }
 
+/* A diagram, not a simulated audit: motion communicates the order of work. */
+.editorial-hero { border-top: 0; }
+.hero-intro { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); align-items: center; gap: 32px 56px; }
+.hero-trust { grid-column: 1 / -1; }
+.concept-network { display: block; width: 100%; height: auto; margin-top: 24px; }
+.concept-wires { color: var(--accent); stroke-dasharray: 5 8; animation: evidence-flow 6s linear infinite; }
+@keyframes evidence-flow { to { stroke-dashoffset: -130; } }
+.audit-concept { padding: 24px 0 0; }
+.concept-stages { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 48px; padding: 32px 0; }
+.concept-stage { position: relative; min-width: 0; padding: 8px 32px 8px 0; }
+.concept-stage + .concept-stage { border-left: 1px solid var(--border); padding-left: 32px; }
+.concept-icon { display: grid; place-items: center; width: 56px; height: 56px; border: 1px solid var(--border); border-radius: 8px; color: var(--accent); background: var(--surface-inset); animation: concept-focus 6s ease-in-out infinite; animation-delay: calc(var(--stage) * 2s); }
+.concept-route { position: absolute; top: 24px; right: -32px; color: var(--accent); }
+.concept-stage:last-child .concept-route { display: none; }
+.concept-evidence { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
+.audit-concept[data-paused="true"] * { animation-play-state: paused !important; }
+@keyframes concept-focus { 0%, 38%, 100% { transform: translateY(0); box-shadow: none; } 12%, 26% { transform: translateY(-5px); box-shadow: 0 8px 0 -4px var(--accent); } }
+@media (max-width: 767px) {
+  .hero-intro { grid-template-columns: 1fr; gap: 8px; }
+  .hero-trust { margin-top: 24px; }
+  .concept-network { display: none; }
+  .concept-stages { grid-template-columns: 1fr; gap: 32px; }
+  .concept-stage, .concept-stage + .concept-stage { padding: 0 0 24px; border-left: 0; border-bottom: 1px solid var(--border); }
+  .concept-route { top: auto; bottom: -26px; right: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .concept-icon, .concept-wires { animation: none; } }
+.page-map-node { animation: page-evidence-in 240ms ease-out both; }
+.workspace-navigation { animation: navigation-enter 180ms ease-out; }
+@keyframes navigation-enter { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes page-evidence-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .page-map-node, .workspace-navigation { animation: none; } }
+
 @layer utilities {
   .skip-link {
     @apply fixed left-4 top-3 z-[300] -translate-y-20 rounded-lg bg-foreground px-4 py-2 text-sm font-semibold text-background transition-transform focus:translate-y-0;
@@ -135,7 +167,7 @@
 
   .suite-panel {
     @apply rounded-lg border border-border bg-card;
-    box-shadow: 0 1px 2px rgb(var(--shadow-color) / 0.04), 0 12px 30px -28px rgb(var(--shadow-color) / 0.28);
+    box-shadow: 0 2px 5px rgb(var(--shadow-color) / 0.025), 0 16px 40px -28px rgb(var(--shadow-color) / 0.2);
   }
 
   .suite-panel-soft {
@@ -324,6 +356,15 @@
     content: 'Write the practical article guidance here...';
   }
 }
+
+.updated-value { display: inline-block; animation: measurement-in 220ms ease-out; }
+@keyframes measurement-in { from { opacity: 0.6; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+.page-header { padding-top: 8px; }
+.page-header h1 { font-size: 2rem; line-height: 1.2; }
+.page-eyebrow { text-transform: uppercase; font-size: 11px; }
+.admin-workspace .updated-value { animation: none; }
+@media (min-width: 1024px) { .page-header h1 { font-size: 2.5rem; } }
+@media (prefers-reduced-motion: reduce) { .updated-value { animation: none; } }
 
 @media (prefers-reduced-motion: reduce) {
   *,

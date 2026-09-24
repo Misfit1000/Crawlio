@@ -2,13 +2,11 @@ import React, { useRef, useState } from 'react';
 import {
   Activity,
   ArrowRight,
-  BarChart3,
   CheckCircle2,
   ChevronDown,
   CircleAlert,
   Code2,
   ExternalLink,
-  Eye,
   FileCheck2,
   Globe,
   LockKeyhole,
@@ -19,7 +17,8 @@ import {
 import { createAuditSubmitGuard } from '../lib/api/audit-submit-guard';
 import { AUDIT_TARGET_INPUT_PROPS, normalizeAuditTarget } from '../lib/url/normalize-audit-target';
 import { PUBLIC_AUDIT_PLANS, PUBLIC_PLAN_COMPARISON } from '../lib/plans/public-plan-presentation';
-import { CategoryScoreBar, RadialScoreGauge, SeverityDistribution, StatusBadge } from './ui/visual-system';
+import { StatusBadge } from './ui/visual-system';
+import { AuditConceptScene } from './ui/AuditConceptScene';
 
 interface Props {
   onStartAudit: (url: string) => Promise<void> | void;
@@ -41,7 +40,6 @@ const coverageGroups = [
       ['Structured data', 'Public schema markup, parsing errors, and supported entity signals.'],
       ['Indexing directives', 'Noindex instructions, conflicting signals, and index access.'],
     ],
-    score: 86,
   },
   {
     id: 'delivery',
@@ -54,7 +52,6 @@ const coverageGroups = [
       ['Redirects', 'Chains, loops, temporary redirects, and avoidable internal hops.'],
       ['Canonical signals', 'Preferred page URLs that are missing, invalid, or conflicting.'],
     ],
-    score: 78,
   },
   {
     id: 'quality',
@@ -67,7 +64,6 @@ const coverageGroups = [
       ['Page accessibility', 'Language, labels, landmarks, and basic document structure.'],
       ['Performance signals', 'Response timing, response size, and resource observations.'],
     ],
-    score: 82,
   },
   {
     id: 'safety',
@@ -80,7 +76,6 @@ const coverageGroups = [
       ['Cookies and forms', 'Public cookie attributes and form transport observations.'],
       ['Exposure checks', 'Common public configuration and diagnostic-file paths.'],
     ],
-    score: 88,
   },
 ];
 
@@ -89,9 +84,6 @@ const findingExamples = [
   { title: 'Important page contains noindex', category: 'Indexing', severity: 'Critical', pages: 1, evidence: 'robots meta: noindex,follow', action: 'Confirm whether the page should appear in search, then remove the directive only if it was unintended.', impact: 'The page explicitly asks search engines not to include it in results.' },
   { title: 'Multiple pages share the same title', category: 'On-page SEO', severity: 'Medium', pages: 7, evidence: '“Services | Example” appears on 7 pages', action: 'Write a distinct title that describes the purpose of each affected page.', impact: 'Repeated titles make separate pages harder to distinguish in search results.' },
   { title: 'Internal link redirects unnecessarily', category: 'Links', severity: 'Medium', pages: 12, evidence: '/about → /company/about', action: 'Update internal links to point directly to the final preferred address.', impact: 'Avoidable redirects add a request and make internal navigation less direct.' },
-  { title: 'Canonical points to another URL', category: 'Technical SEO', severity: 'High', pages: 2, evidence: 'Canonical target differs from the current page', action: 'Verify the intended preferred URL and align canonical, sitemap, and internal-link signals.', impact: 'Conflicting preferred-page signals can split indexing attention.' },
-  { title: 'Browser protection is unavailable', category: 'Passive security', severity: 'Medium', pages: 5, evidence: 'Content-Security-Policy header not observed', action: 'Introduce and test a policy that allows only the resources the site needs.', impact: 'The browser has fewer restrictions on where page resources may load from.' },
-  { title: 'Heading structure skips levels', category: 'Accessibility', severity: 'Low', pages: 3, evidence: 'H2 is followed by H4', action: 'Use a logical heading sequence that reflects the page outline.', impact: 'An inconsistent outline makes long pages harder to navigate and interpret.' },
 ];
 
 const workflow = [
@@ -148,14 +140,15 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
 
   return (
     <main id="main-content" className="w-full bg-background text-foreground">
-      <section id="product" className="customer-hero relative overflow-hidden border-b border-border bg-card">
-        <div className="hero-grid pointer-events-none absolute inset-0 opacity-65" aria-hidden="true" />
+      <section id="product" className="editorial-hero relative overflow-hidden border-b border-border bg-card">
         <div className="section-shell relative py-10 sm:py-14 lg:py-18">
-          <div className="grid items-center gap-10 xl:grid-cols-[0.9fr_1.1fr] xl:gap-12">
-            <div className="min-w-0">
+          <div className="grid gap-10">
+            <div className="hero-intro min-w-0">
+              <div>
               <div className="mb-5 flex flex-wrap gap-3 text-xs font-semibold text-muted-foreground"><span className="inline-flex items-center gap-2"><CircleAlert className="h-4 w-4 text-accent" /> Public website audits</span><span className="inline-flex items-center gap-2"><Activity className="h-4 w-4 text-emerald-600 dark:text-emerald-300" /> Live progress</span></div>
-              <h1 className="max-w-2xl text-4xl font-bold leading-[1.1] sm:text-5xl lg:text-[3.6rem]">A clearer picture of your website.<br /><span className="text-accent">A better next move.</span></h1>
+              <h1 className="max-w-5xl text-4xl font-bold leading-[1.08] sm:text-5xl lg:text-6xl">Understand your website.<br /><span className="text-accent">Know what to fix next.</span></h1>
               <p className="mt-5 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">See your SEO, website health, and browser safety in one live audit. Find the pages that need attention and turn the evidence into a practical fix list.</p>
+              </div>
 
               <form id="start-audit" onSubmit={handleSubmit} noValidate className="mt-8 max-w-2xl" aria-label="Start a website audit">
                 <label htmlFor="homepage-audit-url" className="mb-2 block text-sm font-semibold">Website or domain</label>
@@ -170,11 +163,11 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
                 {auditError && <p id="homepage-audit-error" className="mt-2 text-sm font-medium text-red-600 dark:text-red-300" role="alert">{auditError}</p>}
               </form>
 
-              <div className="mt-7 grid max-w-2xl grid-cols-2 gap-x-5 gap-y-3 border-t border-border pt-5 text-xs text-muted-foreground sm:grid-cols-4" aria-label="Audit trust points">
+              <div className="hero-trust grid grid-cols-2 gap-x-5 gap-y-3 border-t border-border pt-5 text-xs text-muted-foreground sm:grid-cols-4" aria-label="Audit trust points">
                 {['Deterministic checks', 'No fabricated traffic data', 'Clear affected-page evidence', 'Public websites only'].map((point) => <span key={point} className="flex items-start gap-2"><CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-300" />{point}</span>)}
               </div>
             </div>
-            <ExampleWorkspacePreview onOpen={() => onNavigate('reports')} />
+            <AuditConceptScene />
           </div>
         </div>
       </section>
@@ -183,11 +176,11 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
         <div className="grid gap-10 xl:grid-cols-[0.7fr_1.3fr]">
           <div className="xl:sticky xl:top-28 xl:self-start"><p className="text-sm font-semibold text-accent">Audit coverage</p><h2 className="mt-2 text-3xl font-semibold leading-tight md:text-4xl">See what the audit actually checks.</h2><p className="mt-4 max-w-lg text-sm leading-7 text-muted-foreground">Coverage is organised around the decisions you need to make, not a wall of disconnected feature cards.</p>
             <div className="mt-7 grid gap-1 border-y border-border py-2" role="tablist" aria-label="Audit coverage categories">
-              {coverageGroups.map((group) => { const Icon = group.icon; const active = group.id === selectedCoverage.id; return <button key={group.id} type="button" role="tab" aria-selected={active} onClick={() => setActiveCoverage(group.id)} className={`flex min-h-12 items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold ${active ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}><Icon className="h-4 w-4" /><span className="flex-1">{group.label}</span><span className="text-xs tabular-nums opacity-80">{group.score}</span></button>; })}
+              {coverageGroups.map((group) => { const Icon = group.icon; const active = group.id === selectedCoverage.id; return <button key={group.id} type="button" role="tab" aria-selected={active} onClick={() => setActiveCoverage(group.id)} className={`flex min-h-12 items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold ${active ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}><Icon className="h-4 w-4" /><span className="flex-1">{group.label}</span><span className="text-xs tabular-nums opacity-80">{group.checks.length} checks</span></button>; })}
             </div>
           </div>
           <div className="overflow-hidden rounded-xl border border-border bg-card">
-            <div className="grid gap-6 border-b border-border p-5 sm:p-7 md:grid-cols-[1fr_170px] md:items-center"><div><div className="flex items-center gap-3">{React.createElement(selectedCoverage.icon, { className: 'h-6 w-6 text-accent' })}<h3 className="text-2xl font-semibold">{selectedCoverage.label}</h3></div><p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">{selectedCoverage.summary}</p></div><CategoryScoreBar label="Example category score" value={selectedCoverage.score} detail="Demonstration data" /></div>
+            <div className="grid gap-6 border-b border-border p-5 sm:p-7 md:grid-cols-[1fr_170px] md:items-center"><div><div className="flex items-center gap-3">{React.createElement(selectedCoverage.icon, { className: 'h-6 w-6 text-accent' })}<h3 className="text-2xl font-semibold">{selectedCoverage.label}</h3></div><p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">{selectedCoverage.summary}</p></div><span className="text-sm font-semibold text-accent">Evidence-based checks</span></div>
             <div className="divide-y divide-border">
               {selectedCoverage.checks.map(([title, description], index) => <article key={title} className="grid gap-2 p-5 sm:grid-cols-[44px_180px_1fr] sm:items-start sm:p-6"><div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-sm font-semibold tabular-nums">{String(index + 1).padStart(2, '0')}</div><h4 className="font-semibold">{title}</h4><p className="text-sm leading-6 text-muted-foreground">{description}</p></article>)}
             </div>
@@ -250,6 +243,10 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
         <button type="button" onClick={() => onNavigate('start-audit')} className="trust-button mt-6">Start a free audit <ArrowRight className="h-4 w-4" /></button>
       </section>
 
+      <section className="section-shell grid gap-6 py-14 md:grid-cols-[1fr_auto] md:items-center" aria-labelledby="guides-heading">
+        <div><p className="text-sm font-semibold text-accent">Keep learning</p><h2 id="guides-heading" className="mt-2 text-3xl font-semibold">Turn a finding into understanding.</h2><p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">Explore practical guides to website audits, search visibility, and the technical work behind a healthier site.</p></div>
+        <a href="/blog" className="quiet-button justify-self-start">Explore the blog <ArrowRight className="h-4 w-4" /></a>
+      </section>
       <section id="faq" className="content-auto border-t border-border bg-[var(--surface-inset)] py-14 md:py-18">
         <div className="section-shell grid gap-8 lg:grid-cols-[0.58fr_1.42fr]"><div><p className="text-sm font-semibold text-accent">Before you start</p><h2 className="mt-2 text-3xl font-semibold leading-tight">Practical audit questions.</h2><p className="mt-3 text-sm leading-6 text-muted-foreground">The service is built for public websites and reports unavailable evidence directly.</p></div><div className="divide-y divide-border border-y border-border">{faqs.map(([question, answer]) => <FaqItem key={question} question={question} answer={answer} />)}</div></div>
       </section>
@@ -257,21 +254,6 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
   );
 }
 
-function ExampleWorkspacePreview({ onOpen }: { onOpen: () => void }) {
-  return (
-    <div className="report-grid relative min-w-0 overflow-hidden rounded-xl border border-border bg-[var(--surface-inset)] p-3 shadow-sm" aria-label="Example audit report">
-      <div className="overflow-hidden rounded-lg border border-border bg-card">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3"><div className="flex items-center gap-3"><div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-accent-foreground"><BarChart3 className="h-4 w-4" /></div><div><div className="flex items-center gap-2 text-xs font-semibold text-accent">Example report <span className="text-muted-foreground">· Demonstration data</span></div><div className="mt-0.5 font-semibold">example.com</div></div></div><StatusBadge tone="success">Report ready</StatusBadge></div>
-        <div className="grid lg:grid-cols-[190px_minmax(0,1fr)]">
-          <div className="flex items-center justify-center border-b border-border p-5 lg:border-b-0 lg:border-r"><RadialScoreGauge value={84} label="Audit score" detail="Example result" size="sm" /></div>
-          <div className="p-4 sm:p-5"><div className="grid gap-3 sm:grid-cols-3"><CategoryScoreBar label="SEO" value={86} detail="Titles and headings" /><CategoryScoreBar label="Technical" value={78} detail="Access and delivery" /><CategoryScoreBar label="Security" value={88} detail="Passive checks" /></div><div className="mt-4"><SeverityDistribution critical={3} high={6} medium={12} low={8} /></div></div>
-        </div>
-        <div className="grid border-t border-border xl:grid-cols-[1fr_210px]"><div className="p-4 sm:p-5"><div className="flex flex-wrap items-center gap-2"><StatusBadge tone="warning">High priority</StatusBadge><span className="text-xs text-muted-foreground">4 affected pages</span></div><h3 className="mt-3 text-lg font-semibold">Page returned 404 Not Found</h3><p className="mt-2 text-sm leading-6 text-muted-foreground">Restore the destination, redirect it to the closest relevant page, or remove internal links pointing to it.</p><div className="mt-4 flex items-center gap-2 rounded-lg bg-[var(--surface-inset)] px-3 py-2 text-xs text-muted-foreground"><Eye className="h-4 w-4 text-accent" /> Evidence and source pages available</div></div><div className="border-t border-border bg-[var(--surface-inset)] p-4 xl:border-l xl:border-t-0"><div className="text-xs font-semibold text-muted-foreground">Coverage</div><dl className="mt-3 grid grid-cols-2 gap-3"><div><dt className="text-[11px] text-muted-foreground">Analysed</dt><dd className="text-xl font-semibold">25</dd></div><div><dt className="text-[11px] text-muted-foreground">Checks</dt><dd className="text-xl font-semibold">142</dd></div><div><dt className="text-[11px] text-muted-foreground">Warnings</dt><dd className="text-xl font-semibold text-amber-600 dark:text-amber-300">2</dd></div><div><dt className="text-[11px] text-muted-foreground">Passed</dt><dd className="text-xl font-semibold text-emerald-600 dark:text-emerald-300">111</dd></div></dl></div></div>
-        <div className="flex flex-col gap-3 border-t border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between"><span className="text-xs text-muted-foreground">Every value in this preview is labeled example data.</span><button type="button" onClick={onOpen} className="quiet-button min-h-10 shrink-0 px-3 py-2 text-sm">View report workspace</button></div>
-      </div>
-    </div>
-  );
-}
 
 function FaqItem({ question, answer }: { question: string; answer: string }) {
   return <details className="group py-5"><summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 font-semibold marker:content-none">{question}<ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true" /></summary><p className="max-w-3xl pb-1 pr-8 text-sm leading-6 text-muted-foreground">{answer}</p></details>;

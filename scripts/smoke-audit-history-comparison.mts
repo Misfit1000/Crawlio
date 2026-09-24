@@ -43,6 +43,11 @@ assert.equal(history.total, 2);
 assert.equal(history.items.length, 2);
 assert.ok(history.items.every((item) => item.audit.userId === userId));
 assert.ok(history.items.every((item) => item.finalReport));
+const summaries = await auditRepository.listAuditHistoryForUser({ userId, limit: 10, summaryOnly: true });
+assert.equal(summaries.total, history.total);
+assert.deepEqual(summaries.items.map((item) => item.finalReport?.scores), history.items.map((item) => item.finalReport?.scores));
+assert.ok(summaries.items.every((item) => item.finalReport && !('pages' in item.finalReport) && !('exports' in item.finalReport)));
+assert.ok(history.items.every((item) => item.finalReport && 'pages' in item.finalReport && 'exports' in item.finalReport), 'default history responses remain backward compatible');
 
 const comparison = await auditRepository.compareAudits(current.id, baseline.id);
 assert.ok(comparison);

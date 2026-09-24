@@ -43,8 +43,8 @@ export default function AdminOverview() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Metric icon={Users} label="Recent accounts" value={users.error ? 'Unavailable' : stats.totalUsers} detail={`Latest 100 accounts: ${stats.paidUsers + stats.agencyUsers} paid or agency`} />
         <Metric icon={Clock3} label="Recent active audits" value={audits.error ? 'Unavailable' : stats.queued + stats.running} detail={`Latest 100 audits: ${stats.queued} waiting, ${stats.running} checking`} tone="warning" />
-        <Metric icon={CheckCircle2} label="Completed audits" value={stats.completed} detail={`${stats.successRate}% of recent audits`} tone="success" />
-        <Metric icon={XCircle} label="Failed audits" value={stats.failed} detail={stats.failed ? 'Review and retry failed jobs' : 'No failed audits in this view'} tone={stats.failed ? 'danger' : 'success'} />
+        <Metric icon={CheckCircle2} label="Completed audits" value={audits.error ? 'Unavailable' : stats.completed} detail={audits.error ? 'Refresh audit data to see completion' : `${stats.successRate}% of recent audits`} tone="success" />
+        <Metric icon={XCircle} label="Failed audits" value={audits.error ? 'Unavailable' : stats.failed} detail={audits.error ? 'Audit data could not be retrieved' : stats.failed ? 'Review and retry failed jobs' : 'No failed audits in this view'} tone={stats.failed ? 'danger' : 'success'} />
       </div>
       <div className="grid gap-4 xl:grid-cols-[0.92fr_1.08fr]">
         <Panel title="Audit distribution" description="Lifecycle states among the latest 100 audits, not platform-wide totals." icon={BarChart3}>

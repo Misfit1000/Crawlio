@@ -5,6 +5,7 @@ import {
   type ResourceAuditDocument,
   type AuditComparison,
   type AuditHistoryPage,
+  type AuditReportSummary,
   type ResourceAuditEvent,
   type ResourceAuditIssue,
   type ResourceAuditLiveData,
@@ -1294,18 +1295,20 @@ export const auditRepository = {
     return memory.reports.get(auditId) ?? null;
   },
 
-  async getAuditLiveSnapshot(auditId: string): Promise<ResourceAuditLiveData> {
-    return {
-      audit: await this.getAuditJob(auditId),
-      latestEvents: await this.getLatestEvents(auditId, 50),
-      latestPages: await this.getLatestPages(auditId, 100),
-      latestIssues: await this.getLatestIssues(auditId, 100),
-      finalReport: await this.getFinalReport(auditId),
-    };
+  async getAuditLiveSnapshot(auditId: string, knownAudit?: ResourceAuditDocument): Promise<ResourceAuditLiveData> {
+    const audit = knownAudit ?? await this.getAuditJob(auditId);
+    if (!audit) return { audit: null, latestEvents: [], latestPages: [], latestIssues: [], finalReport: null };
+    const [latestEvents, latestPages, latestIssues, finalReport] = await Promise.all([
+      this.getLatestEvents(auditId, 50),
+      this.getLatestPages(auditId, 100),
+      this.getLatestIssues(auditId, 100),
+      ['queued', 'running'].includes(audit.status) ? Promise.resolve(null) : this.getFinalReport(auditId),
+    ]);
+    return { audit, latestEvents, latestPages, latestIssues, finalReport };
   },
 
-  async getLiveData(auditId: string) {
-    return this.getAuditLiveSnapshot(auditId);
+  async getLiveData(auditId: string, knownAudit?: ResourceAuditDocument) {
+    return this.getAuditLiveSnapshot(auditId, knownAudit);
   },
 
   async listAuditHistoryForUser(input: {
@@ -1315,7 +1318,8 @@ export const auditRepository = {
     includeArchived?: boolean;
     limit?: number;
     offset?: number;
-  }): Promise<AuditHistoryPage> {
+    summaryOnly?: boolean;
+  }): Promise<AuditHistoryPage<ResourceAuditReport | AuditReportSummary>> {
     const limit = Math.max(1, Math.min(100, Math.floor(input.limit ?? 25)));
     const offset = Math.max(0, Math.floor(input.offset ?? 0));
     const client = getSupabaseAdminClient();
@@ -1332,13 +1336,16 @@ export const auditRepository = {
       const { data, error, count } = await query;
       assertNoError(error, 'List audit history');
       const audits = (data ?? []).map(toAuditDocument).filter((audit): audit is ResourceAuditDocument => Boolean(audit));
-      const reportByAudit = new Map<string, ResourceAuditReport>();
+      const reportByAudit = new Map<string, ResourceAuditReport | AuditReportSummary>();
       if (audits.length) {
-        const reports = await client.from('audit_reports').select('*').in('audit_id', audits.map((audit) => audit.id));
+        const auditIds = audits.map((audit) => audit.id);
+        const reports = input.summaryOnly
+          ? await client.from('audit_reports').select('audit_id,scores,summary,generated_at').in('audit_id', auditIds)
+          : await client.from('audit_reports').select('*').in('audit_id', auditIds);
         assertNoError(reports.error, 'Load audit history reports');
         for (const row of reports.data ?? []) {
           const report = toAuditReport(row);
-          if (report) reportByAudit.set(String(row.audit_id), report);
+          if (report) reportByAudit.set(String(row.audit_id), input.summaryOnly ? { scores: report.scores, summary: report.summary, generatedAt: report.generatedAt } : report);
         }
       }
       return {
@@ -1356,7 +1363,10 @@ export const auditRepository = {
       .filter((audit) => input.includeArchived || !audit.archivedAt)
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
     return {
-      items: all.slice(offset, offset + limit).map((audit) => ({ audit, finalReport: memory.reports.get(audit.id) ?? null })),
+      items: all.slice(offset, offset + limit).map((audit) => {
+        const report = memory.reports.get(audit.id) ?? null;
+        return { audit, finalReport: report && input.summaryOnly ? { scores: report.scores, summary: report.summary, generatedAt: report.generatedAt } : report };
+      }),
       total: all.length,
       limit,
       offset,

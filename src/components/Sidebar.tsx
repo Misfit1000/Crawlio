@@ -2,6 +2,13 @@ import { Activity, BarChart3, FileText, Gauge, Globe, HelpCircle, History, Layou
 import { TabType } from '../App';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation, useNavigate } from '../app/router';
+import { useEffect, useRef, type ReactNode } from 'react';
+
+function NavigationGroup({ title, active, children }: { title: string; active: boolean; children: ReactNode }) {
+  const label = <span className="text-xs font-semibold text-muted-foreground">{title}</span>;
+  if (title === 'Audit evidence') return <details open={active} className="navigation-evidence"><summary className="min-h-10 cursor-pointer px-2 py-2">{label}</summary><div className="mt-1">{children}</div></details>;
+  return <div><div className="mb-2 px-2">{label}</div>{children}</div>;
+}
 
 const navGroups: Array<{
   title: string;
@@ -45,6 +52,27 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOpenHelp }: SidebarProps) {
+  const navigationRef = useRef<HTMLElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    if (!isOpen || window.innerWidth >= 1024) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const navigation = navigationRef.current;
+    navigation?.focus();
+    const handleKey = (event: KeyboardEvent) => {
+      if (window.innerWidth >= 1024) return;
+      if (event.key === 'Escape') { event.preventDefault(); closeRef.current(); }
+      if (event.key !== 'Tab' || !navigation) return;
+      const controls = [...navigation.querySelectorAll<HTMLElement>('button, a[href], summary, input, select, [tabindex="0"]')].filter((element) => element.getClientRects().length && !element.hasAttribute('disabled'));
+      const first = controls[0];
+      const last = controls.at(-1);
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === navigation)) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    navigation?.addEventListener('keydown', handleKey);
+    return () => { navigation?.removeEventListener('keydown', handleKey); if (previous?.isConnected) previous.focus(); };
+  }, [isOpen]);
   const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -67,7 +95,7 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOp
       {isOpen && <div onClick={onClose} className="fixed inset-0 z-40 bg-background/70 backdrop-blur-sm lg:hidden" />}
 
       {isOpen && (
-        <aside className="fixed left-0 top-[4.25rem] z-50 flex h-[calc(100dvh-4.25rem)] w-[16rem] flex-col overflow-hidden border-r border-border bg-card lg:relative lg:top-0 lg:h-full lg:shrink-0">
+        <aside ref={navigationRef} tabIndex={-1} aria-label="Workspace navigation" className="workspace-navigation fixed left-0 top-[4.25rem] z-50 flex h-[calc(100dvh-4.25rem)] w-[16rem] flex-col overflow-hidden border-r border-border bg-card lg:relative lg:top-0 lg:h-full lg:shrink-0">
           <div className="border-b border-border p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -82,8 +110,7 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOp
 
           <nav className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-3" aria-label="Main navigation">
             {isAdmin ? <div className="space-y-1">{adminLinks.map(([label, path]) => <button key={path} type="button" aria-current={location.pathname === path ? 'page' : undefined} onClick={() => { navigate(path); if (window.innerWidth < 1024) onClose(); }} className={`flex min-h-11 w-full items-center rounded-lg px-3 text-left text-sm font-medium ${location.pathname === path ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>{label}</button>)}<button className="quiet-button mt-4 w-full" onClick={() => setActiveTab('dashboard')}>Back to workspace</button></div> : filteredGroups.map((group) => (
-              <div key={group.title}>
-                <div className="mb-2 px-2 text-xs font-semibold text-[var(--subtle-foreground)]">{group.title}</div>
+              <NavigationGroup key={group.title} title={group.title} active={group.items.some((item) => item.id === activeTab)}>
                 <div className="space-y-1">
                   {group.items.map((item) => {
                     const isActive = activeTab === item.id;
@@ -112,7 +139,7 @@ export default function Sidebar({ isOpen, onClose, activeTab, setActiveTab, onOp
                     );
                   })}
                 </div>
-              </div>
+              </NavigationGroup>
             ))}
           </nav>
 

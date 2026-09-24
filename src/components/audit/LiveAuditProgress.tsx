@@ -8,6 +8,7 @@ import { isAuditQueuedTooLong } from '../../lib/audit/queued-worker-warning';
 import { API_ROUTES } from '../../lib/api/routes';
 import { getAuditAccessHeaders } from '../../lib/api/auth-headers';
 import { safeJsonFetch } from '../../lib/http/safe-json';
+import { inflightRead } from '../../lib/http/inflight-read';
 import { formatAuditElapsed, isCompletedAuditStatus, isTerminalAuditStatus } from '../../lib/audit/audit-time';
 import { createEmptyAuditLiveData, isFinalReportPending, mergeAuditLiveData, waitForPersistedFinalReport } from '../../lib/audit/audit-lifecycle';
 import { customerSafeDiagnosticText } from '../../lib/audit/audit-failures';
@@ -30,8 +31,8 @@ import {
   type AuditHistoryEntry,
   type ChecklistStatus,
 } from '../../lib/audit/client-insights';
-import AuditActivityPanel from './AuditActivityPanel';
 import { AuditExecutiveSummary, PriorityRecommendations } from './AuditExecutiveSummary';
+import { AuditPageMap } from './AuditPageMap';
 import FindingWorkspace from './FindingWorkspace';
 import { AuditReportReadyNote, AuditTerminalState } from './AuditTerminalState';
 import DomainStrengthCard from '../backlinks/DomainStrengthCard';
@@ -45,7 +46,9 @@ interface Props {
 }
 
 async function loadStoredAuditSnapshot(auditId: string) {
-  const response = await safeJsonFetch<any>(API_ROUTES.auditResult(auditId), { headers: await getAuditAccessHeaders() });
+  const url = API_ROUTES.auditResult(auditId);
+  const headers = await getAuditAccessHeaders();
+  const response = await inflightRead(url, headers, () => safeJsonFetch<any>(url, { headers }));
   if (!response.success) throw new Error((response as any).error || 'Audit result is unavailable.');
   return (response.data.data || response.data) as ResourceAuditLiveData;
 }
@@ -180,6 +183,7 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
               setWarning(null);
             }
           },
+          snapshot,
         );
       })
       .catch((err) => isActive && setError(err instanceof Error ? err.message : 'Failed to load this audit.'));
@@ -402,8 +406,6 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
 
   return (
     <div className="w-full space-y-8 animate-rise">
-      <AuditActivityPanel events={data.latestEvents} phase={humanizeAuditText(audit.currentPhase)} progress={progress} pagesAnalysed={audit.pagesCrawled} pageLimit={audit.pageLimit} />
-      <div className="h-10 sm:h-12" aria-hidden="true" />
       <PageHeader
         eyebrow="Live audit"
         icon={Radio}
@@ -450,6 +452,7 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
         unavailableChecks={liveScore.unavailableCount}
       />
       {data.finalReport && <DomainStrengthCard domain={audit.hostname} auditScores={data.finalReport.scores} />}
+      <AuditPageMap pages={data.latestPages} issues={data.latestIssues} />
       <PriorityRecommendations issues={data.latestIssues} statuses={checklist} onViewFindings={() => document.getElementById('finding-workspace-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
       <SurfaceCard className="p-5 md:p-6">
         {livePresentation && <CurrentWorkCard presentation={livePresentation} connection={connection} now={now} onViewReport={onOpenWorkspace} />}
