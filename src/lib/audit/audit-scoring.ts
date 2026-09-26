@@ -9,7 +9,8 @@ export type AuditScoreCategory =
   | 'performance'
   | 'mobile'
   | 'security'
-  | 'structuredData';
+  | 'structuredData'
+  | 'accessibility';
 
 export interface ScoreDeduction {
   key: string;
@@ -50,6 +51,7 @@ const CATEGORIES: AuditScoreCategory[] = [
   'mobile',
   'security',
   'structuredData',
+  'accessibility',
 ];
 
 const SECTION_CATEGORY: Record<ReportSectionId, AuditScoreCategory> = {
@@ -61,6 +63,7 @@ const SECTION_CATEGORY: Record<ReportSectionId, AuditScoreCategory> = {
   mobile: 'mobile',
   security: 'security',
   'structured-data': 'structuredData',
+  accessibility: 'accessibility',
 };
 
 const SEVERITY_POINTS: Record<AuditSeverity, number> = {
@@ -79,6 +82,7 @@ const DEFAULT_MEASURED: AuditScoreCategory[] = [
   'performance',
   'security',
   'structuredData',
+  'accessibility',
 ];
 
 function normalizedIssueKey(issue: ResourceAuditIssue) {
@@ -223,6 +227,7 @@ export function toReportScoreRecord(result: TransparentAuditScore) {
     mobile: result.categories.mobile.score,
     security: result.categories.security.score,
     structuredData: result.categories.structuredData.score,
+    accessibility: result.categories.accessibility.score,
     deductions: result.deductions,
     measuredChecks: result.measuredChecks,
     unavailableChecks: result.unavailableChecks,

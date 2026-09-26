@@ -25,6 +25,7 @@ type WorkflowPatch = {
   notes?: string;
   dueAt?: string | null;
   priorityOverride?: FindingPriorityOverride | null;
+  assignedToSelf?: boolean;
 };
 
 const MIGRATION_PREFIX = 'crawlio_finding_workflow_migrated_v1:';
@@ -40,6 +41,7 @@ function localRecord(auditId: string, key: string, status: FindingWorkflowStatus
     priorityOverride: null,
     notes,
     dueAt: null,
+    assignedTo: null,
     resolvedAt: null,
     resolvedBy: null,
     createdAt: timestamp,
@@ -63,6 +65,7 @@ async function saveRemoteRecord(auditId: string, key: string, current: FindingWo
       notes: patch.notes ?? current?.notes ?? '',
       dueAt: patch.dueAt === undefined ? current?.dueAt ?? null : patch.dueAt,
       priorityOverride: patch.priorityOverride === undefined ? current?.priorityOverride ?? null : patch.priorityOverride,
+      assignedToSelf: patch.assignedToSelf === undefined ? Boolean(current?.assignedTo) : patch.assignedToSelf,
       expectedVersion: current && current.version > 0 ? current.version : undefined,
     }),
   });
@@ -161,6 +164,7 @@ export function useFindingWorkflow(auditId: string, issues: ResourceAuditIssue[]
     const optimistic = {
       ...(current || localRecord(auditId, key, 'not_started')),
       ...patch,
+      assignedTo: patch.assignedToSelf === undefined ? current?.assignedTo ?? null : patch.assignedToSelf ? 'pending-self' : null,
       notes: String(patch.notes ?? current?.notes ?? '').slice(0, 2000),
       updatedAt: new Date().toISOString(),
     } as FindingWorkflowRecord;

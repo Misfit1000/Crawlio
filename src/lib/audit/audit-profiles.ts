@@ -126,6 +126,7 @@ export function isSeoIssueAllowedForProfile(profile: AuditProfile, issue: { cate
     category.includes('robots') ||
     category.includes('sitemap') ||
     category.includes('security') ||
+    category.includes('accessibility') ||
     id.includes('title') ||
     id.includes('meta') ||
     id.includes('h1') ||

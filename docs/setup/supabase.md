@@ -5,7 +5,7 @@
 1. Create a Supabase project.
 2. Copy the project URL and anon key for the frontend.
 3. Copy the service role key for the API and worker only.
-4. Apply every SQL file in `supabase/migrations/` in numeric order through `021_project_growth_workflows.sql`. Never rewrite an applied migration.
+4. Apply every SQL file in `supabase/migrations/` in numeric order through `023_product_maturity.sql`. Never rewrite an applied migration.
 
 ## Frontend Environment
 

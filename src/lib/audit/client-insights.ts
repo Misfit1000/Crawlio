@@ -4,7 +4,7 @@ import { isCompletedAuditStatus } from './audit-time';
 import { findingWorkflowKey, type FindingWorkflowStatus } from './finding-workflow';
 
 export type ChecklistStatus = FindingWorkflowStatus;
-export type IssueBucket = 'all' | 'seo' | 'technical' | 'security';
+export type IssueBucket = 'all' | 'seo' | 'technical' | 'accessibility' | 'security';
 
 export interface AuditHistoryEntry {
   auditId: string;
@@ -74,6 +74,7 @@ export function issueSignature(issue: Pick<ResourceAuditIssue, 'findingKey' | 't
 
 export function issueBucket(issue: Pick<ResourceAuditIssue, 'category' | 'title' | 'description'>): Exclude<IssueBucket, 'all'> {
   const text = `${issue.category} ${issue.title} ${issue.description}`.toLowerCase();
+  if (/accessibility|accessible name|assistive|aria|tabindex|landmark|page zoom/.test(text)) return 'accessibility';
   if (/security|https|header|cookie|csp|hsts|cors|mixed content|browser/.test(text)) return 'security';
   if (/status|redirect|sitemap|robots|canonical|index|crawl|performance|speed|mobile|schema/.test(text)) return 'technical';
   return 'seo';
@@ -87,6 +88,7 @@ export function buildIssueInsight(issue: ResourceAuditIssue): IssueInsight {
   let why = {
     seo: 'This can make the page harder to understand in search results and can reduce click quality.',
     technical: 'This can make the page harder for search engines to access, understand, or trust reliably.',
+    accessibility: 'This can make the page harder to understand or operate with a keyboard or assistive technology.',
     security: 'This can reduce browser-side protection signals and client trust, even though Crawlio only runs passive checks.',
   }[bucket];
 

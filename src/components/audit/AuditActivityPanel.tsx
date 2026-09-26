@@ -15,6 +15,7 @@ import {
   type ActivityPanelLayout,
   type ActivitySnap,
 } from '../../lib/ui/activity-layout';
+import { handleTabListKeyDown } from '../../lib/ui/keyboard';
 
 type EventFilter = 'all' | 'pages' | 'warnings';
 
@@ -280,7 +281,7 @@ export default function AuditActivityPanel({
 
           <div className="flex shrink-0 items-center gap-1 border-b border-border bg-[var(--surface-inset)] p-2" role="tablist" aria-label="Filter audit activity">
             {(['all', 'pages', 'warnings'] as EventFilter[]).map((value) => (
-              <button key={value} type="button" role="tab" aria-selected={filter === value} onClick={() => setFilter(value)} className={`min-h-9 rounded-md px-3 text-xs font-semibold capitalize ${filter === value ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{value}</button>
+              <button key={value} type="button" role="tab" aria-selected={filter === value} tabIndex={filter === value ? 0 : -1} onKeyDown={handleTabListKeyDown} onClick={() => setFilter(value)} className={`min-h-9 rounded-md px-3 text-xs font-semibold capitalize ${filter === value ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>{value}</button>
             ))}
             <span className="ml-auto pr-2 text-xs text-muted-foreground">{visibleEvents.length} shown</span>
           </div>

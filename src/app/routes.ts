@@ -1,6 +1,6 @@
 export type TabType = 'projects' | 'dashboard' | 'website-analyzer' | 'seo-audit' | 'seo-findings' | 'technical-seo' | 'crawlability' | 'performance' | 'pages' | 'audit-history' | 'security-audit' | 'rank-tracker' | 'imports' | 'reports' | 'settings' | 'admin-dashboard' | 'search-data';
 
-export type AuditWorkspaceSection = 'overview' | 'seo' | 'technical' | 'crawlability' | 'links' | 'performance' | 'security' | 'pages';
+export type AuditWorkspaceSection = 'overview' | 'seo' | 'technical' | 'crawlability' | 'links' | 'performance' | 'accessibility' | 'security' | 'pages';
 
 export const TAB_PATHS: Record<TabType, string> = {
   projects: '/app/projects',
@@ -31,6 +31,7 @@ const workspaceSectionTabs: Record<AuditWorkspaceSection, TabType> = {
   links: 'crawlability',
   performance: 'performance',
   security: 'security-audit',
+  accessibility: 'reports',
   pages: 'pages',
 };
 
@@ -46,7 +47,7 @@ export function tabForPath(pathname: string): TabType {
 }
 
 export function parseAuditWorkspacePath(pathname: string): { auditId: string; section: AuditWorkspaceSection } | null {
-  const match = pathname.match(/^\/app\/audits\/([^/]+)(?:\/(overview|seo|technical|crawlability|links|performance|security|pages))?\/?$/);
+  const match = pathname.match(/^\/app\/audits\/([^/]+)(?:\/(overview|seo|technical|crawlability|links|performance|accessibility|security|pages))?\/?$/);
   if (!match) return null;
   if (match[1] === 'new' || match[1] === 'history') return null;
   try {

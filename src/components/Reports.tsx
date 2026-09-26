@@ -18,6 +18,7 @@ import {
   Share2,
   ShieldCheck,
   SlidersHorizontal,
+  Accessibility,
   Wrench,
 } from 'lucide-react';
 import { API_ROUTES } from '../lib/api/routes';
@@ -32,6 +33,8 @@ import {
 import {
   REPORT_SECTIONS,
   extractReportScores,
+  findingEffort,
+  findingImpact,
   formatBytes,
   formatMilliseconds,
   groupRecommendations,
@@ -99,6 +102,7 @@ function whyThisMatters(section: ReportSectionId) {
     mobile: 'Mobile-readiness signals affect how comfortably visitors can use the page on narrow screens.',
     security: 'Browser protection settings reduce avoidable client-side risk. Crawlio records observations only and does not attempt exploitation.',
     'structured-data': 'Structured and social metadata can improve how public page information is interpreted and previewed.',
+    accessibility: 'Accessible names, landmarks, language, and predictable focus structure make pages easier to use with assistive technology.',
   };
   return copy[section];
 }
@@ -115,6 +119,14 @@ function severityCounts(data: ResourceAuditLiveData | null, fallback: AuditHisto
 
 function groupRepresentative(group: RecommendationGroup, issues: ResourceAuditIssue[]) {
   return issues.find((issue) => issue.title === group.title && issue.category === group.category) || null;
+}
+
+function findingPresentation(group: RecommendationGroup) {
+  return {
+    impactLabel: findingImpact({ severity: group.severity, affectedPageCount: Math.max(1, group.affectedCount) }).label,
+    effortLabel: findingEffort(group).label,
+    confidenceLabel: group.evidence.length ? 'Direct evidence' : 'Limited evidence',
+  };
 }
 
 function matchesStatus(page: ResourceAuditPage, filter: PageStatusFilter) {
@@ -396,6 +408,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
               <CategoryGradeCard label="Crawlability" score={scores.crawlability} description="Discovery and index signals." icon={<Globe2 className="h-4 w-4" />} />
               <CategoryGradeCard label="Performance" score={scores.performance} description="Observed response and size signals." icon={<BarChart3 className="h-4 w-4" />} />
               <CategoryGradeCard label="Passive Security Review" score={scores.security} description="Non-invasive public observations." icon={<ShieldCheck className="h-4 w-4" />} />
+              <CategoryGradeCard label="Accessibility signals" score={scores.accessibility} description="Deterministic HTML observations, not certification." icon={<Accessibility className="h-4 w-4" />} />
               <CategoryGradeCard label="Mobile usability" score={null} description="Not scored by this audit." icon={<MonitorSmartphone className="h-4 w-4" />} />
             </div>
           </SurfaceCard>
@@ -435,7 +448,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
             {recommendations.slice(0, 5).map((group) => {
               const representative = groupRepresentative(group, issues);
               const insight = representative ? buildIssueInsight(representative) : null;
-              return <FindingRow key={group.id} severity={group.severity} category={group.category} title={group.title} description={group.description} whyItMatters={insight?.whyItMatters || whyThisMatters(group.section)} recommendation={group.recommendation} evidence={group.evidence} affectedUrls={group.affectedUrls} />;
+              return <FindingRow key={group.id} severity={group.severity} category={group.category} title={group.title} description={group.description} whyItMatters={insight?.whyItMatters || whyThisMatters(group.section)} recommendation={group.recommendation} evidence={group.evidence} affectedUrls={group.affectedUrls} {...findingPresentation(group)} />;
             })}
           </div>
         ) : (
@@ -468,13 +481,14 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
             {section.id === 'performance' && <p className="rounded-lg border border-border bg-muted/25 p-3 text-xs leading-5 text-muted-foreground">These are audit-time response and payload observations, not Google Core Web Vitals field data.</p>}
             {section.id === 'mobile' && <p className="rounded-lg border border-border bg-muted/25 p-3 text-xs leading-5 text-muted-foreground">The current audit engine does not produce a mobile usability score or field-device metrics. Any collected viewport findings are listed below; otherwise this section remains explicitly unmeasured.</p>}
             {section.id === 'security' && <p className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-3 text-xs leading-5 text-muted-foreground">Crawlio checks public HTTPS and browser protection signals only. It does not scan ports, submit attack payloads, brute-force credentials, or attempt exploitation.</p>}
+            {section.id === 'accessibility' && <p className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 text-xs leading-5 text-muted-foreground">These deterministic HTML checks can identify common barriers, but they are not a WCAG certification. Keyboard behavior, screen-reader output, contrast in rendered states, and task usability still require human testing.</p>}
 
             {sectionFindings.length ? (
               <div className="grid gap-3">
                 {sectionFindings.map((group) => {
                   const representative = groupRepresentative(group, issues);
                   const insight = representative ? buildIssueInsight(representative) : null;
-                  return <FindingRow key={group.id} severity={group.severity} category={group.category} title={group.title} description={group.description} whyItMatters={insight?.whyItMatters || whyThisMatters(group.section)} recommendation={group.recommendation} evidence={group.evidence} affectedUrls={group.affectedUrls} />;
+                  return <FindingRow key={group.id} severity={group.severity} category={group.category} title={group.title} description={group.description} whyItMatters={insight?.whyItMatters || whyThisMatters(group.section)} recommendation={group.recommendation} evidence={group.evidence} affectedUrls={group.affectedUrls} {...findingPresentation(group)} />;
                 })}
               </div>
             ) : (
@@ -502,8 +516,9 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
 
           {pages.length ? (
             <>
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto" role="region" aria-label="Audited page results" tabIndex={0}>
                 <table className="suite-table min-w-[900px]">
+                  <caption className="sr-only">Audited pages with status, observed response time, HTML size, crawl depth, and finding count.</caption>
                   <thead><tr><th>Page</th><th>Status</th><th>Response</th><th>HTML size</th><th>Depth</th><th>Fixes</th></tr></thead>
                   <tbody>
                     {visiblePages.map((page) => (

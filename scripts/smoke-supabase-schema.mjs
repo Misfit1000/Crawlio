@@ -13,6 +13,7 @@ const productionMigrationSql = readFileSync(resolve('supabase/migrations/011_pro
 const admissionLockdownSql = readFileSync(resolve('supabase/migrations/016_server_only_audit_admission.sql'), 'utf8');
 const fullAuditLimitSql = readFileSync(resolve('supabase/migrations/018_full_audit_50_page_limit.sql'), 'utf8');
 const workflowOperationsSql = readFileSync(resolve('supabase/migrations/019_finding_workflow_and_operations.sql'), 'utf8');
+const productMaturitySql = readFileSync(resolve('supabase/migrations/023_product_maturity.sql'), 'utf8');
 
 for (const table of ['audits', 'audit_events', 'audit_pages', 'audit_issues', 'audit_reports']) {
   assert.match(sql, new RegExp(`create table if not exists public\\.${table}\\b`, 'i'), `${table} table is missing`);
@@ -78,6 +79,19 @@ assert.match(workflowOperationsSql, /set search_path = ''/i, 'finding validation
 assert.match(workflowOperationsSql, /audit owners can update finding workflow/i, 'finding workflow owner update policy is missing');
 assert.match(workflowOperationsSql, /operations_alert_state.*no anon\/authenticated policies/is, 'service-only alert-state policy note is missing');
 assert.match(workflowOperationsSql, /api_schema_version = 13/i, 'Database compatibility version must advance to 13');
+for (const table of ['project_data_imports', 'project_data_rows']) {
+  assert.match(productMaturitySql, new RegExp(`create table if not exists public\\.${table}\\b`, 'i'), `${table} migration is missing`);
+  assert.match(productMaturitySql, new RegExp(`alter table public\\.${table} enable row level security`, 'i'), `${table} RLS is missing`);
+  assert.match(productMaturitySql, new RegExp(`revoke all on public\\.${table} from anon, authenticated`, 'i'), `${table} must remain server-only`);
+}
+for (const fn of ['audit_history_summaries', 'project_audit_summaries', 'validate_finding_workflow_assignment']) {
+  assert.match(productMaturitySql, new RegExp(`(?:create or replace )?function public\\.${fn}\\b`, 'i'), `${fn} function is missing`);
+}
+for (const column of ['checkpoint_pages_crawled', 'checkpoint_updated_at', 'checkpoint_state', 'assigned_to']) {
+  assert.match(productMaturitySql, new RegExp(`add column if not exists ${column}\\b`, 'i'), `${column} product-maturity column is missing`);
+}
+assert.match(productMaturitySql, /set search_path = ''/i, 'security-sensitive migration functions must use an empty search path');
+assert.match(productMaturitySql, /api_schema_version = 14/i, 'Database compatibility version must advance to 14');
 for (const bannedTerm of ['fire' + 'base', 'fire' + 'store']) {
   assert.equal(sql.toLowerCase().includes(bannedTerm), false, `migration should not contain ${bannedTerm} references`);
 }

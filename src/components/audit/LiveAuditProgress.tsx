@@ -464,7 +464,7 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
         unavailableChecks={liveScore.unavailableCount}
       />
       {data.finalReport && <DomainStrengthCard domain={audit.hostname} auditScores={data.finalReport.scores} />}
-      <AuditPageMap pages={data.latestPages} issues={data.latestIssues} />
+      <AuditPageMap pages={data.latestPages} issues={data.latestIssues} audit={audit} />
       <PriorityRecommendations issues={data.latestIssues} statuses={checklist} onViewFindings={() => document.getElementById('finding-workspace-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
       <SurfaceCard className="p-5 md:p-6">
         {livePresentation && <CurrentWorkCard presentation={livePresentation} connection={connection} now={now} onViewReport={onOpenWorkspace} />}
@@ -634,8 +634,9 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
         <div className="p-4 border-b border-border">
           <h3 className="font-semibold">Pages checked</h3>
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto" role="region" aria-label="Pages checked during this audit" tabIndex={0}>
           <table className="w-full text-sm">
+            <caption className="sr-only">Pages checked with response status, URL, response time, size, title, word count, crawl level, and finding count.</caption>
             <thead className="bg-muted/40 text-muted-foreground">
               <tr>
                 <th className="text-left p-3">Status</th>

@@ -15,6 +15,7 @@ import { run as checkTechnical } from './technical';
 import { run as checkOnPage } from './on-page';
 import { run as checkContent } from './content';
 import { run as checkLinks } from './links';
+import { run as checkAccessibility } from './accessibility';
 
 type CheckRunner = (pageData: any, auditId?: string) => AuditIssue[];
 
@@ -34,6 +35,7 @@ export const CHECKS: Array<{ id: string; title: string; run: CheckRunner }> = [
   { id: 'on-page', title: 'On-page', run: checkOnPage },
   { id: 'content', title: 'Content', run: checkContent },
   { id: 'links', title: 'Links', run: checkLinks },
+  { id: 'accessibility', title: 'Automated accessibility signals', run: checkAccessibility },
 ];
 
 export interface UnavailableAuditCheck {

@@ -70,7 +70,7 @@ export default function App() {
     }
   })();
   const requestedLiveSection = new URLSearchParams(routerLocation.search).get('section');
-  const liveAuditSection: AuditWorkspaceSection = ['overview', 'seo', 'technical', 'crawlability', 'links', 'performance', 'security', 'pages'].includes(requestedLiveSection || '')
+  const liveAuditSection: AuditWorkspaceSection = ['overview', 'seo', 'technical', 'crawlability', 'links', 'performance', 'accessibility', 'security', 'pages'].includes(requestedLiveSection || '')
     ? requestedLiveSection as AuditWorkspaceSection
     : 'overview';
   const auditStartGuardRef = useRef(createAuditSubmitGuard());

@@ -195,6 +195,9 @@ export function FindingRow({
   evidence = [],
   affectedUrls = [],
   statusControl,
+  impactLabel,
+  effortLabel,
+  confidenceLabel,
 }: {
   severity: SeverityTone;
   category: string;
@@ -205,6 +208,9 @@ export function FindingRow({
   evidence?: string[];
   affectedUrls?: string[];
   statusControl?: React.ReactNode;
+  impactLabel?: string;
+  effortLabel?: string;
+  confidenceLabel?: string;
 }) {
   return (
     <details className="group rounded-xl border border-border bg-card open:border-accent/30">
@@ -214,6 +220,9 @@ export function FindingRow({
             <SeverityBadge severity={severity} />
             <span className="text-xs font-semibold text-muted-foreground">{category}</span>
             {affectedUrls.length > 0 && <span className="text-xs text-muted-foreground">{affectedUrls.length} affected page{affectedUrls.length === 1 ? '' : 's'}</span>}
+            {impactLabel && <span className="rounded-full border border-blue-500/20 bg-blue-500/8 px-2 py-0.5 text-[11px] font-semibold text-blue-700 dark:text-blue-200">{impactLabel}</span>}
+            {effortLabel && <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">{effortLabel}</span>}
+            {confidenceLabel && <span className="rounded-full border border-emerald-500/20 bg-emerald-500/8 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-200">{confidenceLabel}</span>}
           </div>
           <h3 className="mt-2 text-base font-semibold leading-6">{title}</h3>
           {description && <p className="mt-1 line-clamp-2 text-sm leading-6 text-muted-foreground">{description}</p>}
@@ -286,7 +295,7 @@ export function ProgressBar({
           <span className="text-foreground">{Math.round(safeValue)}%</span>
         </div>
       )}
-      <div className="h-2.5 overflow-hidden rounded-full bg-muted shadow-inner">
+      <div className="h-2.5 overflow-hidden rounded-full bg-muted shadow-inner" role="progressbar" aria-label={label || 'Progress'} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(safeValue)}>
         <div className={`h-full origin-left rounded-full ${colors[tone]} shadow-sm transition-transform duration-300 ease-out`} style={{ transform: `scaleX(${safeValue / 100})` }} />
       </div>
     </div>
@@ -361,6 +370,7 @@ export function SparklineChart({
 }) {
   const normalized = values.length > 1 ? values : [0, values[0] || 0];
   const max = Math.max(1, ...normalized);
+  const latest = normalized.at(-1) || 0;
   const points = normalized.map((value, index) => {
     const x = (index / Math.max(1, normalized.length - 1)) * 100;
     const y = 42 - (Math.max(0, value) / max) * 34;
@@ -376,7 +386,7 @@ export function SparklineChart({
         </div>
         {valueLabel && <div className="font-mono text-sm font-bold text-accent">{valueLabel}</div>}
       </div>
-      <svg viewBox="0 0 100 46" role="img" aria-label={label} className="mt-3 h-24 w-full overflow-visible">
+      <svg viewBox="0 0 100 46" role="img" aria-label={`${label}. ${normalized.length} observations. Latest value ${latest}. Maximum value ${max}.`} className="mt-3 h-24 w-full overflow-visible">
         <defs>
           <linearGradient id="auditSparkFill" x1="0" x2="0" y1="0" y2="1">
             <stop offset="0%" stopColor="currentColor" stopOpacity="0.24" />
@@ -392,20 +402,24 @@ export function SparklineChart({
 
 export function MetricBarChart({
   items,
+  title = 'Findings by priority',
+  description = 'Counts update as checks complete.',
 }: {
   items: Array<{ label: string; value: number; color: string }>;
+  title?: string;
+  description?: string;
 }) {
   const max = Math.max(1, ...items.map((item) => item.value));
   return (
     <div className="space-y-3 rounded-xl border border-border bg-background/75 p-4">
       <div>
-        <div className="text-sm font-semibold">Findings by priority</div>
-        <div className="text-xs text-muted-foreground">Counts update as checks complete.</div>
+        <div className="text-sm font-semibold">{title}</div>
+        <div className="text-xs text-muted-foreground">{description}</div>
       </div>
       {items.map((item) => (
         <div key={item.label} className="grid grid-cols-[76px_1fr_30px] items-center gap-3 text-xs">
           <span className="font-medium text-muted-foreground">{item.label}</span>
-          <span className="h-2.5 overflow-hidden rounded-full bg-muted">
+          <span className="h-2.5 overflow-hidden rounded-full bg-muted" role="meter" aria-label={`${item.label}: ${item.value}`} aria-valuemin={0} aria-valuemax={max} aria-valuenow={item.value}>
             <span className={`block h-full rounded-full transition-all duration-700 ${item.color}`} style={{ width: `${(item.value / max) * 100}%` }} />
           </span>
           <span className="text-right font-mono font-bold">{item.value}</span>

@@ -95,4 +95,4 @@ The plans page edits `plan_limits`:
 - priority
 - export/PDF/white-label/embed/API flags
 
-Run every migration through `021_project_growth_workflows.sql` before using the complete panel.
+Run every migration through `023_product_maturity.sql` before using the complete panel.

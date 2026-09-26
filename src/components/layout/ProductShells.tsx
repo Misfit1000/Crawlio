@@ -1,9 +1,52 @@
 import { useState, type ReactNode } from 'react';
-import { ArrowRight, LogOut, Menu, User, X } from 'lucide-react';
+import { ArrowRight, ChevronRight, LogOut, Menu, User, X } from 'lucide-react';
 import { BrandMark, ThemeToggle } from '../ui/visual-system';
 import { BRAND } from '../../lib/brand';
+import { Link, useLocation } from '../../app/router';
 
 type Theme = 'light' | 'dark';
+
+const workspaceLabels: Record<string, string> = {
+  '/app': 'Overview',
+  '/app/projects': 'Projects',
+  '/app/audits/new': 'Start audit',
+  '/app/audits/history': 'Audit history',
+  '/app/reports': 'Reports',
+  '/app/reports/seo': 'SEO findings',
+  '/app/reports/technical': 'Technical SEO',
+  '/app/reports/crawlability': 'Crawlability',
+  '/app/reports/performance': 'Performance',
+  '/app/reports/pages': 'Pages',
+  '/app/reports/security': 'Passive security',
+  '/app/imports': 'Data imports',
+  '/app/rankings': 'Rankings',
+  '/app/search-data': 'Search data',
+  '/app/settings': 'Settings',
+};
+
+function WorkspaceBreadcrumbs() {
+  const { pathname } = useLocation();
+  const auditMatch = pathname.match(/^\/app\/audits\/[^/]+\/(overview|seo|technical|crawlability|links|performance|accessibility|security|pages)$/);
+  const adminPath = pathname === '/admin' || pathname.startsWith('/admin/');
+  const current = auditMatch
+    ? auditMatch[1].replace(/-/g, ' ')
+    : adminPath
+      ? (pathname.split('/')[2] || 'overview').replace(/-/g, ' ')
+      : workspaceLabels[pathname] || 'Workspace';
+  const rootPath = adminPath ? '/admin' : '/app';
+  const rootLabel = adminPath ? 'Admin' : 'Workspace';
+  const auditTrail = auditMatch ? [{ label: 'Audits', path: '/app/audits/history' }, { label: current, path: null }] : [];
+  const trail = auditTrail.length ? auditTrail : [{ label: current, path: null }];
+  if (pathname === rootPath) return null;
+  return (
+    <nav aria-label="Breadcrumb" className="mb-5 overflow-x-auto text-xs text-muted-foreground">
+      <ol className="flex min-w-max items-center gap-1.5">
+        <li><Link to={rootPath} className="rounded px-1 py-1 font-semibold hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">{rootLabel}</Link></li>
+        {trail.map((item) => <li key={`${item.label}-${item.path || 'current'}`} className="flex items-center gap-1.5"><ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />{item.path ? <Link to={item.path} className="rounded px-1 py-1 font-semibold hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">{item.label}</Link> : <span className="px-1 py-1 capitalize text-foreground" aria-current="page">{item.label}</span>}</li>)}
+      </ol>
+    </nav>
+  );
+}
 
 export function MarketingShell({
   children,
@@ -122,7 +165,7 @@ export function WorkspaceShell({
           )}
         </div>
       </header>
-      <div className="flex min-h-0 flex-1 overflow-hidden">{sidebar}<main id="workspace-content" className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain" tabIndex={-1}><div className="suite-page">{children}</div></main></div>
+      <div className="flex min-h-0 flex-1 overflow-hidden">{sidebar}<main id="workspace-content" className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain" tabIndex={-1}><div className="suite-page"><WorkspaceBreadcrumbs />{children}</div></main></div>
     </div>
   );
 }

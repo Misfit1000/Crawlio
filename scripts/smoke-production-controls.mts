@@ -7,7 +7,7 @@ const root = new URL('../', import.meta.url);
 const read = (file: string) => readFile(new URL(file, root), 'utf8');
 const migration = await read('supabase/migrations/011_production_robustness.sql');
 const admissionLockdownMigration = await read('supabase/migrations/016_server_only_audit_admission.sql');
-const schemaHeadMigration = await read('supabase/migrations/019_finding_workflow_and_operations.sql');
+const schemaHeadMigration = await read('supabase/migrations/023_product_maturity.sql');
 const api = await read('src/api/index.ts');
 const controls = await read('src/lib/api/production-controls.ts');
 

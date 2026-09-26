@@ -38,14 +38,50 @@ test.describe('public product journeys', () => {
   });
 
   test('homepage has no serious automated accessibility violations', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/');
-    const results = await new AxeBuilder({ page }).disableRules(['color-contrast']).analyze();
+    const results = await new AxeBuilder({ page }).analyze();
     const serious = results.violations.filter((violation) => ['serious', 'critical'].includes(violation.impact || ''));
     expect(serious, serious.map((item) => `${item.id}: ${item.help}`).join('\n')).toEqual([]);
+  });
+
+  test('quick navigation preserves protected routes from the keyboard', async ({ page }) => {
+    await page.goto('/');
+    await page.keyboard.press('Control+k');
+    const dialog = page.getByRole('dialog', { name: 'Quick navigation' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('combobox').fill('Settings');
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL('/app/settings');
+    await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeFocused();
+    await expect(dialog).toHaveCount(0);
   });
 });
 
 test.describe('guest audit integration', () => {
+  test('audit infographic pauses and settles when the audit completes', async ({ page }) => {
+    let completed = false;
+    await mockBlogApi(page);
+    await page.route('**/api/tools/audit/start', (route) => route.fulfill({ json: { success: true, data: { auditId: AUDIT_ID, status: 'running', pageLimit: 5 } } }));
+    for (const endpoint of ['status', 'result']) {
+      await page.route(`**/api/tools/audit/${endpoint}/${AUDIT_ID}**`, (route) => route.fulfill({ json: { success: true, data: auditSnapshot(completed ? 'completed' : 'running') } }));
+    }
+    await page.goto('/');
+    await page.getByLabel('Website or domain').fill('example.com');
+    await page.getByRole('button', { name: 'Start audit', exact: true }).click();
+    const map = page.getByRole('region', { name: 'Your website, page by page' });
+    await map.scrollIntoViewIfNeeded();
+    await expect(map).toHaveAttribute('data-active', 'true');
+    await map.getByRole('button', { name: 'Pause animation' }).click();
+    await expect(map).toHaveAttribute('data-active', 'false');
+    await map.getByRole('button', { name: 'Resume animation' }).click();
+    await expect(map).toHaveAttribute('data-active', 'true');
+    completed = true;
+    await expect(map).toContainText('Collected evidence', { timeout: 12000 });
+    await expect(map).toHaveAttribute('data-active', 'false');
+    await expect(map.getByRole('button', { name: 'Pause animation' })).toHaveCount(0);
+  });
+
   test('double submit creates one audit and terminal report survives refresh', async ({ page }) => {
     let starts = 0;
     let statusCalls = 0;
@@ -83,6 +119,12 @@ test.describe('guest audit integration', () => {
     await expect(domainStrength).toContainText('420');
     await expect(domainStrength).not.toContainText('Outside top million');
     await expect(page.getByText('Checking your site')).toHaveCount(0);
+    const evidenceMap = page.getByRole('region', { name: 'Your website, page by page' });
+    await expect(evidenceMap).toContainText('Collected evidence');
+    await expect(evidenceMap).toHaveAttribute('data-active', 'false');
+    await expect(evidenceMap.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '40');
+    await evidenceMap.scrollIntoViewIfNeeded();
+    await evidenceMap.screenshot({ path: 'test-results/audit-evidence-desktop.png' });
     await expect(expectNoHorizontalOverflow(page)).resolves.toBe(true);
 
     await page.setViewportSize({ width: 390, height: 844 });
@@ -91,6 +133,9 @@ test.describe('guest audit integration', () => {
     await expect(expectNoHorizontalOverflow(page)).resolves.toBe(true);
     await page.getByRole('button', { name: 'Switch to dark mode' }).click();
     await expect(page.locator('html')).toHaveClass(/dark/);
+
+    await evidenceMap.scrollIntoViewIfNeeded();
+    await evidenceMap.screenshot({ path: 'test-results/audit-evidence-mobile-dark.png' });
 
     await page.reload();
     await expect(page.getByText('Report ready', { exact: true }).first()).toBeVisible();

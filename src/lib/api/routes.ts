@@ -46,6 +46,8 @@ export const API_ROUTES = {
   clusters: "/api/tools/clusters",
   contentBrief: "/api/tools/content-brief",
   competitorGap: "/api/tools/competitor-gap",
+  imports: '/api/tools/imports',
+  importRows: (id: string) => `/api/tools/imports/${encodeURIComponent(id)}/rows`,
   blogPosts: "/api/tools/blog/posts",
   blogPost: (slug: string) => `/api/tools/blog/posts/${encodeURIComponent(slug)}`,
   adminBlogPosts: "/api/tools/admin/blog/posts",

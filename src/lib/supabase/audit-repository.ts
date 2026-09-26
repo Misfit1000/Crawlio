@@ -206,6 +206,9 @@ function toAuditDocument(row: DbRow | null | undefined): ResourceAuditDocument |
     deletedAt: row.deleted_at ?? null,
     recoveryAttempts: row.recovery_attempts ?? 0,
     lastRecoveredAt: row.last_recovered_at ?? null,
+    checkpointPagesCrawled: row.checkpoint_pages_crawled ?? 0,
+    checkpointUpdatedAt: row.checkpoint_updated_at ?? null,
+    checkpointState: row.checkpoint_state ?? null,
   };
 }
 
@@ -305,6 +308,9 @@ function auditPatchToRow(patch: Partial<ResourceAuditDocument>) {
   if ('deletedAt' in patch) row.deleted_at = patch.deletedAt;
   if ('recoveryAttempts' in patch) row.recovery_attempts = patch.recoveryAttempts;
   if ('lastRecoveredAt' in patch) row.last_recovered_at = patch.lastRecoveredAt;
+  if ('checkpointPagesCrawled' in patch) row.checkpoint_pages_crawled = patch.checkpointPagesCrawled;
+  if ('checkpointUpdatedAt' in patch) row.checkpoint_updated_at = patch.checkpointUpdatedAt;
+  if ('checkpointState' in patch) row.checkpoint_state = patch.checkpointState;
   return row;
 }
 

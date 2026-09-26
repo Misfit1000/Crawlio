@@ -1,7 +1,13 @@
-import React, { useEffect, useState, useRef } from "react";
-import { Database, CheckCircle2, AlertTriangle, FileSpreadsheet, Link2, MousePointerClick, Search, Upload } from "lucide-react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
+import { Database, CheckCircle2, FileSpreadsheet, Link2, Loader2, MousePointerClick, Search, Upload } from "lucide-react";
 import Papa from 'papaparse';
 import { Notice, PageHeader } from './ui/page-system';
+import { useAuth } from '../contexts/AuthContext';
+import { API_ROUTES } from '../lib/api/routes';
+import { getAuthHeaders } from '../lib/api/auth-headers';
+import { safeJsonFetch } from '../lib/http/safe-json';
+import type { ProjectOverviewResponse } from '../lib/projects/types';
+import type { ImportSourceKind, ProjectDataImportSummary } from '../lib/imports/types';
 
 function pick(row: Record<string, any>, names: string[]) {
   const entries = Object.entries(row || {});
@@ -20,10 +26,16 @@ function sumRows(rows: any[], names: string[]) {
 }
 
 export default function Imports() {
+  const { user } = useAuth();
   const [keywordData, setKeywordData] = useState<any[]>([]);
   const [backlinkData, setBacklinkData] = useState<any[]>([]);
   const [gscData, setGscData] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [remoteImports, setRemoteImports] = useState<ProjectDataImportSummary[]>([]);
+  const [projects, setProjects] = useState<ProjectOverviewResponse['projects']>([]);
+  const [projectId, setProjectId] = useState('');
+  const [syncing, setSyncing] = useState<ImportSourceKind | 'loading' | null>(null);
   const kwFileRef = useRef<HTMLInputElement>(null);
   const blFileRef = useRef<HTMLInputElement>(null);
   const gscFileRef = useRef<HTMLInputElement>(null);
@@ -42,7 +54,50 @@ export default function Imports() {
     loadStored('seo_backlink_data', setBacklinkData);
   }, []);
 
-  const handleCsv = (e: React.ChangeEvent<HTMLInputElement>, setter: any, storageKey: string) => {
+  const refreshRemote = useCallback(async () => {
+    if (!user) return;
+    setSyncing('loading');
+    const headers = await getAuthHeaders();
+    const [importsResponse, projectsResponse] = await Promise.all([
+      safeJsonFetch<any>(API_ROUTES.imports, { headers, credentials: 'same-origin' }),
+      safeJsonFetch<any>(API_ROUTES.projectsOverview, { headers, credentials: 'same-origin' }),
+    ]);
+    if (importsResponse.success) setRemoteImports(importsResponse.data.data?.imports || importsResponse.data.imports || []);
+    if (projectsResponse.success) {
+      const next = (projectsResponse.data.data || projectsResponse.data) as ProjectOverviewResponse;
+      setProjects(next.projects.filter((project) => project.id));
+      setProjectId((current) => current || next.projects.find((project) => project.id)?.id || '');
+    }
+    setSyncing(null);
+  }, [user]);
+
+  useEffect(() => { void refreshRemote(); }, [refreshRemote]);
+
+  const syncImport = async (sourceKind: ImportSourceKind, fileName: string, rows: any[]) => {
+    if (!user) {
+      setSyncMessage('Saved on this device. Sign in before importing to sync data across devices.');
+      return;
+    }
+    if (rows.length > 5_000) {
+      setSyncMessage('The full import is available on this device. Account sync stores up to 5,000 rows; use a smaller export to sync it.');
+      return;
+    }
+    setSyncing(sourceKind);
+    const response = await safeJsonFetch<any>(API_ROUTES.imports, {
+      method: 'POST',
+      headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+      credentials: 'same-origin',
+      body: JSON.stringify({ sourceKind, fileName, projectId: projectId || null, rows }),
+    });
+    if (response.success === false) setSyncMessage(`Saved on this device, but account sync failed: ${response.error}`);
+    else {
+      setSyncMessage(`Saved ${rows.length.toLocaleString()} rows to your account${projectId ? ' and selected project' : ''}.`);
+      await refreshRemote();
+    }
+    setSyncing(null);
+  };
+
+  const handleCsv = (e: React.ChangeEvent<HTMLInputElement>, setter: any, storageKey: string, sourceKind: ImportSourceKind) => {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = '';
@@ -64,12 +119,32 @@ export default function Imports() {
             localStorage.setItem(storageKey, JSON.stringify(results.data));
             setter(results.data);
             setError(null);
+            void syncImport(sourceKind, file.name, results.data);
           } catch {
             setError('The browser could not store this CSV. Clear older imports or use a smaller export. Your previous data was kept.');
           }
         }
       }
     });
+  };
+
+  const latestRemote = (sourceKind: ImportSourceKind) => remoteImports.find((item) => (
+    item.sourceKind === sourceKind
+    && (projectId ? item.projectId === projectId : item.projectId === null)
+  ));
+  const loadSynced = async (sourceKind: ImportSourceKind, setter: (rows: any[]) => void, storageKey: string) => {
+    const batch = latestRemote(sourceKind);
+    if (!batch) return;
+    setSyncing(sourceKind);
+    const response = await safeJsonFetch<any>(API_ROUTES.importRows(batch.id), { headers: await getAuthHeaders(), credentials: 'same-origin' });
+    if (response.success === false) setError(response.error);
+    else {
+      const rows = response.data.data?.rows || response.data.rows || [];
+      setter(rows);
+      localStorage.setItem(storageKey, JSON.stringify(rows));
+      setSyncMessage(`Loaded ${rows.length.toLocaleString()} synced rows from ${batch.fileName}.`);
+    }
+    setSyncing(null);
   };
 
   const gscClicks = sumRows(gscData, ['clicks']);
@@ -86,10 +161,12 @@ export default function Imports() {
 
   return (
     <div className="space-y-9 animate-rise">
-      <PageHeader eyebrow="Data sources" icon={Database} title="Import real SEO data" description="Load your own search-performance, keyword-position, or backlink CSV exports. Imported rows stay in this browser unless you deliberately export them." />
+      <PageHeader eyebrow="Data sources" icon={Database} title="Import real SEO data" description="Load search-performance, keyword-position, or backlink CSV exports. Imports stay on this device for guests and can sync to the selected project when you are signed in." />
       <Notice tone="info" title="First-party and user-provided data only">Google Search Console and Bing data works only for sites you can verify or export. Crawlio does not invent search volume, rankings, traffic, backlinks, or authority metrics.</Notice>
 
       {error && <Notice tone="danger" title="Import failed">{error}</Notice>}
+      {syncMessage && <Notice tone={syncMessage.includes('failed') ? 'warning' : 'success'} title="Import storage">{syncMessage}</Notice>}
+      {user && <div className="trust-card flex flex-col gap-3 p-5 sm:flex-row sm:items-end sm:justify-between"><div><label htmlFor="import-project" className="text-sm font-semibold">Save imports to a project</label><p className="mt-1 text-xs text-muted-foreground">Synced imports are private to your account and expire after one year.</p></div><select id="import-project" className="suite-input max-w-sm" value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">Account library only</option>{projects.map((project) => <option key={project.id} value={project.id || ''}>{project.name}</option>)}</select></div>}
 
       <section aria-label="CSV import sources" className="grid grid-cols-1 gap-4 lg:grid-cols-3">
 
@@ -98,11 +175,12 @@ export default function Imports() {
           <FileSpreadsheet className="h-7 w-7 text-accent" aria-hidden="true" />
           <h2 className="mt-5 text-lg font-semibold">Search performance</h2>
           <p className="mt-2 flex-1 text-sm leading-6 text-muted-foreground">Queries and pages from your Google Search Console or Bing export.</p>
-          <input type="file" accept=".csv" className="hidden" ref={gscFileRef} onChange={e => handleCsv(e, setGscData, 'seo_gsc_data')} />
+          <input type="file" accept=".csv" className="hidden" ref={gscFileRef} onChange={e => handleCsv(e, setGscData, 'seo_gsc_data', 'search_performance')} />
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
             <span className="text-sm font-medium text-muted-foreground">{gscData.length ? <><CheckCircle2 className="mr-1 inline h-4 w-4 text-emerald-600" />{gscData.length.toLocaleString()} rows</> : 'No import yet'}</span>
             <button type="button" onClick={() => gscFileRef.current?.click()} className="quiet-button"><Upload className="h-4 w-4" />{gscData.length ? 'Replace CSV' : 'Import CSV'}</button>
           </div>
+          {latestRemote('search_performance') && <button type="button" className="mt-3 text-left text-xs font-semibold text-accent hover:underline" onClick={() => void loadSynced('search_performance', setGscData, 'seo_gsc_data')} disabled={syncing === 'search_performance'}>{syncing === 'search_performance' ? <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" /> : null}Load latest synced import</button>}
         </div>
 
         {/* Keywords Import */}
@@ -110,11 +188,12 @@ export default function Imports() {
           <Search className="h-7 w-7 text-accent" aria-hidden="true" />
           <h2 className="mt-5 text-lg font-semibold">Keyword positions</h2>
           <p className="mt-2 flex-1 text-sm leading-6 text-muted-foreground">Your keyword planner or ranking snapshot. Positions are shown only when present in the file.</p>
-          <input type="file" accept=".csv" className="hidden" ref={kwFileRef} onChange={e => handleCsv(e, setKeywordData, 'seo_keyword_data')} />
+          <input type="file" accept=".csv" className="hidden" ref={kwFileRef} onChange={e => handleCsv(e, setKeywordData, 'seo_keyword_data', 'keyword_positions')} />
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
             <span className="text-sm font-medium text-muted-foreground">{keywordData.length ? <><CheckCircle2 className="mr-1 inline h-4 w-4 text-emerald-600" />{keywordData.length.toLocaleString()} rows</> : 'No import yet'}</span>
             <button type="button" onClick={() => kwFileRef.current?.click()} className="quiet-button"><Upload className="h-4 w-4" />{keywordData.length ? 'Replace CSV' : 'Import CSV'}</button>
           </div>
+          {latestRemote('keyword_positions') && <button type="button" className="mt-3 text-left text-xs font-semibold text-accent hover:underline" onClick={() => void loadSynced('keyword_positions', setKeywordData, 'seo_keyword_data')} disabled={syncing === 'keyword_positions'}>{syncing === 'keyword_positions' ? <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" /> : null}Load latest synced import</button>}
         </div>
 
         {/* Backlinks Import */}
@@ -122,11 +201,12 @@ export default function Imports() {
           <Link2 className="h-7 w-7 text-accent" aria-hidden="true" />
           <h2 className="mt-5 text-lg font-semibold">Backlink evidence</h2>
           <p className="mt-2 flex-1 text-sm leading-6 text-muted-foreground">Source pages, targets, and anchors from a backlink export you provide.</p>
-          <input type="file" accept=".csv" className="hidden" ref={blFileRef} onChange={e => handleCsv(e, setBacklinkData, 'seo_backlink_data')} />
+          <input type="file" accept=".csv" className="hidden" ref={blFileRef} onChange={e => handleCsv(e, setBacklinkData, 'seo_backlink_data', 'backlink_evidence')} />
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
             <span className="text-sm font-medium text-muted-foreground">{backlinkData.length ? <><CheckCircle2 className="mr-1 inline h-4 w-4 text-emerald-600" />{backlinkData.length.toLocaleString()} rows</> : 'No import yet'}</span>
             <button type="button" onClick={() => blFileRef.current?.click()} className="quiet-button"><Upload className="h-4 w-4" />{backlinkData.length ? 'Replace CSV' : 'Import CSV'}</button>
           </div>
+          {latestRemote('backlink_evidence') && <button type="button" className="mt-3 text-left text-xs font-semibold text-accent hover:underline" onClick={() => void loadSynced('backlink_evidence', setBacklinkData, 'seo_backlink_data')} disabled={syncing === 'backlink_evidence'}>{syncing === 'backlink_evidence' ? <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" /> : null}Load latest synced import</button>}
         </div>
       </section>
 

@@ -4,7 +4,7 @@ import type {
   ResourceAuditPage,
 } from './resource-types';
 
-export type ReportScoreKey = 'overall' | 'seo' | 'technical' | 'crawlability' | 'internalLinks' | 'performance' | 'security' | 'structuredData';
+export type ReportScoreKey = 'overall' | 'seo' | 'technical' | 'crawlability' | 'internalLinks' | 'performance' | 'security' | 'structuredData' | 'accessibility';
 export type ReportSectionId =
   | 'on-page'
   | 'technical'
@@ -13,7 +13,8 @@ export type ReportSectionId =
   | 'performance'
   | 'mobile'
   | 'security'
-  | 'structured-data';
+  | 'structured-data'
+  | 'accessibility';
 
 export interface ReportScoreSnapshot {
   overall: number | null;
@@ -24,6 +25,7 @@ export interface ReportScoreSnapshot {
   performance: number | null;
   security: number | null;
   structuredData: number | null;
+  accessibility: number | null;
 }
 
 export interface RecommendationGroup {
@@ -48,6 +50,7 @@ export const REPORT_SECTIONS: Array<{ id: ReportSectionId; label: string; descri
   { id: 'mobile', label: 'Mobile and usability', description: 'Viewport and public mobile-readiness signals collected by the audit.' },
   { id: 'security', label: 'Passive Security Review', description: 'HTTPS and browser protection observations collected without attack testing.' },
   { id: 'structured-data', label: 'Structured data and social', description: 'Structured markup and public social preview metadata.' },
+  { id: 'accessibility', label: 'Accessibility signals', description: 'Deterministic HTML signals that affect assistive navigation and input.' },
 ];
 
 const SEVERITY_WEIGHT: Record<AuditSeverity, number> = {
@@ -74,6 +77,7 @@ export function extractReportScores(scores?: Record<string, unknown> | null): Re
     performance: finiteScore(scores?.performance),
     security: finiteScore(scores?.security),
     structuredData: finiteScore(scores?.structuredData),
+    accessibility: finiteScore(scores?.accessibility),
   };
 }
 
@@ -109,6 +113,7 @@ export function gradeRangeLabel(grade: ReturnType<typeof scoreToGrade>) {
 
 export function classifyReportSection(issue: Pick<ResourceAuditIssue, 'category' | 'title' | 'description'>): ReportSectionId {
   const text = `${issue.category} ${issue.title} ${issue.description}`.toLowerCase();
+  if (/accessibility|accessible name|assistive|aria|tabindex|main landmark|page zoom/.test(text)) return 'accessibility';
   if (/security|https|tls|certificate|header|cookie|csp|hsts|cors|mixed content|x-frame|referrer-policy|permissions-policy/.test(text)) return 'security';
   if (/internal link|broken link|orphan|anchor text|crawl depth/.test(text)) return 'internal-links';
   if (/performance|response time|slow|page size|payload|compression|cache|resource|latency/.test(text)) return 'performance';
@@ -170,6 +175,17 @@ export function findingImpact(issue: Pick<ResourceAuditIssue, 'severity' | 'affe
   if (value >= 6) return { label: 'High potential impact', detail: `Important finding affecting ${pages} ${pages === 1 ? 'page' : 'pages'}.` };
   if (value >= 4) return { label: 'Moderate potential impact', detail: `Meaningful finding affecting ${pages} ${pages === 1 ? 'page' : 'pages'}.` };
   return { label: 'Focused improvement', detail: `Limited measured reach across ${pages} ${pages === 1 ? 'page' : 'pages'}.` };
+}
+
+export function findingEffort(issue: Pick<ResourceAuditIssue, 'category' | 'title' | 'recommendation'>) {
+  const text = `${issue.category} ${issue.title} ${issue.recommendation}`.toLowerCase();
+  if (/server|infrastructure|render|javascript|architecture|template|redirect chain|content security policy|csp/.test(text)) {
+    return { label: 'Larger change', detail: 'Likely requires development, infrastructure, or shared-template work.' };
+  }
+  if (/title|description|heading|alt text|language|lang attribute|canonical|broken link|accessible name|form label|label element|unlabeled/.test(text)) {
+    return { label: 'Quick change', detail: 'Usually addressable in page content, metadata, or one component.' };
+  }
+  return { label: 'Moderate change', detail: 'Review the affected template or configuration before implementation.' };
 }
 
 export function observedPageMetrics(pages: ResourceAuditPage[]) {

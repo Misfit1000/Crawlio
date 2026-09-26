@@ -256,6 +256,7 @@ export default function Dashboard(props: DashboardProps) {
                   <CategoryGradeCard label="Crawlability" score={latestScores.crawlability} description="Search engine access signals." icon={<Layers className="h-4 w-4" />} />
                   <CategoryGradeCard label="Performance" score={latestScores.performance} description="Observed response and size signals." icon={<BarChart3 className="h-4 w-4" />} />
                   <CategoryGradeCard label="Passive Security Review" score={latestScores.security} description="Non-invasive browser protection checks." icon={<ShieldCheck className="h-4 w-4" />} />
+                  <CategoryGradeCard label="Accessibility signals" score={latestScores.accessibility} description="Automated HTML observations, not certification." icon={<Layers className="h-4 w-4" />} />
                   <CategoryGradeCard label="Mobile usability" score={null} description="Not scored by the current audit engine." icon={<Layers className="h-4 w-4" />} />
                 </div>
               ) : (
@@ -297,8 +298,9 @@ export default function Dashboard(props: DashboardProps) {
             <button type="button" onClick={props.onOpenReports} className="quiet-button">All reports</button>
           </div>
           {history.length ? (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto" role="region" aria-label="Recent audits" tabIndex={0}>
               <table className="suite-table min-w-[760px]">
+                <caption className="sr-only">Recent website audits with grade, page coverage, finding count, status, and last update.</caption>
                 <thead><tr><th>Website</th><th>Grade</th><th>Pages</th><th>Fixes</th><th>Status</th><th>Updated</th><th>Action</th></tr></thead>
                 <tbody>
                   {history.slice(0, 8).map((entry) => (

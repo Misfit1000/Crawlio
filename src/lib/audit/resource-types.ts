@@ -65,6 +65,9 @@ export interface ResourceAuditDocument {
   deletedAt?: string | null;
   recoveryAttempts?: number;
   lastRecoveredAt?: string | null;
+  checkpointPagesCrawled?: number;
+  checkpointUpdatedAt?: string | null;
+  checkpointState?: Record<string, unknown> | null;
 }
 
 export interface ResourceAuditEvent {

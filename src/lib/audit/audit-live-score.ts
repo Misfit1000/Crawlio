@@ -39,6 +39,7 @@ export function getAuditLiveScore(input: {
         onPage: score(scores.seo), technical: score(scores.technical), crawlability: score(scores.crawlability),
         internalLinks: score(scores.internalLinks), performance: score(scores.performance), mobile: score(scores.mobile),
         security: score(scores.security), structuredData: score(scores.structuredData),
+        accessibility: score(scores.accessibility),
       },
       scoreState: 'final',
       pagesAnalysed: audit.pagesCrawled,

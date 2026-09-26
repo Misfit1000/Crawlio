@@ -49,6 +49,7 @@ export function buildProvisionalAuditScore(input: {
       mobile: scores.mobile,
       security: scores.security,
       structuredData: scores.structuredData,
+      accessibility: scores.accessibility,
     },
     scoreState: 'provisional' as const,
     pagesAnalysed: input.pagesAnalysed,

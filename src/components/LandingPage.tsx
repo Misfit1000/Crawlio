@@ -20,6 +20,7 @@ import { createPublicPlanComparison, mergePublicPlanPresentation, type PublicPla
 import { loadPublicPlanProjection } from '../lib/plans/public-plan-client';
 import { StatusBadge } from './ui/visual-system';
 import { AuditConceptScene } from './ui/AuditConceptScene';
+import { handleTabListKeyDown } from '../lib/ui/keyboard';
 
 interface Props {
   onStartAudit: (url: string) => Promise<void> | void;
@@ -220,7 +221,7 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
         <div className="grid gap-10 xl:grid-cols-[0.7fr_1.3fr]">
           <div className="xl:sticky xl:top-28 xl:self-start"><p className="text-sm font-semibold text-accent">Audit coverage</p><h2 className="mt-2 text-3xl font-semibold leading-tight md:text-4xl">See what the audit actually checks.</h2><p className="mt-4 max-w-lg text-sm leading-7 text-muted-foreground">Coverage is organised around the decisions you need to make, not a wall of disconnected feature cards.</p>
             <div className="mt-7 grid gap-1 border-y border-border py-2" role="tablist" aria-label="Audit coverage categories">
-              {coverageGroups.map((group) => { const Icon = group.icon; const active = group.id === selectedCoverage.id; return <button key={group.id} type="button" role="tab" aria-selected={active} onClick={() => setActiveCoverage(group.id)} className={`flex min-h-12 items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold ${active ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}><Icon className="h-4 w-4" /><span className="flex-1">{group.label}</span><span className="text-xs tabular-nums opacity-80">{group.checks.length} checks</span></button>; })}
+              {coverageGroups.map((group) => { const Icon = group.icon; const active = group.id === selectedCoverage.id; return <button key={group.id} type="button" role="tab" aria-selected={active} tabIndex={active ? 0 : -1} onKeyDown={handleTabListKeyDown} onClick={() => setActiveCoverage(group.id)} className={`flex min-h-12 items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold ${active ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}><Icon className="h-4 w-4" /><span className="flex-1">{group.label}</span><span className="text-xs tabular-nums opacity-80">{group.checks.length} checks</span></button>; })}
             </div>
           </div>
           <div className="overflow-hidden rounded-xl border border-border bg-card">

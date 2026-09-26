@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Database, Download, Loader2, Save, Settings as SettingsIcon, ShieldCheck, Trash2, UserRound } from 'lucide-react';
+import { Accessibility, Database, Download, Loader2, RotateCcw, Save, Settings as SettingsIcon, ShieldCheck, Trash2, UserRound } from 'lucide-react';
 import { FormField, Notice, PageHeader, PageSection, Panel } from './ui/page-system';
 import { useAuth } from '../contexts/AuthContext';
 import { getAuthHeaders } from '../lib/api/auth-headers';
 import { safeJsonFetch } from '../lib/http/safe-json';
+import { useAccessibilityPreferences } from '../contexts/AccessibilityContext';
 
 const SETTINGS_KEY = 'crawlio_preferences';
 const LEGACY_SETTINGS_KEY = 'seointel_preferences';
@@ -18,6 +19,7 @@ function readPreferences() {
 
 export default function Settings() {
   const { user, logout } = useAuth();
+  const { preferences: accessibility, updatePreferences: updateAccessibility, resetPreferences: resetAccessibility } = useAccessibilityPreferences();
   const [preferences, setPreferences] = useState(readPreferences);
   const [saved, setSaved] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -91,6 +93,7 @@ export default function Settings() {
       <div className="grid gap-8 lg:grid-cols-[220px_minmax(0,1fr)]">
         <nav className="h-fit space-y-1 lg:sticky lg:top-24" aria-label="Settings sections">
           {[
+            ['accessibility-preferences', Accessibility, 'Display and accessibility'],
             ['scan-preferences', ShieldCheck, 'Audit preferences'],
             ['account-plan', UserRound, 'Account and plan'],
             ['data-sources', Database, 'Data sources'],
@@ -103,6 +106,41 @@ export default function Settings() {
         </nav>
 
         <div className="space-y-10">
+          <PageSection id="accessibility-preferences" title="Display and accessibility" description="Adjust readability and motion on this device. Changes apply immediately and remain available after you return.">
+            <Panel className="p-5 sm:p-6">
+              <div className="grid gap-6 md:grid-cols-2">
+                <FormField label="Text size" htmlFor="accessibility-text-size" hint="Large text increases the base interface size without using browser zoom.">
+                  <select id="accessibility-text-size" className="suite-input" value={accessibility.textScale} onChange={(event) => updateAccessibility({ textScale: event.target.value as 'default' | 'large' })}>
+                    <option value="default">Default</option>
+                    <option value="large">Large</option>
+                  </select>
+                </FormField>
+                <FormField label="Interface spacing" htmlFor="accessibility-density" hint="Compact mode reduces non-essential spacing in data-heavy workspaces.">
+                  <select id="accessibility-density" className="suite-input" value={accessibility.density} onChange={(event) => updateAccessibility({ density: event.target.value as 'comfortable' | 'compact' })}>
+                    <option value="comfortable">Comfortable</option>
+                    <option value="compact">Compact</option>
+                  </select>
+                </FormField>
+                <FormField label="Motion" htmlFor="accessibility-motion" hint="Reduced motion pauses decorative loops and shortens non-essential transitions.">
+                  <select id="accessibility-motion" className="suite-input" value={accessibility.motion} onChange={(event) => updateAccessibility({ motion: event.target.value as 'system' | 'reduced' })}>
+                    <option value="system">Follow device setting</option>
+                    <option value="reduced">Reduce motion</option>
+                  </select>
+                </FormField>
+                <FormField label="Chart contrast" htmlFor="accessibility-chart-contrast" hint="High contrast adds stronger chart colors and visible bar boundaries.">
+                  <select id="accessibility-chart-contrast" className="suite-input" value={accessibility.chartContrast} onChange={(event) => updateAccessibility({ chartContrast: event.target.value as 'standard' | 'high' })}>
+                    <option value="standard">Standard</option>
+                    <option value="high">High contrast</option>
+                  </select>
+                </FormField>
+              </div>
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
+                <p className="text-sm text-muted-foreground">Press <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">Ctrl</kbd> + <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">K</kbd> to open quick navigation.</p>
+                <button type="button" className="quiet-button" onClick={resetAccessibility}><RotateCcw className="h-4 w-4" /> Reset display preferences</button>
+              </div>
+            </Panel>
+          </PageSection>
+
           <PageSection id="scan-preferences" title="Audit preferences" description="Local defaults for starting an audit. Server-enforced plan limits always take priority.">
             <Panel className="grid gap-5 p-5 sm:p-6 md:grid-cols-2">
               <FormField label="Preferred full-audit page limit" htmlFor="max-pages" hint="Your active plan and audit-engine capacity may apply a lower limit.">

@@ -1,12 +1,11 @@
 export const APPLICATION_VERSION = '1.0.0-beta';
-export const API_SCHEMA_VERSION = 13;
-// Migration 019 is additive. Keep audit admission compatible with schema 12
-// during the database-first rollout window so automatic web deploys do not
-// interrupt the existing worker queue.
-export const MINIMUM_AUDIT_DATABASE_SCHEMA_VERSION = 12;
-export const AUDIT_ENGINE_VERSION = '2026.07';
-export const SCORING_VERSION = '2.0';
-export const CHECK_REGISTRY_VERSION = '2.0';
+export const API_SCHEMA_VERSION = 14;
+// Migration 022 is additive. Keep audit admission compatible with schema 13
+// while the database-first rollout reaches the API and worker deployments.
+export const MINIMUM_AUDIT_DATABASE_SCHEMA_VERSION = 13;
+export const AUDIT_ENGINE_VERSION = '2026.09';
+export const SCORING_VERSION = '2.1';
+export const CHECK_REGISTRY_VERSION = '3.0';
 
 function firstDefined(...values: Array<string | undefined>) {
   return values.find((value) => value?.trim())?.trim() || 'local';

@@ -28,6 +28,7 @@ const sections: Array<{ id: AuditWorkspaceSection; label: string }> = [
   { id: 'crawlability', label: 'Crawlability' },
   { id: 'links', label: 'Links' },
   { id: 'performance', label: 'Performance' },
+  { id: 'accessibility', label: 'Accessibility' },
   { id: 'security', label: 'Passive security' },
   { id: 'pages', label: 'Pages' },
 ];
@@ -38,14 +39,16 @@ const reportSectionForRoute: Partial<Record<AuditWorkspaceSection, ReturnType<ty
   crawlability: 'crawlability',
   links: 'internal-links',
   performance: 'performance',
+  accessibility: 'accessibility',
   security: 'security',
 };
 
-const sectionScoreKey: Partial<Record<AuditWorkspaceSection, 'seo' | 'technical' | 'crawlability' | 'performance' | 'security'>> = {
+const sectionScoreKey: Partial<Record<AuditWorkspaceSection, 'seo' | 'technical' | 'crawlability' | 'performance' | 'accessibility' | 'security'>> = {
   seo: 'seo',
   technical: 'technical',
   crawlability: 'crawlability',
   performance: 'performance',
+  accessibility: 'accessibility',
   security: 'security',
 };
 
@@ -172,6 +175,7 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
     { label: 'Technical SEO', value: scores.technical, detail: 'Delivery and status signals', tone: 'accent' },
     { label: 'Crawlability', value: scores.crawlability, detail: 'Search access and indexing', tone: 'accent' },
     { label: 'Passive security', value: scores.security, detail: 'Public browser protections', tone: 'green' },
+    { label: 'Accessibility', value: scores.accessibility, detail: 'Automated HTML signals', tone: 'accent' },
   ];
   const categoryScores: AuditCategoryScore[] = categoryScoreCandidates.filter((item): item is AuditCategoryScore => item.value != null);
   const unavailableChecks = Array.isArray(data.finalReport?.scores?.unavailableChecks) ? data.finalReport.scores.unavailableChecks.length : null;
@@ -221,12 +225,12 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
       </nav>
 
       <AuditExecutiveSummary audit={audit} score={scores.overall} scoreDetail="Calculated from stored audit evidence" categoryScores={section === 'overview' ? categoryScores : []} unavailableChecks={unavailableChecks} />
-      {section === 'overview' && <AuditPageMap pages={data.latestPages} issues={data.latestIssues} />}
+      {section === 'overview' && <AuditPageMap pages={data.latestPages} issues={data.latestIssues} audit={data.audit} />}
       <PriorityRecommendations issues={section === 'overview' ? data.latestIssues : issues} statuses={checklist} onViewFindings={() => document.getElementById('finding-workspace-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
 
       {section === 'overview' && <>
         <div className="grid gap-4 xl:grid-cols-2">
-          <SurfaceCard className="p-5 md:p-6"><div className="flex items-start justify-between gap-4"><div><h2 className="text-xl font-semibold">Page results</h2><p className="mt-1 text-sm text-muted-foreground">Stored response outcomes from pages the audit attempted.</p></div><Globe2 className="h-5 w-5 text-accent" /></div><div className="mt-5"><MetricBarChart items={pageResults} /></div></SurfaceCard>
+          <SurfaceCard className="p-5 md:p-6"><div className="flex items-start justify-between gap-4"><div><h2 className="text-xl font-semibold">Page results</h2><p className="mt-1 text-sm text-muted-foreground">Stored response outcomes from pages the audit attempted.</p></div><Globe2 className="h-5 w-5 text-accent" /></div><div className="mt-5"><MetricBarChart title="Response outcomes" description="Counts from stored page responses." items={pageResults} /></div></SurfaceCard>
           <SurfaceCard className="p-5 md:p-6"><div className="flex items-start justify-between gap-4"><div><h2 className="text-xl font-semibold">Observed delivery</h2><p className="mt-1 text-sm text-muted-foreground">Audit-time response observations, not browser-measured Core Web Vitals.</p></div><ShieldCheck className="h-5 w-5 text-accent" /></div><dl className="mt-5 grid grid-cols-2 gap-4"><div><dt className="text-xs text-muted-foreground">Average response</dt><dd className="mt-1 text-2xl font-semibold">{metrics.averageResponseMs ? `${Math.round(metrics.averageResponseMs)} ms` : '—'}</dd></div><div><dt className="text-xs text-muted-foreground">Pages with findings</dt><dd className="mt-1 text-2xl font-semibold">{data.latestPages.filter((page) => page.issueCount > 0).length}</dd></div><div><dt className="text-xs text-muted-foreground">Average page size</dt><dd className="mt-1 text-2xl font-semibold">{metrics.averagePageBytes ? `${Math.round(metrics.averagePageBytes / 1024)} KB` : '—'}</dd></div><div><dt className="text-xs text-muted-foreground">Deepest page level</dt><dd className="mt-1 text-2xl font-semibold">{data.latestPages.length ? Math.max(...data.latestPages.map((page) => page.crawlDepth)) : '—'}</dd></div></dl></SurfaceCard>
         </div>
         <DomainStrengthCard domain={audit.hostname} auditScores={data.finalReport?.scores || {}} />
@@ -235,9 +239,9 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
         <FindingWorkspace auditId={auditId} issues={data.latestIssues} statuses={checklist} onStatusChange={updateChecklist} />
       </>}
 
-      {section === 'pages' && <SurfaceCard className="overflow-hidden p-0"><div className="border-b border-border p-5"><h2 className="text-xl font-semibold">Pages analysed</h2><p className="mt-1 text-sm text-muted-foreground">Actual page summaries stored by the audit service.</p></div><div className="overflow-x-auto" role="region" aria-label="Analysed pages" tabIndex={0}><table className="suite-table min-w-[760px]"><thead><tr><th>URL</th><th>Status</th><th>Response</th><th>Size</th><th>Findings</th></tr></thead><tbody>{data.latestPages.length ? data.latestPages.map((page) => <tr key={page.id}><td className="max-w-xl"><div className="truncate font-semibold">{page.title || 'Untitled page'}</div><div className="truncate text-xs text-muted-foreground">{page.url}</div></td><td className="tabular-nums">{page.statusCode || '—'}</td><td className="tabular-nums">{page.responseTimeMs ? `${page.responseTimeMs} ms` : '—'}</td><td className="tabular-nums">{page.pageSizeBytes ? `${Math.round(page.pageSizeBytes / 1024)} KB` : '—'}</td><td className="tabular-nums">{page.issueCount}</td></tr>) : <tr><td colSpan={5} className="py-10 text-center text-muted-foreground">No page summaries were stored for this audit.</td></tr>}</tbody></table></div></SurfaceCard>}
+      {section === 'pages' && <SurfaceCard className="overflow-hidden p-0"><div className="border-b border-border p-5"><h2 className="text-xl font-semibold">Pages analysed</h2><p className="mt-1 text-sm text-muted-foreground">Actual page summaries stored by the audit service.</p></div><div className="overflow-x-auto" role="region" aria-label="Analysed pages" tabIndex={0}><table className="suite-table min-w-[760px]"><caption className="sr-only">Analysed pages with HTTP status, response time, response size, and finding count.</caption><thead><tr><th>URL</th><th>Status</th><th>Response</th><th>Size</th><th>Findings</th></tr></thead><tbody>{data.latestPages.length ? data.latestPages.map((page) => <tr key={page.id}><td className="max-w-xl"><div className="truncate font-semibold">{page.title || 'Untitled page'}</div><div className="truncate text-xs text-muted-foreground">{page.url}</div></td><td className="tabular-nums">{page.statusCode || '—'}</td><td className="tabular-nums">{page.responseTimeMs ? `${page.responseTimeMs} ms` : '—'}</td><td className="tabular-nums">{page.pageSizeBytes ? `${Math.round(page.pageSizeBytes / 1024)} KB` : '—'}</td><td className="tabular-nums">{page.issueCount}</td></tr>) : <tr><td colSpan={5} className="py-10 text-center text-muted-foreground">No page summaries were stored for this audit.</td></tr>}</tbody></table></div></SurfaceCard>}
 
-      {section !== 'overview' && section !== 'pages' && <section><div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-2xl font-semibold">{sections.find((item) => item.id === section)?.label} findings</h2><p className="mt-1 text-sm text-muted-foreground">Open a row for evidence, affected pages, workflow status, and notes.</p></div>{section === 'security' && <StatusBadge tone="accent">Passive observations only</StatusBadge>}</div>{issues.length ? <div className="mt-5"><FindingWorkspace auditId={auditId} issues={issues} statuses={checklist} onStatusChange={updateChecklist} /></div> : <SurfaceCard className="mt-5 p-6"><EmptyState icon={CheckCircle2} title="No stored findings in this section" description="Review coverage and unavailable checks before treating the section as fully clear." /></SurfaceCard>}</section>}
+      {section !== 'overview' && section !== 'pages' && <section><div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-2xl font-semibold">{sections.find((item) => item.id === section)?.label} findings</h2><p className="mt-1 text-sm text-muted-foreground">Open a row for evidence, affected pages, workflow status, and notes.</p></div>{section === 'security' && <StatusBadge tone="accent">Passive observations only</StatusBadge>}{section === 'accessibility' && <StatusBadge tone="warning">Automated signals, not certification</StatusBadge>}</div>{issues.length ? <div className="mt-5"><FindingWorkspace auditId={auditId} issues={issues} statuses={checklist} onStatusChange={updateChecklist} /></div> : <SurfaceCard className="mt-5 p-6"><EmptyState icon={CheckCircle2} title="No stored findings in this section" description="Review coverage and unavailable checks before treating the section as fully clear." /></SurfaceCard>}</section>}
     </div>
   );
 }

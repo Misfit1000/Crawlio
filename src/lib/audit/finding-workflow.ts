@@ -15,6 +15,7 @@ export interface FindingWorkflowRecord {
   priorityOverride: FindingPriorityOverride | null;
   notes: string;
   dueAt: string | null;
+  assignedTo: string | null;
   resolvedAt: string | null;
   resolvedBy: string | null;
   createdAt: string;

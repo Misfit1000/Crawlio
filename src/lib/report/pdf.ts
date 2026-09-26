@@ -193,6 +193,7 @@ export async function renderAuditPdf(data: ResourceAuditLiveData): Promise<Buffe
     drawScoreBar('Performance', optionalScore(scores.performance), COLORS.amber);
     drawScoreBar('Crawlability', optionalScore(scores.crawlability), COLORS.green);
     drawScoreBar('Passive security', optionalScore(scores.security), COLORS.green);
+    drawScoreBar('Accessibility signals', optionalScore(scores.accessibility), COLORS.blue);
 
     sectionTitle('Fix priority', 'Use this distribution to decide what to handle first.');
     const severities = [

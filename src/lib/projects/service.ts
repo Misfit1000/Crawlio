@@ -43,19 +43,26 @@ export async function listProjectOverview(userId: string): Promise<ProjectOvervi
   const client = requireSupabaseAdminClient();
   const [projectResult, auditResult, notificationResult] = await Promise.all([
     client.from('projects').select('id,name,description,normalized_url,hostname,audit_frequency,audit_mode,next_audit_at,last_audit_at,last_audit_id,change_alerts_enabled,created_at,updated_at').eq('user_id', userId).order('updated_at', { ascending: false }).limit(100),
-    client.from('audits').select('id,project_id,normalized_url,hostname,status,pages_crawled,issues_found,critical_count,high_count,completed_at,created_at').eq('user_id', userId).is('archived_at', null).order('created_at', { ascending: false }).limit(500),
+    client.rpc('project_audit_summaries', { p_user_id: userId }),
     client.from('project_notifications').select('*', { count: 'exact', head: true }).eq('user_id', userId).is('read_at', null),
   ]);
   if (projectResult.error) throw projectResult.error;
-  if (auditResult.error) throw auditResult.error;
   if (notificationResult.error) throw notificationResult.error;
 
-  const audits = auditResult.data || [];
+  let audits = (auditResult.data || []) as Row[];
   const reportByAudit = new Map<string, Row>();
-  if (audits.length) {
-    const reportResult = await client.from('audit_reports').select('audit_id,scores,top_issues').in('audit_id', audits.map((audit) => audit.id));
-    if (reportResult.error) throw reportResult.error;
-    for (const report of reportResult.data || []) reportByAudit.set(String(report.audit_id), report);
+  if (!auditResult.error) {
+    for (const audit of audits) reportByAudit.set(String(audit.id), { scores: audit.scores, top_issues: audit.top_issues });
+  } else {
+    // Keep the API available during the additive database-first migration window.
+    const legacyAudits = await client.from('audits').select('id,project_id,normalized_url,hostname,status,pages_crawled,issues_found,critical_count,high_count,completed_at,created_at').eq('user_id', userId).is('archived_at', null).order('created_at', { ascending: false }).limit(200);
+    if (legacyAudits.error) throw legacyAudits.error;
+    audits = legacyAudits.data || [];
+    if (audits.length) {
+      const reports = await client.from('audit_reports').select('audit_id,scores,top_issues').in('audit_id', audits.map((audit) => audit.id));
+      if (reports.error) throw reports.error;
+      for (const report of reports.data || []) reportByAudit.set(String(report.audit_id), report);
+    }
   }
 
   const configuredByHost = new Map((projectResult.data || []).filter((project) => project.hostname).map((project) => [String(project.hostname).toLowerCase(), project]));

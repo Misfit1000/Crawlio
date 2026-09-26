@@ -17,7 +17,19 @@ The repository includes temporary write fallbacks for a rolling deployment, but 
 
 ## Current migration head
 
-Apply every migration in numeric order from `001_resource_light_audit.sql` through `021_project_growth_workflows.sql`. Migrations 001-020 are published history and must not be edited. Migration 021 is additive and does not change audit API schema version 13.
+Apply every migration in numeric order from `001_resource_light_audit.sql` through `023_product_maturity.sql`. Migrations 001-022 are published history and must not be edited. Migration 023 adds durable project imports, worker checkpoints, summary RPCs, finding assignment, and advances the audit API schema to version 14.
+
+For migration 023:
+
+1. Create a Supabase backup or restore point.
+2. Apply `supabase/migrations/023_product_maturity.sql` after confirming migration 022 is present.
+3. Confirm the checkpoint columns, project import tables, assignment trigger, summary RPCs, retention policy, and database version 14.
+4. Confirm project imports have RLS enabled and no anonymous or authenticated grants.
+5. Deploy the matching Vercel build and Render audit engine from the same commit.
+6. Run one signed-in project audit, save a finding assignment, and sync then reload one CSV import.
+7. Confirm a recovered audit resumes from its checkpoint and terminal reports clear checkpoint state.
+
+Do not deploy the schema-14 worker before migration 023. The application accepts schema 13 only as a short database-first rollout compatibility window.
 
 For migration 021:
 

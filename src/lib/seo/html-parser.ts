@@ -26,6 +26,18 @@ export interface ParsedPageData {
   lang: string;
   topKeywords: string[];
   topPhrases: string[];
+  accessibility: {
+    unnamedLinks: number;
+    unnamedButtons: number;
+    unlabeledFields: number;
+    mainLandmarks: number;
+    duplicateIds: number;
+    brokenAriaReferences: number;
+    positiveTabindex: number;
+    hiddenFocusableElements: number;
+    zoomRestricted: boolean;
+  };
+  likelyJavascriptShell: boolean;
 }
 
 function getNGrams(words: string[], n: number): string[] {
@@ -142,6 +154,68 @@ export function parseHtml(html: string, baseUrl: string): ParsedPageData {
   });
 
   const canonical = resolvePublicAssetUrl($('link[rel="canonical"]').attr('href') || '');
+
+  const ids = new Map<string, number>();
+  const idText = new Map<string, string>();
+  $('[id]').each((_, element) => {
+    const id = $(element).attr('id')?.trim();
+    if (id) {
+      ids.set(id, (ids.get(id) || 0) + 1);
+      if (!idText.has(id)) idText.set(id, $(element).text().trim());
+    }
+  });
+  const labelFors = new Set($('label[for]').map((_, element) => $(element).attr('for')?.trim() || '').get().filter(Boolean));
+  const elementName = (element: any) => {
+    const node = $(element);
+    const labelledBy = (node.attr('aria-labelledby') || '').split(/\s+/).filter(Boolean).map((id) => idText.get(id) || '').join(' ');
+    return [node.attr('aria-label'), labelledBy, node.attr('title'), node.text(), node.find('img[alt]').map((_, image) => $(image).attr('alt') || '').get().join(' ')]
+      .map((value) => String(value || '').trim())
+      .find(Boolean) || '';
+  };
+  let brokenAriaReferences = 0;
+  $('[aria-labelledby],[aria-describedby]').each((_, element) => {
+    for (const attribute of ['aria-labelledby', 'aria-describedby']) {
+      const references = ($(element).attr(attribute) || '').split(/\s+/).filter(Boolean);
+      brokenAriaReferences += references.filter((id) => !ids.has(id)).length;
+    }
+  });
+  let unlabeledFields = 0;
+  $('input:not([type="hidden"]),select,textarea').each((_, element) => {
+    const node = $(element);
+    const id = node.attr('id')?.trim();
+    const labelled = Boolean(
+      node.attr('aria-label')?.trim()
+      || node.attr('aria-labelledby')?.trim()
+      || node.attr('title')?.trim()
+      || node.closest('label').length
+      || (id && labelFors.has(id)),
+    );
+    if (!labelled) unlabeledFields += 1;
+  });
+  const focusableSelector = 'a[href],button,input:not([type="hidden"]),select,textarea,[tabindex]';
+  let hiddenFocusableElements = 0;
+  $('[aria-hidden="true"]').each((_, element) => {
+    const node = $(element);
+    if (node.is(focusableSelector) || node.find(focusableSelector).length) hiddenFocusableElements += 1;
+  });
+  const mainLandmarks = $('main,[role="main"]').length;
+  const viewportLower = viewport.toLowerCase();
+  const maximumScale = Number(viewportLower.match(/maximum-scale\s*=\s*([0-9.]+)/)?.[1]);
+  const zoomRestricted = /user-scalable\s*=\s*(?:no|0)/.test(viewportLower) || (Number.isFinite(maximumScale) && maximumScale < 2);
+  const accessibility = {
+    unnamedLinks: $('a[href]').filter((_, element) => !elementName(element)).length,
+    unnamedButtons: $('button,[role="button"]').filter((_, element) => !elementName(element)).length,
+    unlabeledFields,
+    mainLandmarks,
+    duplicateIds: Array.from(ids.values()).filter((count) => count > 1).reduce((total, count) => total + count - 1, 0),
+    brokenAriaReferences,
+    positiveTabindex: $('[tabindex]').filter((_, element) => Number($(element).attr('tabindex')) > 0).length,
+    hiddenFocusableElements,
+    zoomRestricted,
+  };
+  const likelyJavascriptShell = wordCount < 40
+    && $('script[src],script[type="module"]').length >= 2
+    && $('#root,#app,#__next,[data-reactroot],[ng-version]').length > 0;
   
   const allText = `${title} ${metaDescription} ${h1.join(' ')} ${h2.join(' ')} ${$('p').text()}`;
   const { topKeywords, topPhrases } = getTopPhrases(allText);
@@ -170,6 +244,8 @@ export function parseHtml(html: string, baseUrl: string): ParsedPageData {
     viewport,
     lang,
     topKeywords,
-    topPhrases
+    topPhrases,
+    accessibility,
+    likelyJavascriptShell,
   };
 }

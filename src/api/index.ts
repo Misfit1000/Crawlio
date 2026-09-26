@@ -77,6 +77,7 @@ import {
   searchConsoleStatus,
   syncSearchConsoleProperty,
 } from '../lib/search-console/server';
+import { registerImportRoutes } from './import-routes';
 
 const DUPLICATE_AUDIT_WINDOW_MS = 10 * 60 * 1000;
 
@@ -112,6 +113,7 @@ apiRouter.use('/domain/link-signals', createRateLimiter({ namespace: 'public-lin
 apiRouter.use('/plans/public', createRateLimiter({ namespace: 'public-plans', windowMs: 60 * 60 * 1000, maxRequests: 120 }));
 apiRouter.use('/projects', durableRateLimit({ namespace: 'projects', limit: 90, windowSeconds: 60 }));
 apiRouter.use('/search-console', durableRateLimit({ namespace: 'search-console', limit: 30, windowSeconds: 300 }));
+apiRouter.use('/imports', durableRateLimit({ namespace: 'project-imports', limit: 30, windowSeconds: 300 }));
 apiRouter.use(['/projects', '/search-console'], (_req, res, next) => {
   res.setHeader('Cache-Control', 'private, no-store');
   next();
@@ -198,6 +200,8 @@ async function getRequester(req: any) {
   const profile = await ensureUserProfileFromAuthUser(authUser);
   return { userId: authUser.id, profile };
 }
+
+registerImportRoutes(apiRouter, getRequester);
 
 async function requireAdminRequester(req: any, res: any) {
   const requester = await getRequester(req);
@@ -368,6 +372,7 @@ function workflowRow(row: any) {
     priorityOverride: row.priority_override ?? null,
     notes: row.notes || '',
     dueAt: row.due_at ?? null,
+    assignedTo: row.assigned_to ?? null,
     resolvedAt: row.resolved_at ?? null,
     resolvedBy: row.resolved_by ?? null,
     createdAt: row.created_at,
@@ -1889,7 +1894,7 @@ apiRouter.get('/audit/:id/finding-workflow', asyncJsonRoute(async (req, res) => 
   const client = requireSupabaseAdminClient();
   const { data, error } = await client
     .from('audit_finding_workflow')
-    .select('id,audit_id,finding_id,finding_key,status,priority_override,notes,due_at,resolved_at,resolved_by,created_at,updated_at,updated_by,version')
+    .select('id,audit_id,finding_id,finding_key,status,priority_override,notes,due_at,assigned_to,resolved_at,resolved_by,created_at,updated_at,updated_by,version')
     .eq('audit_id', access.audit.id)
     .order('updated_at', { ascending: false })
     .limit(1000);
@@ -1914,6 +1919,7 @@ apiRouter.put('/audit/:id/finding-workflow/:findingKey', durableRateLimit({ name
     if (!Number.isFinite(parsedDueAt.getTime())) throw new ApiError('INVALID_DUE_DATE', 'Due date is invalid.', 400);
     dueAt = parsedDueAt.toISOString();
   }
+  const assignedTo = req.body?.assignedToSelf === true ? access.audit.userId : null;
 
   const issues = await auditRepository.getLatestIssues(access.audit.id, 1000);
   const finding = issues.find((issue) => findingWorkflowKey(issue) === key);
@@ -1944,6 +1950,7 @@ apiRouter.put('/audit/:id/finding-workflow/:findingKey', durableRateLimit({ name
         priority_override: priorityOverride,
         notes,
         due_at: dueAt,
+        assigned_to: assignedTo,
         resolved_at: terminal ? now : null,
         resolved_by: terminal ? access.requester.userId : null,
         updated_by: access.requester.userId,
@@ -1966,6 +1973,7 @@ apiRouter.put('/audit/:id/finding-workflow/:findingKey', durableRateLimit({ name
       priority_override: priorityOverride,
       notes,
       due_at: dueAt,
+      assigned_to: assignedTo,
       resolved_at: terminal ? now : null,
       resolved_by: terminal ? access.requester.userId : null,
       created_by: access.requester.userId,

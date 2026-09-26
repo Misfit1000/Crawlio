@@ -7,6 +7,8 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { BrowserRouter } from './app/router';
 import AppErrorBoundary from './components/AppErrorBoundary';
 import { initializeBrowserMonitoring } from './lib/monitoring/sentry-browser';
+import { AccessibilityProvider } from './contexts/AccessibilityContext';
+import AccessibilityLayer from './components/accessibility/AccessibilityLayer';
 
 initializeBrowserMonitoring();
 
@@ -14,11 +16,14 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthProvider>
       <ThemeProvider>
-        <BrowserRouter>
-          <AppErrorBoundary>
-            <App />
-          </AppErrorBoundary>
-        </BrowserRouter>
+        <AccessibilityProvider>
+          <BrowserRouter>
+            <AppErrorBoundary>
+              <AccessibilityLayer />
+              <App />
+            </AppErrorBoundary>
+          </BrowserRouter>
+        </AccessibilityProvider>
       </ThemeProvider>
     </AuthProvider>
   </StrictMode>,

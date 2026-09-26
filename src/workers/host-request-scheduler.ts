@@ -13,14 +13,40 @@ type HostState = {
 
 export class HostRequestScheduler {
   private readonly hosts = new Map<string, HostState>();
+  private readonly health = new Map<string, { failures: number; openUntil: number }>();
 
   constructor(
     private readonly maxConcurrentPerHost = 2,
     private readonly minimumIntervalMs = 150,
     private readonly now = Date.now,
+    private readonly failureThreshold = 5,
+    private readonly cooldownMs = 30_000,
   ) {}
 
+  isOpen(url: string) {
+    const host = new URL(url).host.toLowerCase();
+    const state = this.health.get(host);
+    if (!state) return false;
+    if (state.openUntil > this.now()) return true;
+    if (state.openUntil) this.health.delete(host);
+    return false;
+  }
+
+  recordFailure(url: string) {
+    const host = new URL(url).host.toLowerCase();
+    const current = this.health.get(host) || { failures: 0, openUntil: 0 };
+    const failures = current.failures + 1;
+    const openUntil = failures >= this.failureThreshold ? this.now() + this.cooldownMs : 0;
+    this.health.set(host, { failures, openUntil });
+    return openUntil > 0;
+  }
+
+  recordSuccess(url: string) {
+    this.health.delete(new URL(url).host.toLowerCase());
+  }
+
   schedule<T>(url: string, run: () => Promise<T>): Promise<T> {
+    if (this.isOpen(url)) return Promise.reject(Object.assign(new Error('Host request circuit is temporarily open.'), { code: 'HOST_CIRCUIT_OPEN' }));
     const host = new URL(url).host.toLowerCase();
     const state = this.hosts.get(host) ?? { active: 0, nextAllowedAt: 0, timer: null, queue: [] };
     this.hosts.set(host, state);

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { AlertCircle, CheckCircle2, Info, TriangleAlert } from 'lucide-react';
+import { handleTabListKeyDown } from '../../lib/ui/keyboard';
 
 type Tone = 'info' | 'success' | 'warning' | 'danger' | 'security';
 
@@ -146,6 +147,8 @@ export function SegmentedControl<T extends string>({
           type="button"
           role="tab"
           aria-selected={value === option.value}
+          tabIndex={value === option.value ? 0 : -1}
+          onKeyDown={handleTabListKeyDown}
           disabled={option.disabled}
           onClick={() => onChange(option.value)}
           className={`min-h-10 whitespace-nowrap rounded-lg px-4 text-sm font-semibold ${value === option.value ? 'bg-card text-accent shadow-sm' : 'text-muted-foreground hover:text-foreground'} disabled:cursor-not-allowed disabled:opacity-45`}

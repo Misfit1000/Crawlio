@@ -103,6 +103,10 @@ const LEGACY_CODE_MAP: Record<string, AuditFailureCode> = {
   REDIRECT_WITHOUT_LOCATION: 'INVALID_REDIRECT_TARGET',
 };
 
+export function isAuditFailureCode(value: unknown): value is AuditFailureCode {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(COPY, value);
+}
+
 export function failureForCode(code: AuditFailureCode, context: AuditFailureContext = {}): AuditFailure {
   const copy = COPY[code];
   return {

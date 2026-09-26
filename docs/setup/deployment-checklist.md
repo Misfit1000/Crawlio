@@ -12,7 +12,7 @@
 
 See `docs/operations/sentry.md` for the ordered setup and privacy checks.
 
-Apply migrations in numeric order through `021_project_growth_workflows.sql`. Verify RLS, server-only audit admission, finding-workflow ownership, alert-state secrecy, private editor/OAuth/share-token tables, project scheduling, and blog publication guards before deploying code.
+Apply migrations in numeric order through `023_product_maturity.sql`. Verify RLS, server-only audit admission and imports, finding-workflow ownership, checkpoint columns, summary RPC permissions, alert-state secrecy, private editor/OAuth/share-token tables, project scheduling, and blog publication guards before deploying code.
 
 ## Pre-Deploy
 

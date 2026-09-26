@@ -39,6 +39,7 @@ import {
   failureForCode,
   failureForHttpStatus,
   failureProgressMessage,
+  isAuditFailureCode,
   type AuditFailure,
 } from '../lib/audit/audit-failures';
 import {
@@ -248,18 +249,44 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
   };
   const startUrl = normalizeCrawlUrl(audit.normalizedUrl) || audit.normalizedUrl;
   const rootQueueItem: QueueItem = { url: startUrl, depth: 0, sourceUrls: [], anchorTexts: [] };
-  const queue: QueueItem[] = [rootQueueItem];
-  const queueItems = new Map<string, QueueItem>([[startUrl, rootQueueItem]]);
-  const scheduled = new Set<string>([startUrl]);
-  const visited = new Set<string>();
-  const processedContentUrls = new Set<string>();
-  const pages: ResourceAuditPage[] = [];
-  const provisionalIssues: ResourceAuditIssue[] = [];
-  const failures: AuditFailure[] = [];
+  const recoveredPages = (audit.recoveryAttempts || 0) > 0 ? await auditRepository.getLatestPages(audit.id, config.pageLimit).catch(() => []) : [];
+  const recoveredIssues = (audit.recoveryAttempts || 0) > 0 ? await auditRepository.getLatestIssues(audit.id, 100).catch(() => []) : [];
+  const recoveredPageUrls = new Set(recoveredPages.map((page) => normalizeCrawlUrl(page.url)).filter((value): value is string => Boolean(value)));
+  const checkpointItems: QueueItem[] = Array.isArray(audit.checkpointState?.scheduled)
+    ? (audit.checkpointState?.scheduled as unknown[]).map((value: any) => ({
+      url: normalizeCrawlUrl(String(value?.url || '')) || '',
+      depth: Math.max(0, Math.min(25, Number(value?.depth || 0))),
+      discoveredFrom: value?.discoveredFrom ? String(value.discoveredFrom).slice(0, 512) : undefined,
+      sourceUrls: Array.isArray(value?.sourceUrls) ? value.sourceUrls.map((item: unknown) => String(item).slice(0, 512)).slice(0, 3) : [],
+      anchorTexts: Array.isArray(value?.anchorTexts) ? value.anchorTexts.map((item: unknown) => String(item).slice(0, 160)).slice(0, 3) : [],
+    })).filter((item) => item.url && !recoveredPageUrls.has(item.url))
+    : [];
+  const initialQueue = checkpointItems.length ? checkpointItems : recoveredPageUrls.has(startUrl) ? [] : [rootQueueItem];
+  const queue: QueueItem[] = initialQueue;
+  const queueItems = new Map<string, QueueItem>(initialQueue.map((item) => [item.url, item] as const));
+  if (!queueItems.has(startUrl)) queueItems.set(startUrl, rootQueueItem);
+  const scheduled = new Set<string>([
+    startUrl,
+    ...recoveredPageUrls,
+    ...Array.from(queueItems.keys()),
+  ]);
+  const visited = new Set<string>(recoveredPageUrls);
+  const processedContentUrls = new Set<string>(recoveredPageUrls);
+  const pages: ResourceAuditPage[] = [...recoveredPages];
+  const provisionalIssues: ResourceAuditIssue[] = [...recoveredIssues];
+  const failures: AuditFailure[] = recoveredPages
+    .filter((page) => page.fetchStatus && page.fetchStatus !== 'success')
+    .map((page) => failureForCode(isAuditFailureCode(page.failureCode) ? page.failureCode : 'UNKNOWN_TARGET_FAILURE', {
+      affectedUrl: page.url,
+      httpStatus: page.statusCode || null,
+      attemptCount: page.attemptCount || 1,
+      recoveredAfterRetry: page.recoveredAfterRetry,
+      internalDetails: 'Restored from a durable audit checkpoint.',
+    }));
   const unavailableChecks: string[] = [];
   const announcedFailureCodes = new Set<string>();
-  let analysedPages = 0;
-  let completedChecks = 0;
+  let analysedPages = recoveredPages.filter((page) => page.fetchStatus === 'success').length;
+  let completedChecks = recoveredPages.length ? audit.checksCompleted : 0;
   let lastProvisionalScoreAt = 0;
   let lastProvisionalScorePages = 0;
   let provisionalIssueSequence = 0;
@@ -314,9 +341,42 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     });
     await writer.flush(false);
   };
+  const saveCheckpoint = async () => {
+    if (analysedPages < 1 || (analysedPages % 5 !== 0 && queue.length > 0)) return;
+    const checkpointUpdatedAt = nowIso();
+    const checkpointState = {
+      scheduled: Array.from(queueItems.values()).slice(0, 100).map((item) => ({
+        url: item.url,
+        depth: item.depth,
+        discoveredFrom: item.discoveredFrom?.slice(0, 512),
+        sourceUrls: item.sourceUrls.slice(0, 3).map((value) => value.slice(0, 512)),
+        anchorTexts: item.anchorTexts.slice(0, 3).map((value) => value.slice(0, 160)),
+      })),
+    };
+    // Stay below the database's 256 KiB JSONB limit, including formatting overhead.
+    while (Buffer.byteLength(JSON.stringify(checkpointState), 'utf8') > 230000) checkpointState.scheduled.pop();
+    await auditRepository.updateAuditForWorker(audit.id, workerId, {
+      checkpointPagesCrawled: analysedPages,
+      checkpointUpdatedAt,
+      checkpointState,
+    }).catch(() => undefined);
+  };
 
   const recordFailure = async (failure: AuditFailure, item: QueueItem, storePage = true) => {
     failures.push(failure);
+    if (failure.retryable && requestScheduler.recordFailure(failure.affectedUrl || item.url)) {
+      const host = new URL(failure.affectedUrl || item.url).host;
+      const announcementKey = `host-circuit:${host}`;
+      if (!announcedFailureCodes.has(announcementKey)) {
+        announcedFailureCodes.add(announcementKey);
+        await writer.addEvent({
+          type: 'host_temporarily_unavailable',
+          message: `Stopped additional requests to ${host} after repeated temporary failures.`,
+          affectedUrl: failure.affectedUrl || item.url,
+          severity: 'high',
+        });
+      }
+    }
     const counts = aggregateFailureCounts(failures);
     const severity: AuditSeverity = failure.code === 'CHECK_UNAVAILABLE' || failure.code === 'AUDIT_DEADLINE_EXCEEDED'
       ? 'info'
@@ -515,6 +575,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
   let cancelled = false;
 
   async function processPage(item: QueueItem) {
+    if (requestScheduler.isOpen(item.url)) return;
     if (Date.now() >= auditDeadline) {
       durationLimitReached = true;
       return;
@@ -567,6 +628,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     }
 
     const fetched = fetchResult.page;
+    if (!shouldRetryStatus(fetched.statusCode)) requestScheduler.recordSuccess(fetched.finalUrl);
     const finalContentUrl = normalizeCrawlUrl(fetched.finalUrl) || fetched.finalUrl;
     if (processedContentUrls.has(finalContentUrl)) {
       await writer.addEvent({
@@ -737,6 +799,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
         await enqueuePage(link.href, item.depth + 1, fetched.finalUrl, link.text);
       }
     }
+    await saveCheckpoint();
   }
 
   await new Promise<void>((resolve, reject) => {
@@ -910,6 +973,9 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     },
     limitations: [
       `${config.label} limited the crawl to at most ${config.pageLimit} pages.`,
+      ...(issues.some((issue) => issue.title === 'Limited static HTML evidence')
+        ? ['One or more pages appeared to rely on client-side JavaScript. Scores use only the HTML and headers the audit could retrieve and may not represent the fully rendered page.']
+        : []),
       'Provider-dependent rankings, backlinks, traffic, and search-volume data were not collected and did not affect scores.',
       'Passive Security Review only; no penetration testing was performed.',
     ],
@@ -935,6 +1001,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
         mobile: transparentScore.categories.mobile.score,
         security: transparentScore.categories.security.score,
         structuredData: transparentScore.categories.structuredData.score,
+        accessibility: transparentScore.categories.accessibility.score,
       },
       scoreState: 'final',
       pagesAnalysed: analysedPages,
@@ -1010,6 +1077,9 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     lockedBy: null,
     lockedAt: null,
     leaseExpiresAt: null,
+    checkpointPagesCrawled: analysedPages,
+    checkpointUpdatedAt: completedAt,
+    checkpointState: null,
   }, {
     type: failures.length ? 'audit_completed_with_warnings' : 'audit_completed',
     message: failures.length

@@ -1007,3 +1007,111 @@ registerCheck({
   "description": "No business hours found.",
   "recommendation": "Add opening hours."
 });
+
+registerCheck({
+  id: 'a11y-document-language',
+  category: 'Accessibility',
+  severity: 'medium',
+  title: 'Document language is missing',
+  description: 'Assistive technology cannot reliably determine the page language.',
+  recommendation: 'Add a valid lang attribute to the html element, such as lang="en".',
+});
+
+registerCheck({
+  id: 'a11y-unnamed-links',
+  category: 'Accessibility',
+  severity: 'medium',
+  title: 'Links without accessible names',
+  description: 'Some links do not expose readable text or another detectable accessible name.',
+  recommendation: 'Give every link descriptive text or a concise accessible label.',
+});
+
+registerCheck({
+  id: 'a11y-unnamed-buttons',
+  category: 'Accessibility',
+  severity: 'high',
+  title: 'Buttons without accessible names',
+  description: 'Some buttons cannot be identified reliably by assistive technology.',
+  recommendation: 'Add visible button text or an accurate accessible label.',
+});
+
+registerCheck({
+  id: 'a11y-unlabeled-fields',
+  category: 'Accessibility',
+  severity: 'high',
+  title: 'Form fields without detectable labels',
+  description: 'Some form controls do not have a programmatically associated label.',
+  recommendation: 'Associate each field with a label element or an accurate accessible label.',
+});
+
+registerCheck({
+  id: 'a11y-missing-main-landmark',
+  category: 'Accessibility',
+  severity: 'low',
+  title: 'Main content landmark is missing',
+  description: 'The page does not expose a main content landmark for assistive navigation.',
+  recommendation: 'Wrap the primary page content in one main element.',
+});
+
+registerCheck({
+  id: 'a11y-multiple-main-landmarks',
+  category: 'Accessibility',
+  severity: 'medium',
+  title: 'Multiple main content landmarks',
+  description: 'The page exposes more than one main landmark without a clear distinction.',
+  recommendation: 'Use one primary main landmark and label any exceptional additional landmark clearly.',
+});
+
+registerCheck({
+  id: 'a11y-duplicate-ids',
+  category: 'Accessibility',
+  severity: 'medium',
+  title: 'Duplicate element IDs',
+  description: 'Duplicate IDs can break label, heading, and ARIA relationships.',
+  recommendation: 'Make every element ID unique within the page.',
+});
+
+registerCheck({
+  id: 'a11y-broken-aria-references',
+  category: 'Accessibility',
+  severity: 'medium',
+  title: 'ARIA references missing elements',
+  description: 'An aria-labelledby or aria-describedby value points to an ID that does not exist.',
+  recommendation: 'Correct or remove invalid ARIA ID references.',
+});
+
+registerCheck({
+  id: 'a11y-positive-tabindex',
+  category: 'Accessibility',
+  severity: 'low',
+  title: 'Positive tabindex changes focus order',
+  description: 'Positive tabindex values can create an unexpected keyboard navigation order.',
+  recommendation: 'Use DOM order and tabindex="0" or tabindex="-1" instead of positive values.',
+});
+
+registerCheck({
+  id: 'a11y-hidden-focusable',
+  category: 'Accessibility',
+  severity: 'high',
+  title: 'Focusable controls hidden from assistive technology',
+  description: 'An aria-hidden region contains elements that can still receive keyboard focus.',
+  recommendation: 'Remove hidden controls from the tab order or do not hide the active region from assistive technology.',
+});
+
+registerCheck({
+  id: 'a11y-zoom-restricted',
+  category: 'Accessibility',
+  severity: 'high',
+  title: 'Page zoom is restricted',
+  description: 'The viewport setting prevents or severely limits user zoom.',
+  recommendation: 'Allow browser zoom by removing user-scalable=no and restrictive maximum-scale values.',
+});
+
+registerCheck({
+  id: 'javascript-shell-limited-evidence',
+  category: 'Crawlability',
+  severity: 'high',
+  title: 'Limited static HTML evidence',
+  description: 'The downloaded page appears to rely on JavaScript for most visible content, so static audit coverage is limited.',
+  recommendation: 'Render meaningful headings, navigation, and primary content in the initial HTML response or use server rendering.',
+});
