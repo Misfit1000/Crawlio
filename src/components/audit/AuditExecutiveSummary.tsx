@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle2, FileSearch, Layers, ShieldAlert } from 'lucide-react';
 import type { ResourceAuditDocument, ResourceAuditIssue } from '../../lib/audit/resource-types';
 import type { AuditScoreState } from '../../lib/audit/audit-live-score';
+import { isTerminalAuditStatus } from '../../lib/audit/audit-time';
 import { issueSignature, type ChecklistStatus } from '../../lib/audit/client-insights';
 import { findingImpact } from '../../lib/audit/report-insights';
 import { AuditScoreOverview, CategoryScoreBar, ProgressBar, SeverityDistribution, StatusBadge, SurfaceCard } from '../ui/visual-system';
@@ -33,7 +34,9 @@ export function AuditExecutiveSummary({
 }) {
   const coverageTarget = Math.max(1, audit.pageLimit);
   const coverage = Math.min(100, Math.round((audit.pagesCrawled / coverageTarget) * 100));
-  const checkProgress = audit.checksTotal ? Math.round((audit.checksCompleted / audit.checksTotal) * 100) : 0;
+  const checksTotal = Math.max(audit.checksCompleted, audit.checksTotal);
+  const checkProgress = checksTotal ? Math.round((audit.checksCompleted / checksTotal) * 100) : 0;
+  const terminal = isTerminalAuditStatus(audit.status);
   const warningCount = audit.warningCount || 0;
   const limitationCount = unavailableChecks ?? warningCount;
   const limitationLabel = unavailableChecks == null ? 'Audit warnings' : 'Unavailable checks';
@@ -49,12 +52,12 @@ export function AuditExecutiveSummary({
         <div className="flex flex-col justify-center border-b border-border p-5 lg:border-b-0 lg:border-r lg:p-6">
           <div className="mb-4 flex items-center justify-between gap-3">
             <StatusBadge tone={scoreState === 'final' ? 'success' : scoreState === 'provisional' ? 'accent' : 'neutral'}>
-              {scoreState === 'final' ? 'Final score' : scoreState === 'provisional' ? 'Preliminary' : 'Not available yet'}
+              {scoreState === 'final' ? 'Final score' : scoreState === 'provisional' ? 'Preliminary' : terminal ? 'Unavailable' : 'Not available yet'}
             </StatusBadge>
             {score != null && <span className="text-xs font-medium text-muted-foreground">Based on completed checks</span>}
           </div>
           {score == null ? (
-            <div className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 px-5 text-center"><FileSearch className="h-7 w-7 text-muted-foreground" /><div className="mt-3 font-semibold">Score pending</div><div className="mt-1 max-w-56 text-xs leading-5 text-muted-foreground">Available after enough evidence is analysed</div></div>
+            <div className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 px-5 text-center"><FileSearch className="h-7 w-7 text-muted-foreground" /><div className="mt-3 font-semibold">{terminal ? 'Score unavailable' : 'Score pending'}</div><div className="mt-1 max-w-56 text-xs leading-5 text-muted-foreground">{terminal ? 'This audit ended without a saved score. Collected findings remain available below.' : 'Available after enough evidence is analysed'}</div></div>
           ) : <AuditScoreOverview score={score} label={scoreLabel} detail={scoreDetail} categoryScores={categoryScores} />}
         </div>
 
@@ -68,7 +71,7 @@ export function AuditExecutiveSummary({
           <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4 text-sm">
             <div><dt className="text-xs text-muted-foreground">Pages analysed</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{audit.pagesCrawled}<span className="ml-1 text-xs font-normal text-muted-foreground">/ {coverageTarget}</span></dd></div>
             <div><dt className="text-xs text-muted-foreground">Coverage</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{coverage}%</dd></div>
-            <div><dt className="text-xs text-muted-foreground">Checks completed</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{audit.checksCompleted}<span className="ml-1 text-xs font-normal text-muted-foreground">/ {audit.checksTotal || '—'}</span></dd></div>
+            <div><dt className="text-xs text-muted-foreground">Checks completed</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{audit.checksCompleted}<span className="ml-1 text-xs font-normal text-muted-foreground">/ {checksTotal || '—'}</span></dd></div>
             <div><dt className="text-xs text-muted-foreground">{limitationLabel}</dt><dd className={`mt-1 text-xl font-semibold tabular-nums ${limitationCount ? 'text-amber-600 dark:text-amber-300' : ''}`}>{limitationCount}</dd></div>
           </dl>
           <div className="mt-5 space-y-3">

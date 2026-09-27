@@ -566,9 +566,10 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
   await writeProgress({
     progress: 20,
     currentPhase: 'Checking page content',
+    pageLimit: config.pageLimit,
     pagesDiscovered: scheduled.size,
-    checksTotal: coverageTarget() * (AUDIT_CHECK_COUNT + 1),
-    checksCompleted: 0,
+    checksTotal: coverageTarget() * (AUDIT_CHECK_COUNT + 2),
+    checksCompleted: completedChecks,
   });
 
   let active = 0;
@@ -785,7 +786,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
       currentUrl: fetched.finalUrl,
       currentCheck: 'Page crawled',
       pagesCrawled: analysedPages,
-      checksTotal: coverageTarget() * (AUDIT_CHECK_COUNT + 1),
+      checksTotal: Math.max(completedChecks, coverageTarget() * (AUDIT_CHECK_COUNT + 2)),
       checksCompleted: completedChecks,
       progress: Math.min(90, 20 + Math.floor((analysedPages / coverageTarget()) * 70)),
     }, {
@@ -924,7 +925,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
       currentUrl: null,
       currentCheck: null,
       pagesCrawled: 0,
-      checksTotal: Math.max(1, scheduled.size) * (AUDIT_CHECK_COUNT + 1),
+      checksTotal: Math.max(completedChecks, coverageTarget() * (AUDIT_CHECK_COUNT + 2)),
       checksCompleted: completedChecks,
       warningCount: failures.length,
       failureCounts: aggregateFailureCounts(failures),
@@ -1069,7 +1070,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     currentUrl: null,
     currentCheck: null,
     pagesCrawled: analysedPages,
-    checksTotal: coverageTarget() * (AUDIT_CHECK_COUNT + 1),
+    checksTotal: Math.max(completedChecks, coverageTarget() * (AUDIT_CHECK_COUNT + 2)),
     checksCompleted: completedChecks,
     warningCount: failures.length,
     failureCounts: aggregateFailureCounts(failures),
@@ -1204,7 +1205,11 @@ export async function runOneAudit(
       if (runtimeState) await writeWorkerHeartbeat(runtimeState, { status: 'idle', currentAuditId: null, queuePollingStatus: 'active' });
       return true;
     }
-    const failure = classifyAuditFailure(error, { affectedUrl: audit.currentUrl || audit.normalizedUrl });
+    // Target failures are handled inside the crawl. Escaping errors belong to the audit service.
+    const failure = failureForCode('AUDIT_PROCESSING_FAILED', {
+      affectedUrl: terminalAudit?.currentUrl || audit.normalizedUrl,
+      internalDetails: error instanceof Error ? error.message : String(error),
+    });
     captureWorkerException(error, {
       jobStage: 'audit-processing',
       failureCategory: failure.code,
@@ -1241,7 +1246,10 @@ export async function runOneAudit(
       status: 'failed',
       progress: 100,
       error: safeMessage,
-      currentPhase: 'Audit could not collect usable evidence',
+      currentPhase: 'Audit processing interrupted',
+      currentUrl: null,
+      currentCheck: null,
+      failureCounts: { ...(terminalAudit?.failureCounts || {}), AUDIT_PROCESSING_FAILED: 1 },
       completedAt: nowIso(),
       lockedBy: null,
       lockedAt: null,

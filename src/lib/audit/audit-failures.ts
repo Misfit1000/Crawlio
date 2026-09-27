@@ -32,6 +32,7 @@ export type AuditFailureCode =
   | 'EMBEDDED_CREDENTIALS'
   | 'CHECK_UNAVAILABLE'
   | 'AUDIT_DEADLINE_EXCEEDED'
+  | 'AUDIT_PROCESSING_FAILED'
   | 'UNKNOWN_TARGET_FAILURE';
 
 export type AuditFailureCategory = 'dns' | 'connection' | 'tls' | 'http' | 'redirect' | 'crawl' | 'content' | 'security-policy' | 'analysis' | 'audit-limit';
@@ -61,6 +62,7 @@ export interface AuditFailureContext {
 type FailureCopy = Omit<AuditFailure, 'affectedUrl' | 'httpStatus' | 'attemptCount' | 'recoveredAfterRetry' | 'internalDetails'>;
 
 const COPY: Record<AuditFailureCode, FailureCopy> = {
+  AUDIT_PROCESSING_FAILED: { code: 'AUDIT_PROCESSING_FAILED', category: 'analysis', safeTitle: 'Audit processing was interrupted', safeExplanation: 'Crawlio could not finish processing or saving this audit. Collected evidence remains available. This does not establish a problem with the audited website.', suggestedAction: 'Retry after the audit service has recovered. Administrators can inspect the recorded diagnostic.', retryable: false },
   DNS_NAME_NOT_FOUND: { code: 'DNS_NAME_NOT_FOUND', category: 'dns', safeTitle: 'Domain name did not resolve', safeExplanation: 'The hostname for this URL did not return a valid public IP address during the audit. The hostname may be incorrect, the subdomain may no longer exist, or its DNS records may be missing.', suggestedAction: 'Check the hostname and DNS records. Remove or update links pointing to this address if the page no longer exists.', retryable: false },
   DNS_TEMPORARY_FAILURE: { code: 'DNS_TEMPORARY_FAILURE', category: 'dns', safeTitle: 'Temporary DNS lookup failure', safeExplanation: 'The domain’s DNS service did not respond successfully during this attempt. The audit retried the request but could not confirm the page.', suggestedAction: 'Check the domain’s DNS availability and run the audit again if the issue was temporary.', retryable: true },
   CONNECTION_TIMEOUT: { code: 'CONNECTION_TIMEOUT', category: 'connection', safeTitle: 'Connection timed out', safeExplanation: 'The website did not respond within the audit’s safe request time limit.', suggestedAction: 'Check server response time, hosting availability, firewall rules, and CDN configuration.', retryable: true },

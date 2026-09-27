@@ -50,7 +50,7 @@ export function getAuditLiveScore(input: {
     };
   }
 
-  if (audit.status === 'running') {
+  if (audit.status !== 'queued') {
     const event = [...input.events].reverse().find((item) => item.type === 'score_updated' && (item.data as any)?.scoreState === 'provisional');
     const data = event?.data as Record<string, unknown> | undefined;
     if (event && data) {

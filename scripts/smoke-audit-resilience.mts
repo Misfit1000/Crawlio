@@ -57,6 +57,7 @@ try {
   assert.equal(warningData.audit?.progress, 100);
   assert.equal(warningData.audit?.lockedBy, null);
   assert.equal(warningData.audit?.leaseExpiresAt, null);
+  assert.ok(warningData.audit!.checksCompleted <= warningData.audit!.checksTotal, 'completed checks must fit the check budget');
   assert.ok(warningData.latestPages.some((page) => page.url.endsWith('/missing') && page.failureCode === 'HTTP_404'));
   const missingIssue = warningData.latestIssues.find((issue) => issue.title === 'Page returned 404 Not Found');
   assert.ok(missingIssue);
@@ -83,6 +84,23 @@ try {
   const next = await auditRepository.getAudit(nextAudit.id);
   assert.ok(next?.status === 'completed' || next?.status === 'completed_with_warnings');
   assert.equal(next?.progress, 100);
+
+  const storageAudit = await queue('/healthy');
+  await auditRepository.updateAudit(storageAudit.id, { pageLimit: 1000 });
+  const saveFinalReport = auditRepository.setFinalReport;
+  try {
+    auditRepository.setFinalReport = async () => { throw new Error('Database report write failed: private diagnostic'); };
+    await runOneAudit('storage-failure-worker');
+  } finally {
+    auditRepository.setFinalReport = saveFinalReport;
+  }
+  const interrupted = await auditRepository.getLiveData(storageAudit.id);
+  assert.equal(interrupted.audit?.status, 'failed');
+  assert.equal(interrupted.audit?.pageLimit, 5, 'display the effective worker allowance');
+  assert.equal(interrupted.audit?.failureCounts?.AUDIT_PROCESSING_FAILED, 1);
+  assert.match(interrupted.audit?.error || '', /Crawlio could not finish/);
+  assert.doesNotMatch(interrupted.audit?.error || '', /private diagnostic|website request did not complete/i);
+  assert.ok(interrupted.latestPages.length > 0, 'preserve collected evidence on storage failure');
 
   const staleAudit = await queue('/healthy');
   await auditRepository.updateAudit(staleAudit.id, {

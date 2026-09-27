@@ -72,6 +72,11 @@ const restored = getAuditLiveScore({ audit: baseAudit, events: [scoreEvent] });
 assert.equal(restored.scoreState, 'provisional');
 assert.equal(restored.overallScore, provisional.overallScore);
 assert.equal(restored.pagesAnalysed, 5);
+for (const status of ['failed', 'cancelled', 'abandoned', 'completed'] as const) {
+  const retained = getAuditLiveScore({ audit: { ...baseAudit, status }, events: [scoreEvent] });
+  assert.equal(retained.overallScore, provisional.overallScore, `${status} preserves collected score evidence`);
+  assert.equal(retained.scoreState, 'provisional', 'an event alone cannot become a final score');
+}
 
 const finalReport = {
   scores: { overall: 71, seo: 72, technical: 69, unavailableChecks: ['Mobile field data unavailable'] },

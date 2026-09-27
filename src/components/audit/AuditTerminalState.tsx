@@ -15,6 +15,7 @@ interface Props {
 }
 
 function knownFailureCategory(failureCounts?: Record<string, number>) {
+  if (failureCounts?.AUDIT_PROCESSING_FAILED) return 'Audit service';
   const code = Object.entries(failureCounts || {}).sort((left, right) => right[1] - left[1])[0]?.[0] || '';
   if (/^DNS_/.test(code)) return 'Domain lookup';
   if (/^(CONNECTION_|HTTP_429|HTTP_5)/.test(code)) return 'Website availability';
