@@ -1,5 +1,19 @@
 export type AuditMode = 'quick' | 'standard' | 'deep';
 
+export const AUDIT_MODES: readonly AuditMode[] = ['quick', 'standard', 'deep'];
+
+export const AUDIT_MODE_PAGE_CEILINGS: Readonly<Record<AuditMode, number>> = {
+  quick: 50,
+  standard: 50,
+  deep: 100,
+};
+
+export interface AuditRuntimeCapabilities {
+  availableModes: AuditMode[];
+  pageCeilings: Record<AuditMode, number>;
+  unavailableReasons: Partial<Record<AuditMode, string>>;
+}
+
 export interface AuditModeConfig {
   mode: AuditMode;
   label: string;
@@ -12,23 +26,23 @@ export interface AuditModeConfig {
 const AUDIT_MODE_CONFIG: Record<AuditMode, AuditModeConfig> = {
   quick: {
     mode: 'quick',
-    label: 'Free Quick - 5 pages',
+    label: 'Quick audit',
     pageLimit: 5,
     concurrency: 2,
     timeoutMs: 6000,
-    description: 'Default resource-light audit for fast feedback.',
+    description: 'A focused crawl for fast feedback on the most important pages.',
   },
   standard: {
     mode: 'standard',
-    label: 'Full Standard - 50 pages',
+    label: 'Standard audit',
     pageLimit: 50,
     concurrency: 3,
     timeoutMs: 8000,
-    description: 'Balanced crawl depth and resource use.',
+    description: 'Broader discovery with complete standard SEO and technical checks.',
   },
   deep: {
     mode: 'deep',
-    label: 'Deep - 75 pages',
+    label: 'Deep audit',
     pageLimit: 75,
     concurrency: 4,
     timeoutMs: 12000,
@@ -57,4 +71,30 @@ export function getAuditModeConfig(mode: unknown): AuditModeConfig {
 
 export function getAuditModeLabel(mode: unknown) {
   return getAuditModeConfig(mode).label;
+}
+
+export function isAuditMode(value: unknown): value is AuditMode {
+  return value === 'quick' || value === 'standard' || value === 'deep';
+}
+
+export function normalizeAuditModes(value: unknown, fallback: readonly AuditMode[] = ['quick']): AuditMode[] {
+  if (!Array.isArray(value)) return [...fallback];
+  const modes = AUDIT_MODES.filter((mode) => value.includes(mode));
+  return modes.length ? modes : [...fallback];
+}
+
+export function enforceAuditPageLimit(mode: AuditMode, value: unknown, fallback: number) {
+  const numeric = Number(value);
+  const requested = Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : fallback;
+  return Math.max(1, Math.min(AUDIT_MODE_PAGE_CEILINGS[mode], requested));
+}
+
+export function createAuditRuntimeCapabilities(deepAuditEnabled: boolean): AuditRuntimeCapabilities {
+  return {
+    availableModes: deepAuditEnabled ? [...AUDIT_MODES] : ['quick', 'standard'],
+    pageCeilings: { ...AUDIT_MODE_PAGE_CEILINGS },
+    unavailableReasons: deepAuditEnabled
+      ? {}
+      : { deep: 'Deep audits are temporarily unavailable because the dedicated audit engine is not enabled.' },
+  };
 }

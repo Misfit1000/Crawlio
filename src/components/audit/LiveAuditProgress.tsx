@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, AlertTriangle, BarChart3, CheckCircle2, CircleStop, Clipboard, Clock3, FileDown, History, LayoutDashboard, Loader2, RefreshCw, Radio, Share2, StopCircle, Wifi, WifiOff } from 'lucide-react';
 import { Link } from '../../app/router';
-import type { ResourceAuditLiveData } from '../../lib/audit/resource-types';
+import type { AuditMode, ResourceAuditLiveData } from '../../lib/audit/resource-types';
 import type { LiveAuditConnectionState } from '../../lib/audit/live-supabase-client';
 import { getAuditModeLabel } from '../../lib/audit/audit-config';
 import { isAuditQueuedTooLong } from '../../lib/audit/queued-worker-warning';
@@ -38,10 +38,11 @@ import { AuditReportReadyNote, AuditTerminalState } from './AuditTerminalState';
 import DomainStrengthCard from '../backlinks/DomainStrengthCard';
 import { useFindingWorkflow } from './useFindingWorkflow';
 import type { FindingWorkflowRecord, FindingWorkflowStatus } from '../../lib/audit/finding-workflow';
+import { useAuditEntitlements } from '../../hooks/useAuditEntitlements';
 
 interface Props {
   auditId: string;
-  onRerun?: (url: string) => void | Promise<void>;
+  onRerun?: (url: string, mode: AuditMode) => void | Promise<void>;
   onOpenWorkspace?: () => void;
 }
 
@@ -60,11 +61,10 @@ function formatBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function tierLabel(tier?: string) {
-  if (tier === 'admin') return 'Admin deep audit';
-  if (tier === 'agency') return 'Agency deep audit';
-  if (tier === 'paid') return 'Full audit';
-  return 'Free quick audit';
+function tierLabel(tier?: string, mode?: string) {
+  const prefix = tier === 'admin' ? 'Admin' : tier === 'agency' ? 'Pro' : tier === 'paid' ? 'Plus' : 'Free';
+  const auditType = mode === 'deep' ? 'Deep audit' : mode === 'standard' ? 'Standard audit' : 'Quick audit';
+  return `${prefix} ${auditType}`;
 }
 
 function statusLabel(status?: string) {
@@ -107,6 +107,7 @@ function formatLastUpdate(lastUpdateAt: number | undefined, now: number) {
 }
 
 export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) {
+  const { exportsEnabled, pdfEnabled } = useAuditEntitlements();
   const [data, setData] = useState<ResourceAuditLiveData>(() => createEmptyAuditLiveData());
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
@@ -298,7 +299,8 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
 
   const rerunAudit = () => {
     const url = audit?.normalizedUrl || data.audit?.normalizedUrl;
-    if (url && onRerun) onRerun(url);
+    const mode = audit?.effectiveMode || data.audit?.effectiveMode || 'quick';
+    if (url && onRerun) onRerun(url, mode);
   };
 
   const downloadPdf = async () => {
@@ -426,7 +428,7 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
         metadata={
           <>
             <StatusBadge tone={statusTone as any}>{statusLabel(audit.status)}</StatusBadge>
-            <StatusBadge tone="accent">{tierLabel(audit.processingTier)}</StatusBadge>
+            <StatusBadge tone="accent">{tierLabel(audit.processingTier, audit.effectiveMode || audit.mode)}</StatusBadge>
             <ConnectionBadge connection={connection} now={now} />
           </>
         }
@@ -434,8 +436,8 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
           {data.finalReport && onOpenWorkspace && <button type="button" onClick={onOpenWorkspace} className="trust-button min-h-10 px-3 py-2 text-sm"><BarChart3 className="h-4 w-4" /> Open report</button>}
           {onRerun && isTerminalAuditStatus(audit.status) && <button type="button" onClick={rerunAudit} className="quiet-button min-h-10 px-3 py-2 text-sm"><RefreshCw className="h-4 w-4" /> Rerun</button>}
           <button type="button" onClick={copyReportLink} className="quiet-button min-h-10 px-3 py-2 text-sm"><Share2 className="h-4 w-4" /> Copy link</button>
-          {data.finalReport && <button type="button" onClick={downloadJson} disabled={isDownloadingJson} className="quiet-button min-h-10 px-3 py-2 text-sm">{isDownloadingJson ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} JSON</button>}
-          {data.finalReport && audit.processingTier !== 'free' && <button type="button" onClick={downloadPdf} disabled={isDownloadingPdf} className="quiet-button min-h-10 px-3 py-2 text-sm">{isDownloadingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} PDF</button>}
+          {data.finalReport && exportsEnabled && <button type="button" onClick={downloadJson} disabled={isDownloadingJson} className="quiet-button min-h-10 px-3 py-2 text-sm">{isDownloadingJson ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} JSON</button>}
+          {data.finalReport && pdfEnabled && <button type="button" onClick={downloadPdf} disabled={isDownloadingPdf} className="quiet-button min-h-10 px-3 py-2 text-sm">{isDownloadingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} PDF</button>}
           {(audit.status === 'queued' || audit.status === 'running') && <button type="button" onClick={cancelAudit} disabled={isCancelling} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-red-500/30 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-500/10 dark:text-red-300">{isCancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : <StopCircle className="h-4 w-4" />} Stop</button>}
         </div>}
       />
@@ -531,20 +533,20 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
                 <BarChart3 className="h-4 w-4" /> Open report workspace
               </button>
             )}
-            {data.finalReport && (
+            {data.finalReport && exportsEnabled && (
               <button type="button" onClick={downloadJson} disabled={isDownloadingJson} className="quiet-button px-3 py-2 text-sm">
                 {isDownloadingJson ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} JSON
               </button>
             )}
-            {isCompletedAuditStatus(audit.status) && audit.processingTier !== 'free' && (
+            {isCompletedAuditStatus(audit.status) && pdfEnabled && (
               <button type="button" onClick={downloadPdf} disabled={isDownloadingPdf} className="trust-button px-3 py-2 text-sm">
                 {isDownloadingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
                 {isDownloadingPdf ? 'Building PDF...' : 'Download PDF'}
               </button>
             )}
-            {isCompletedAuditStatus(audit.status) && audit.processingTier === 'free' && (
-              <button type="button" disabled className="quiet-button px-3 py-2 text-sm" title="PDF reports are available with Full audits.">
-                <FileDown className="h-4 w-4" /> PDF in Full
+            {isCompletedAuditStatus(audit.status) && !pdfEnabled && (
+              <button type="button" disabled className="quiet-button px-3 py-2 text-sm" title="PDF reports are available when enabled for your plan.">
+                <FileDown className="h-4 w-4" /> PDF unavailable
               </button>
             )}
             {audit.status === 'queued' || audit.status === 'running' ? (
@@ -610,7 +612,7 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
           <Info label="Final URL" value={audit.finalUrl || 'Waiting for first fetch'} />
           <Info label="Hostname" value={audit.hostname} />
           <Info label="Audit mode" value={getAuditModeLabel(audit.mode)} />
-          <Info label="Audit type" value={tierLabel(audit.processingTier)} />
+          <Info label="Audit type" value={tierLabel(audit.processingTier, audit.effectiveMode || audit.mode)} />
           <Info label="Plan" value={audit.plan || 'free'} />
           <Info label="Status" value={statusLabel(audit.status)} />
           <Info label="Page being checked" value={audit.currentUrl || 'Waiting for audit engine'} />
@@ -626,7 +628,7 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
       {isCompletedAuditStatus(audit.status) && audit.processingTier === 'free' && (
         <div className="bg-accent/10 border border-accent/20 rounded-xl p-4 text-sm">
           <div className="font-semibold text-foreground">Need broader coverage?</div>
-          <div className="text-muted-foreground mt-1">Accounts with full audit access can analyse up to 50 reachable pages and use the extended report and export options.</div>
+          <div className="text-muted-foreground mt-1">Accounts with Standard audit access can analyse up to 50 reachable pages and use the extended report and export options.</div>
         </div>
       )}
 

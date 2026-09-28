@@ -10,7 +10,14 @@ import { clusterKeywords } from '../lib/keywords/clustering';
 import { buildContentBrief } from '../lib/keywords/content-brief';
 import { auditRepository } from '../lib/supabase/audit-repository';
 import { isSupabaseAdminEnabled, requireSupabaseAdminClient } from '../lib/supabase/server';
-import { getAuditModeConfig, type AuditMode } from '../lib/audit/resource-types';
+import {
+  AUDIT_MODE_PAGE_CEILINGS,
+  createAuditRuntimeCapabilities,
+  getAuditModeConfig,
+  isAuditMode,
+  normalizeAuditModes,
+  type AuditMode,
+} from '../lib/audit/resource-types';
 import {
   EntitlementError,
   canStartAudit,
@@ -20,7 +27,6 @@ import {
   getPlanLimits,
 } from '../lib/billing/entitlements';
 import type { ResourceAuditDocument } from '../lib/audit/resource-types';
-import { getAuditProfileForDocument } from '../lib/audit/audit-profiles';
 import { createRateLimiter } from '../lib/api/http-hardening';
 import { blogRepository, mapBlogPostRow } from '../lib/blog/repository';
 import { normalizeBlogSlug } from '../lib/blog/slug';
@@ -448,7 +454,12 @@ apiRouter.get('/me/profile', asyncJsonRoute(async (req, res) => {
   }
   const profile = await ensureUserProfileFromAuthUser(authUser);
   const limits = await getPlanLimits(profile.plan);
-  res.json({ success: true, data: { profile, limits } });
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: {
+    profile,
+    limits,
+    auditCapabilities: createAuditRuntimeCapabilities(isDeepAuditEnabled()),
+  } });
 }));
 
 apiRouter.get('/me/export', asyncJsonRoute(async (req, res) => {
@@ -515,7 +526,11 @@ apiRouter.get('/plans/public', asyncJsonRoute(async (req, res) => {
     .filter(Boolean)
     .sort()
     .at(-1) || new Date().toISOString();
-  const projection = createPublicPlanProjection(data || [], latestUpdate);
+  const projection = createPublicPlanProjection(
+    data || [],
+    latestUpdate,
+    createAuditRuntimeCapabilities(isDeepAuditEnabled()).availableModes,
+  );
   const serialized = JSON.stringify(projection);
   const etag = `\"${createHash('sha256').update(serialized).digest('base64url')}\"`;
   res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=60, must-revalidate');
@@ -689,16 +704,54 @@ apiRouter.post('/admin/plans/:plan', asyncJsonRoute(async (req, res) => {
   if (reason.length < 4 || reason.length > 500) throw new ApiError('ADMIN_REASON_REQUIRED', 'Provide a reason between 4 and 500 characters.', 400);
   const numericKeys = new Set(['daily_audits', 'monthly_audits', 'max_pages_quick', 'max_pages_standard', 'max_pages_deep', 'audit_timeout_seconds', 'concurrency', 'max_events_per_audit', 'max_issues_per_audit', 'priority']);
   const booleanKeys = new Set(['exports_enabled', 'pdf_enabled', 'scheduled_audits_enabled']);
-  const patch: Record<string, number | boolean> = {};
+  const numericBounds: Record<string, [number, number]> = {
+    daily_audits: [0, 100_000],
+    monthly_audits: [0, 1_000_000],
+    max_pages_quick: [0, AUDIT_MODE_PAGE_CEILINGS.quick],
+    max_pages_standard: [0, AUDIT_MODE_PAGE_CEILINGS.standard],
+    max_pages_deep: [0, AUDIT_MODE_PAGE_CEILINGS.deep],
+    audit_timeout_seconds: [3, 30],
+    concurrency: [1, 8],
+    max_events_per_audit: [50, 10_000],
+    max_issues_per_audit: [100, 20_000],
+    priority: [0, 1_000],
+  };
+  const patch: Record<string, number | boolean | AuditMode[]> = {};
   for (const [key, value] of Object.entries(req.body?.patch || {})) {
-    if (numericKeys.has(key) && Number.isFinite(Number(value))) patch[key] = Number(value);
+    if (numericKeys.has(key) && Number.isFinite(Number(value))) {
+      const numeric = Number(value);
+      const [minimum, maximum] = numericBounds[key];
+      if (!Number.isInteger(numeric) || numeric < minimum || numeric > maximum) {
+        throw new ApiError('INVALID_PLAN_LIMIT', `${key.replace(/_/g, ' ')} must be a whole number between ${minimum} and ${maximum}.`, 400);
+      }
+      patch[key] = numeric;
+    }
     if (booleanKeys.has(key) && typeof value === 'boolean') patch[key] = value;
+    if (key === 'allowed_modes') {
+      if (!Array.isArray(value) || value.some((mode) => !isAuditMode(mode))) {
+        throw new ApiError('INVALID_AUDIT_MODES', 'Allowed audit modes must contain only Quick, Standard, or Deep.', 400);
+      }
+      const modes = normalizeAuditModes(value, []);
+      if (!modes.length) throw new ApiError('AUDIT_MODE_REQUIRED', 'Enable at least one audit mode for this plan.', 400);
+      patch.allowed_modes = modes;
+    }
   }
   if (!Object.keys(patch).length) throw new ApiError('EMPTY_ADMIN_UPDATE', 'No supported plan fields were provided.', 400);
   const client = requireSupabaseAdminClient();
   const { data: before, error: readError } = await client.from('plan_limits').select('*').eq('plan', req.params.plan).maybeSingle();
   if (readError) throw readError;
   if (!before) throw new ApiError('PLAN_NOT_FOUND', 'Plan not found.', 404);
+  const merged = { ...before, ...patch };
+  const allowedModes = normalizeAuditModes(merged.allowed_modes, []);
+  for (const mode of allowedModes) {
+    const field = mode === 'quick' ? 'max_pages_quick' : mode === 'standard' ? 'max_pages_standard' : 'max_pages_deep';
+    if (Number(merged[field] || 0) < 1) {
+      throw new ApiError('AUDIT_MODE_LIMIT_REQUIRED', `${mode[0].toUpperCase() + mode.slice(1)} must have a page limit before it can be enabled.`, 400);
+    }
+    if (Number(merged[field]) > AUDIT_MODE_PAGE_CEILINGS[mode]) {
+      throw new ApiError('AUDIT_MODE_LIMIT_UNSUPPORTED', `${mode[0].toUpperCase() + mode.slice(1)} currently supports at most ${AUDIT_MODE_PAGE_CEILINGS[mode]} pages.`, 400);
+    }
+  }
   const { error } = await client.from('plan_limits').update({ ...patch, updated_at: new Date().toISOString() }).eq('plan', req.params.plan);
   if (error) throw error;
   await client.from('admin_actions').insert({ admin_user_id: requester.userId, action: 'update_plan_limits', target_type: 'plan', target_id: req.params.plan, metadata: { reason, before, after: patch } });
@@ -1633,7 +1686,10 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
     throw new ApiError('INVALID_AUDIT_TARGET', normalized.error || 'Enter a valid public website or domain.', 400);
   }
 
-  const requestedMode = getAuditModeConfig(mode).mode as AuditMode;
+  if (!isAuditMode(mode)) {
+    throw new ApiError('INVALID_AUDIT_MODE', 'Choose Quick, Standard, or Deep audit mode.', 400);
+  }
+  const requestedMode = mode;
   const { userId } = await getRequester(req);
   let validatedProjectId: string | null = null;
   if (projectId != null) {
@@ -2048,25 +2104,33 @@ apiRouter.get('/audit/compare/:currentId/:baselineId', asyncJsonRoute(async (req
 
 apiRouter.get('/audit/export/:id/:format', asyncJsonRoute(async (req, res) => {
   const { id, format } = req.params;
-  const liveData = await auditRepository.getLiveData(id);
-  if (!liveData.audit) return res.status(404).json({ success: false, error: 'Audit not found' });
-  if (!(await canAccessAudit(req, liveData.audit))) return res.status(404).json({ success: false, error: 'Audit not found' });
+  const supportedFormats = new Set(['pdf', 'json', 'issues.csv', 'pages.csv']);
+  if (!supportedFormats.has(format)) return res.status(400).json({ success: false, error: 'Unsupported export format' });
+  const audit = await auditRepository.getAudit(id);
+  if (!audit || !(await canAccessAudit(req, audit))) return res.status(404).json({ success: false, error: 'Audit not found' });
+  const limits = await getPlanLimits(audit.plan);
+  res.setHeader('Cache-Control', 'private, no-store');
 
   if (format === 'pdf') {
-    if (!isCompletedAuditStatus(liveData.audit.status)) {
+    if (!isCompletedAuditStatus(audit.status)) {
       return res.status(409).json({ success: false, error: 'PDF export is available after the audit completes.' });
     }
-    const profile = getAuditProfileForDocument(liveData.audit);
-    if (!profile.pdfEnabled) {
-      return res.status(403).json({ success: false, error: 'PDF reports require a Full, Agency, or Admin audit.', upgradeRequired: true });
+    if (!limits.pdfEnabled) {
+      return res.status(403).json({ success: false, error: 'PDF reports require eligible Standard, Deep, or Admin audit access.', upgradeRequired: true });
     }
+  } else if (!limits.exportsEnabled) {
+    return res.status(403).json({ success: false, error: 'Data exports are not enabled for this plan.', upgradeRequired: true });
+  }
+
+  const liveData = await auditRepository.getLiveData(id, audit);
+
+  if (format === 'pdf') {
     const { renderAuditPdf } = await import('../lib/report/pdf');
     const pdf = await renderAuditPdf(liveData);
-    const safeHost = liveData.audit.hostname.replace(/[^a-z0-9.-]+/gi, '-').replace(/^-+|-+$/g, '') || 'website';
+    const safeHost = audit.hostname.replace(/[^a-z0-9.-]+/gi, '-').replace(/^-+|-+$/g, '') || 'website';
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="crawlio-${safeHost}-audit.pdf"`);
     res.setHeader('Content-Length', String(pdf.length));
-    res.setHeader('Cache-Control', 'private, no-store');
     return res.status(200).send(pdf);
   }
 

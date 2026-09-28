@@ -126,7 +126,7 @@ export default function App() {
   useEffect(() => {
     const pages: Record<string, { title: string; description: string }> = {
       '/': { title: `${BRAND.name} - ${BRAND.tagline}`, description: BRAND.description },
-      '/pricing': { title: `Pricing and Free Audit Limits | ${BRAND.name}`, description: `Compare ${BRAND.name} Free, Full, and Agency-ready audit limits without hidden ranking or backlink data claims.` },
+      '/pricing': { title: `Pricing and Free Audit Limits | ${BRAND.name}`, description: `Compare ${BRAND.name} Quick, Standard, and Deep audit limits without hidden ranking or backlink data claims.` },
       '/reports/example': { title: `Example Website Audit Report | ${BRAND.name}`, description: `Explore an example ${BRAND.name} report with website health, coverage, passive security, previews, and prioritized fixes.` },
       '/login': { title: `Sign in | ${BRAND.name}`, description: `Sign in to manage ${BRAND.name} website audits and reports.` },
       '/register': { title: `Create an account | ${BRAND.name}`, description: `Create a ${BRAND.name} account to save audits, reports, and fix progress.` },
@@ -291,7 +291,7 @@ export default function App() {
           <Suspense fallback={<div className="h-64 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-accent" /></div>}>
             <LiveAuditProgress
               auditId={liveAuditId}
-              onRerun={(url) => startLiveAudit(url, 'quick')}
+              onRerun={startLiveAudit}
               onOpenWorkspace={() => navigate(`/app/audits/${encodeURIComponent(liveAuditId)}/${liveAuditSection}`)}
             />
           </Suspense>

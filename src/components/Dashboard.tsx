@@ -14,11 +14,8 @@ import {
   Upload,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { getAuthHeaders } from '../lib/api/auth-headers';
-import { API_ROUTES } from '../lib/api/routes';
 import { readAuditHistory, scoreTrendForUrl, type AuditHistoryEntry } from '../lib/audit/client-insights';
 import { groupRecommendations, scoreToGrade } from '../lib/audit/report-insights';
-import { safeJsonFetch } from '../lib/http/safe-json';
 import { isCompletedAuditStatus } from '../lib/audit/audit-time';
 import {
   AuditGrade,
@@ -55,7 +52,6 @@ function formatDate(value?: string | null) {
 
 export default function Dashboard(props: DashboardProps) {
   const { user } = useAuth();
-  const [planData, setPlanData] = useState<any | null>(null);
   const [history, setHistory] = useState<AuditHistoryEntry[]>([]);
   const [importState, setImportState] = useState({ search: false, rankings: false });
   const upgradeUrl = import.meta.env.VITE_UPGRADE_URL;
@@ -68,27 +64,8 @@ export default function Dashboard(props: DashboardProps) {
     });
   }, []);
 
-  useEffect(() => {
-    let active = true;
-    if (!user) {
-      setPlanData(null);
-      return;
-    }
-    getAuthHeaders()
-      .then((headers) => safeJsonFetch<any>(API_ROUTES.meProfile, { headers }))
-      .then((response) => {
-        if (active && response.success) setPlanData(response.data.data || response.data);
-      })
-      .catch(() => {
-        if (active) setPlanData(null);
-      });
-    return () => {
-      active = false;
-    };
-  }, [user]);
-
-  const profile = planData?.profile || user;
-  const limits = planData?.limits;
+  const profile = user;
+  const limits = user?.auditEntitlements;
   const plan = profile?.plan || 'free';
   const dailyLimit = Number(limits?.dailyAudits ?? (plan === 'free' ? 3 : 25));
   const monthlyLimit = Number(limits?.monthlyAudits ?? (plan === 'free' ? 30 : 500));
@@ -120,7 +97,7 @@ export default function Dashboard(props: DashboardProps) {
           <div className="p-6 md:p-8">
             <div className="flex flex-wrap items-center gap-2">
               <StatusBadge tone={plan === 'free' ? 'warning' : 'success'}>{plan} plan</StatusBadge>
-              <StatusBadge tone="accent">{plan === 'free' ? 'Quick audits' : 'Full audits'}</StatusBadge>
+              <StatusBadge tone="accent">Quick audits</StatusBadge>
             </div>
             <h2 className="mt-5 max-w-3xl text-2xl font-semibold leading-tight md:text-3xl">{latest ? latest.hostname : 'Get a clear starting point.'}</h2>
             <p className="mt-3 max-w-3xl text-base leading-7 text-muted-foreground">

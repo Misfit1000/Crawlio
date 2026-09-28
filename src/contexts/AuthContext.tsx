@@ -2,6 +2,25 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { API_ROUTES } from "../lib/api/routes";
 import { safeJsonFetch } from "../lib/http/safe-json";
+import {
+  AUDIT_MODES,
+  enforceAuditPageLimit,
+  normalizeAuditModes,
+  type AuditMode,
+} from "../lib/audit/audit-config";
+
+export interface AuditEntitlements {
+  allowedModes: AuditMode[];
+  availableModes: AuditMode[];
+  pageLimits: Record<AuditMode, number>;
+  dailyAudits: number;
+  monthlyAudits: number;
+  exportsEnabled: boolean;
+  pdfEnabled: boolean;
+  scheduledAuditsEnabled: boolean;
+  unavailableReasons: Partial<Record<AuditMode, string>>;
+  updatedAt: string | null;
+}
 
 export interface User {
   id: string;
@@ -17,6 +36,7 @@ export interface User {
   subscriptionStatus: 'inactive' | 'trialing' | 'active' | 'past_due' | 'cancelled';
   auditQuotaUsedDaily: number;
   auditQuotaUsedMonthly: number;
+  auditEntitlements: AuditEntitlements;
 }
 
 interface AuthContextType {
@@ -26,6 +46,7 @@ interface AuthContextType {
   register: (email: string, password: string, legalConsent: { accepted: boolean; version: string }) => Promise<void>;
   logout: () => Promise<void>;
   updateUserProfile: (data: Partial<User>) => Promise<void>;
+  refreshAuditEntitlements: () => Promise<AuditEntitlements | null>;
   error: string | null;
   unverifiedEmail: string | null;
   setUnverifiedEmail: (email: string | null) => void;
@@ -85,10 +106,49 @@ async function fetchServerProfile(accessToken?: string) {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!response.success) return null;
-    return response.data.data?.profile || response.data.profile || null;
+    return response.data.data || response.data || null;
   } catch {
     return null;
   }
+}
+
+const FALLBACK_AUDIT_ENTITLEMENTS: Record<User['plan'], AuditEntitlements> = {
+  free: { allowedModes: ['quick'], availableModes: ['quick'], pageLimits: { quick: 5, standard: 0, deep: 0 }, dailyAudits: 3, monthlyAudits: 30, exportsEnabled: true, pdfEnabled: false, scheduledAuditsEnabled: false, unavailableReasons: {}, updatedAt: null },
+  paid: { allowedModes: ['quick', 'standard'], availableModes: ['quick', 'standard'], pageLimits: { quick: 50, standard: 50, deep: 0 }, dailyAudits: 25, monthlyAudits: 500, exportsEnabled: true, pdfEnabled: true, scheduledAuditsEnabled: false, unavailableReasons: {}, updatedAt: null },
+  agency: { allowedModes: ['quick', 'standard', 'deep'], availableModes: ['quick', 'standard'], pageLimits: { quick: 50, standard: 50, deep: 75 }, dailyAudits: 100, monthlyAudits: 3000, exportsEnabled: true, pdfEnabled: true, scheduledAuditsEnabled: true, unavailableReasons: { deep: 'Deep audits are temporarily unavailable because the dedicated audit engine is not enabled.' }, updatedAt: null },
+  admin: { allowedModes: ['quick', 'standard', 'deep'], availableModes: ['quick', 'standard'], pageLimits: { quick: 50, standard: 50, deep: 100 }, dailyAudits: 1000, monthlyAudits: 100000, exportsEnabled: true, pdfEnabled: true, scheduledAuditsEnabled: true, unavailableReasons: { deep: 'Deep audits are temporarily unavailable because the dedicated audit engine is not enabled.' }, updatedAt: null },
+};
+
+function clientPageLimit(mode: AuditMode, value: unknown, fallback: number) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? enforceAuditPageLimit(mode, numeric, fallback || 1) : 0;
+}
+
+function mapAuditEntitlements(payload: any, plan: User['plan']): AuditEntitlements {
+  const fallback = FALLBACK_AUDIT_ENTITLEMENTS[plan];
+  const limits = payload?.limits || {};
+  const capabilities = payload?.auditCapabilities || {};
+  const pageLimits = {
+    quick: clientPageLimit('quick', limits.maxPagesQuick, fallback.pageLimits.quick),
+    standard: clientPageLimit('standard', limits.maxPagesStandard, fallback.pageLimits.standard),
+    deep: clientPageLimit('deep', limits.maxPagesDeep, fallback.pageLimits.deep),
+  };
+  const allowedModes = normalizeAuditModes(limits.allowedModes, fallback.allowedModes).filter((mode) => pageLimits[mode] > 0);
+  const runtimeModes = Array.isArray(capabilities.availableModes)
+    ? AUDIT_MODES.filter((mode) => capabilities.availableModes.includes(mode))
+    : fallback.availableModes;
+  return {
+    allowedModes,
+    availableModes: allowedModes.filter((mode) => runtimeModes.includes(mode)),
+    pageLimits,
+    dailyAudits: Math.max(0, Number(limits.dailyAudits ?? fallback.dailyAudits) || 0),
+    monthlyAudits: Math.max(0, Number(limits.monthlyAudits ?? fallback.monthlyAudits) || 0),
+    exportsEnabled: typeof limits.exportsEnabled === 'boolean' ? limits.exportsEnabled : fallback.exportsEnabled,
+    pdfEnabled: typeof limits.pdfEnabled === 'boolean' ? limits.pdfEnabled : fallback.pdfEnabled,
+    scheduledAuditsEnabled: typeof limits.scheduledAuditsEnabled === 'boolean' ? limits.scheduledAuditsEnabled : fallback.scheduledAuditsEnabled,
+    unavailableReasons: capabilities.unavailableReasons || fallback.unavailableReasons,
+    updatedAt: typeof limits.updatedAt === 'string' ? limits.updatedAt : null,
+  };
 }
 
 function normalizeRole(value: unknown): User['role'] {
@@ -107,8 +167,8 @@ async function mapSupabaseUser(supabaseUser: SupabaseUser, dataService: Supabase
   const metadata = supabaseUser.user_metadata || {};
 
   try {
-    const serverProfile = await fetchServerProfile(accessToken);
-    let profile = serverProfile;
+    const serverPayload = await fetchServerProfile(accessToken);
+    let profile = serverPayload?.profile;
     if (!profile) {
       await dataService.initUserProfile(supabaseUser.id, {
         email,
@@ -117,6 +177,7 @@ async function mapSupabaseUser(supabaseUser: SupabaseUser, dataService: Supabase
       profile = await dataService.getUserProfile(supabaseUser.id) || {};
     }
 
+    const plan = normalizePlan(profile.plan);
     return {
       id: supabaseUser.id,
       username: profile.username || email.split('@')[0] || 'User',
@@ -127,10 +188,11 @@ async function mapSupabaseUser(supabaseUser: SupabaseUser, dataService: Supabase
       creationTime: supabaseUser.created_at || new Date().toISOString(),
       lastSignInTime: supabaseUser.last_sign_in_at || new Date().toISOString(),
       role: normalizeRole(profile.role),
-      plan: normalizePlan(profile.plan),
+      plan,
       subscriptionStatus: profile.subscriptionStatus || profile.subscription_status || 'inactive',
       auditQuotaUsedDaily: Number(profile.auditQuotaUsedDaily ?? profile.audit_quota_used_daily ?? 0),
       auditQuotaUsedMonthly: Number(profile.auditQuotaUsedMonthly ?? profile.audit_quota_used_monthly ?? 0),
+      auditEntitlements: mapAuditEntitlements(serverPayload, plan),
     };
   } catch (err) {
     console.error("Error loading user profile:", err);
@@ -148,6 +210,7 @@ async function mapSupabaseUser(supabaseUser: SupabaseUser, dataService: Supabase
       subscriptionStatus: 'inactive',
       auditQuotaUsedDaily: 0,
       auditQuotaUsedMonthly: 0,
+      auditEntitlements: FALLBACK_AUDIT_ENTITLEMENTS.free,
     };
   }
 }
@@ -293,6 +356,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser((prev) => prev ? { ...prev, ...data } : null);
   };
 
+  const refreshAuditEntitlements = async () => {
+    if (!user || !hasSupabaseBrowserConfig()) return user?.auditEntitlements || null;
+    const client = await getSupabaseClientOrThrow();
+    const { data } = await client.auth.getSession();
+    const payload = await fetchServerProfile(data.session?.access_token);
+    if (!payload?.profile || !payload?.limits) return user.auditEntitlements;
+    const plan = normalizePlan(payload.profile.plan);
+    const entitlements = mapAuditEntitlements(payload, plan);
+    setUser((previous) => previous ? {
+      ...previous,
+      plan,
+      role: normalizeRole(payload.profile.role),
+      subscriptionStatus: payload.profile.subscriptionStatus || payload.profile.subscription_status || previous.subscriptionStatus,
+      auditQuotaUsedDaily: Number(payload.profile.auditQuotaUsedDaily ?? payload.profile.audit_quota_used_daily ?? previous.auditQuotaUsedDaily),
+      auditQuotaUsedMonthly: Number(payload.profile.auditQuotaUsedMonthly ?? payload.profile.audit_quota_used_monthly ?? previous.auditQuotaUsedMonthly),
+      auditEntitlements: entitlements,
+    } : previous);
+    return entitlements;
+  };
+
   const logout = async () => {
     if (!hasSupabaseBrowserConfig()) return;
     const client = await getSupabaseClientOrThrow();
@@ -303,7 +386,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, updateUserProfile, error, unverifiedEmail, setUnverifiedEmail }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, updateUserProfile, refreshAuditEntitlements, error, unverifiedEmail, setUnverifiedEmail }}>
       {children}
     </AuthContext.Provider>
   );

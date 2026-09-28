@@ -1,37 +1,29 @@
 import { useState } from 'react';
-import { Accessibility, Database, Download, Loader2, RotateCcw, Save, Settings as SettingsIcon, ShieldCheck, Trash2, UserRound } from 'lucide-react';
+import { Accessibility, CheckCircle2, Database, Download, Loader2, LockKeyhole, RefreshCw, RotateCcw, Settings as SettingsIcon, ShieldCheck, Trash2, UserRound } from 'lucide-react';
 import { FormField, Notice, PageHeader, PageSection, Panel } from './ui/page-system';
 import { useAuth } from '../contexts/AuthContext';
 import { getAuthHeaders } from '../lib/api/auth-headers';
 import { safeJsonFetch } from '../lib/http/safe-json';
 import { useAccessibilityPreferences } from '../contexts/AccessibilityContext';
-
-const SETTINGS_KEY = 'crawlio_preferences';
-const LEGACY_SETTINGS_KEY = 'seointel_preferences';
-
-function readPreferences() {
-  try {
-    return { maxPages: 50, engineName: 'CrawlioBot/1.0', ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || localStorage.getItem(LEGACY_SETTINGS_KEY) || '{}') };
-  } catch {
-    return { maxPages: 50, engineName: 'CrawlioBot/1.0' };
-  }
-}
+import { useAuditEntitlements } from '../hooks/useAuditEntitlements';
+import { AUDIT_MODES, getAuditModeConfig } from '../lib/audit/audit-config';
 
 export default function Settings() {
   const { user, logout } = useAuth();
   const { preferences: accessibility, updatePreferences: updateAccessibility, resetPreferences: resetAccessibility } = useAccessibilityPreferences();
-  const [preferences, setPreferences] = useState(readPreferences);
-  const [saved, setSaved] = useState(false);
+  const auditEntitlements = useAuditEntitlements();
+  const [refreshingAuditAccess, setRefreshingAuditAccess] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [accountMessage, setAccountMessage] = useState<string | null>(null);
   const [accountError, setAccountError] = useState<string | null>(null);
+  const planLabel = auditEntitlements.plan === 'paid' ? 'Plus' : auditEntitlements.plan === 'agency' ? 'Pro' : auditEntitlements.plan[0].toUpperCase() + auditEntitlements.plan.slice(1);
 
-  const save = () => {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(preferences));
-    setSaved(true);
-    window.setTimeout(() => setSaved(false), 3000);
+  const refreshAuditAccess = async () => {
+    setRefreshingAuditAccess(true);
+    await auditEntitlements.refreshAuditEntitlements().catch(() => null);
+    setRefreshingAuditAccess(false);
   };
 
   const exportAccount = async () => {
@@ -84,11 +76,8 @@ export default function Settings() {
         eyebrow="Account"
         icon={SettingsIcon}
         title="Settings"
-        description="Manage browser preferences and understand which product settings are controlled by your plan or deployment."
-        actions={<button type="button" onClick={save} className="trust-button"><Save className="h-4 w-4" /> Save preferences</button>}
+        description="Manage accessibility, review plan-controlled audit access, and control your account data."
       />
-
-      {saved && <Notice tone="success" title="Preferences saved">These browser settings will be used on this device.</Notice>}
 
       <div className="grid gap-8 lg:grid-cols-[220px_minmax(0,1fr)]">
         <nav className="h-fit space-y-1 lg:sticky lg:top-24" aria-label="Settings sections">
@@ -141,14 +130,57 @@ export default function Settings() {
             </Panel>
           </PageSection>
 
-          <PageSection id="scan-preferences" title="Audit preferences" description="Local defaults for starting an audit. Server-enforced plan limits always take priority.">
-            <Panel className="grid gap-5 p-5 sm:p-6 md:grid-cols-2">
-              <FormField label="Preferred full-audit page limit" htmlFor="max-pages" hint="Your active plan and audit-engine capacity may apply a lower limit.">
-                <input id="max-pages" type="number" min={1} max={500} value={preferences.maxPages} onChange={(event) => setPreferences((value) => ({ ...value, maxPages: Number(event.target.value) }))} className="suite-input" />
-              </FormField>
-              <FormField label="Audit engine label" htmlFor="engine-name" hint="Used only as a local display preference; it does not change the deployed engine identity.">
-                <input id="engine-name" type="text" value={preferences.engineName} onChange={(event) => setPreferences((value) => ({ ...value, engineName: event.target.value }))} className="suite-input" />
-              </FormField>
+          <PageSection
+            id="scan-preferences"
+            title="Audit access"
+            description="These limits come from your active plan and the deployed audit engine. Administrators can change plan availability; the server enforces the values shown here."
+            action={user ? (
+              <button type="button" className="quiet-button" onClick={refreshAuditAccess} disabled={refreshingAuditAccess}>
+                <RefreshCw className={`h-4 w-4 ${refreshingAuditAccess ? 'animate-spin' : ''}`} />
+                {refreshingAuditAccess ? 'Refreshing…' : 'Refresh access'}
+              </button>
+            ) : undefined}
+          >
+            <Panel className="overflow-hidden">
+              <div className="flex flex-col gap-2 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                <div>
+                  <p className="text-sm font-semibold">{planLabel} plan</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Select an available mode when starting an audit. There is no separate browser-only page limit.</p>
+                </div>
+                <span className="w-fit rounded-full border border-border bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground">
+                  {auditEntitlements.selectableModes.length} of {AUDIT_MODES.length} modes available
+                </span>
+              </div>
+              <div className="divide-y divide-border">
+                {AUDIT_MODES.map((mode) => {
+                  const config = getAuditModeConfig(mode);
+                  const included = auditEntitlements.allowedModes.includes(mode) && auditEntitlements.pageLimits[mode] > 0;
+                  const runtimeAvailable = auditEntitlements.availableModes.includes(mode);
+                  const available = included && runtimeAvailable;
+                  const reason = !included
+                    ? 'Not included in the current plan.'
+                    : auditEntitlements.unavailableReasons[mode] || 'Temporarily unavailable on the deployed audit engine.';
+                  return (
+                    <div key={mode} className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:px-6">
+                      <div className="flex min-w-0 gap-3">
+                        <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${available ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300' : 'bg-muted text-muted-foreground'}`}>
+                          {available ? <CheckCircle2 className="h-4 w-4" /> : <LockKeyhole className="h-4 w-4" />}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold">{config.label}</p>
+                          <p className="mt-1 text-xs leading-5 text-muted-foreground">{available ? config.description : reason}</p>
+                        </div>
+                      </div>
+                      <div className="pl-11 text-left sm:pl-0 sm:text-right">
+                        <p className={`text-sm font-semibold ${available ? 'text-foreground' : 'text-muted-foreground'}`}>
+                          {included ? `Up to ${auditEntitlements.pageLimits[mode]} pages` : 'Unavailable'}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">{available ? 'Ready to run' : included ? 'Configured, engine unavailable' : 'Plan controlled'}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </Panel>
           </PageSection>
 

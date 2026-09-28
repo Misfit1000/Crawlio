@@ -1,5 +1,11 @@
 # Crawlio Plans And Limits
 
+## Dynamic Audit Modes
+
+The `plan_limits` table is the source of truth for each plan's enabled modes and page allowances. The audit form, public pricing, admission API, and worker all use the same values. Administrators can enable Quick, Standard, or Deep independently within the currently supported ceilings: 50 Quick pages, 50 Standard pages, and 100 Deep pages. Unsupported values are rejected rather than advertised and silently reduced.
+
+Deep audits also require `DEEP_AUDIT_ENABLED=true` on both the API and dedicated worker. A configured but unavailable Deep mode is shown as temporarily unavailable.
+
 ## Free Lightweight Audit
 
 - Quick Audit only.
@@ -9,7 +15,7 @@
 - Passive security checks for HTTPS, HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, and insecure forms.
 - JSON export only.
 
-## Paid Standard Audit
+## Plus Standard Audit
 
 - Quick and Standard audits.
 - Up to 50 successfully analysed pages. The worker continues through safe replacement candidates when a discovered URL fails or is blocked.
@@ -27,8 +33,12 @@
 
 ## Admin
 
-- Admin users can manage users, plans, audits, queue, workers, and safe platform settings.
+- Admin users can manage users, enabled audit modes, plan limits, audits, queue, workers, and safe platform settings.
 - Admin users get generous limits and priority `999`.
+
+## Large Sites
+
+Crawlio does not currently promise 1,000-page audits. The production-safe ceiling is 100 pages for Deep audits. Supporting 1,000 pages or more requires resumable crawl segments, a durable URL frontier, paginated report storage, and verified always-on worker capacity; changing only a plan value is not sufficient.
 
 ## Priority Queue
 

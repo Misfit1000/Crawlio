@@ -96,7 +96,7 @@ try {
   }
   const interrupted = await auditRepository.getLiveData(storageAudit.id);
   assert.equal(interrupted.audit?.status, 'failed');
-  assert.equal(interrupted.audit?.pageLimit, 5, 'display the effective worker allowance');
+  assert.equal(interrupted.audit?.pageLimit, 50, 'display the effective Quick-mode worker allowance');
   assert.equal(interrupted.audit?.failureCounts?.AUDIT_PROCESSING_FAILED, 1);
   assert.match(interrupted.audit?.error || '', /Crawlio could not finish/);
   assert.doesNotMatch(interrupted.audit?.error || '', /private diagnostic|website request did not complete/i);

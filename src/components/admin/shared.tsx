@@ -155,10 +155,10 @@ export function Field({ label, value, onChange }: { label: string; value: string
 }
 
 
-export function NumberInput({ value, onBlur, disabled = false }: { value: number; onBlur: (value: number) => void; disabled?: boolean }) {
-  return <input type="number" min={0} defaultValue={value} disabled={disabled} onBlur={(event) => {
+export function NumberInput({ value, onBlur, disabled = false, min = 0, max, label }: { value: number; onBlur: (value: number) => void; disabled?: boolean; min?: number; max?: number; label?: string }) {
+  return <input type="number" min={min} max={max} aria-label={label} defaultValue={value} disabled={disabled} onBlur={(event) => {
     const next = event.currentTarget.valueAsNumber;
-    if (Number.isFinite(next) && next >= 0 && next !== value) onBlur(next);
+    if (Number.isFinite(next) && next >= min && (max == null || next <= max) && next !== value) onBlur(next);
     else event.currentTarget.value = String(value);
   }} className="w-24 rounded-lg border border-border bg-background px-2.5 py-1.5 disabled:opacity-50" />;
 }

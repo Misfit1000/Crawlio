@@ -54,7 +54,7 @@ const sectionScoreKey: Partial<Record<AuditWorkspaceSection, 'seo' | 'technical'
 
 function modeLabel(mode: AuditMode) {
   if (mode === 'deep') return 'Deep audit';
-  if (mode === 'standard') return 'Full audit';
+  if (mode === 'standard') return 'Standard audit';
   return 'Quick audit';
 }
 

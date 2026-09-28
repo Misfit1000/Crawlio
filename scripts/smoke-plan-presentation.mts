@@ -43,6 +43,24 @@ assert.equal(dynamicPlans[0].pagesPerAudit, 6);
 assert.equal(dynamicPlans[1].allowance, '30 daily · 600 monthly');
 assert.equal(createPublicPlanComparison(dynamicPlans).find((row) => row.label === 'Scheduled audits')?.values[2], 'Yes');
 
+const runtimeLimitedProjection = createPublicPlanProjection([
+  { plan: 'agency', max_pages_quick: 50, max_pages_standard: 50, max_pages_deep: 75, allowed_modes: ['quick', 'standard', 'deep'] },
+], '2026-09-28T00:00:00.000Z', ['quick', 'standard']);
+const runtimeLimitedPro = runtimeLimitedProjection.plans.find((plan) => plan.id === 'pro');
+assert.deepEqual(runtimeLimitedPro?.allowedModes, ['quick', 'standard', 'deep']);
+assert.deepEqual(runtimeLimitedPro?.availableModes, ['quick', 'standard']);
+assert.equal(runtimeLimitedPro?.pagesPerAudit, 50);
+assert.equal(mergePublicPlanPresentation(runtimeLimitedProjection).find((plan) => plan.id === 'pro')?.mode, 'Standard audit');
+
+const unavailableDeepProjection = createPublicPlanProjection([
+  { plan: 'agency', max_pages_quick: 0, max_pages_standard: 0, max_pages_deep: 75, allowed_modes: ['deep'] },
+], '2026-09-28T00:00:00.000Z', ['quick', 'standard']);
+const unavailableDeep = unavailableDeepProjection.plans.find((plan) => plan.id === 'pro');
+assert.deepEqual(unavailableDeep?.allowedModes, ['deep']);
+assert.deepEqual(unavailableDeep?.availableModes, []);
+assert.equal(unavailableDeep?.pagesPerAudit, 0);
+assert.equal(mergePublicPlanPresentation(unavailableDeepProjection).find((plan) => plan.id === 'pro')?.mode, 'Temporarily unavailable');
+
 const [landing, settings, admin, migration, docs, worker] = await Promise.all([
   readFile('src/components/LandingPage.tsx', 'utf8'),
   readFile('src/components/Settings.tsx', 'utf8'),
@@ -57,10 +75,11 @@ assert.match(landing, /rootMargin: '800px 0px'/);
 assert.doesNotMatch(landing, /Mapped to the current paid plan/);
 assert.doesNotMatch(landing, /Deep mode requires an available configured audit engine/);
 assert.doesNotMatch(JSON.stringify(PUBLIC_AUDIT_PLANS), /larger report|expanded issue/i, 'dormant internal capacity flags must not become pricing claims');
-assert.match(settings, /maxPages: 50/);
+assert.match(settings, /useAuditEntitlements/);
+assert.doesNotMatch(settings, /max-pages|engine-name|max=\{500\}/);
 assert.match(admin, /value=\{plan\.maxPagesStandard\}/);
 assert.match(migration, /max_pages_standard\s*=\s*50/);
 assert.match(docs, /50 pages/);
-assert.match(worker, /Math\.min\(profile\.pageLimit, admittedPageLimit\)/, 'worker must honor the admitted row limit without exceeding its profile ceiling');
+assert.match(worker, /enforceAuditPageLimit\(effectiveMode, admittedPageLimit, profile\.pageLimit\)/, 'worker must honor the admitted row limit without exceeding the supported mode ceiling');
 
 console.log('Public plan presentation smoke test passed: Free 5, Plus 50, Pro 75, Admin Deep 100.');

@@ -6,6 +6,7 @@ const routes = await readFile('src/app/routes.ts', 'utf8');
 const live = await readFile('src/components/audit/LiveAuditProgress.tsx', 'utf8');
 const workspace = await readFile('src/components/audit/AuditWorkspace.tsx', 'utf8');
 const findings = await readFile('src/components/audit/FindingWorkspace.tsx', 'utf8');
+const findingWorkflow = await readFile('src/components/audit/useFindingWorkflow.ts', 'utf8');
 
 assert.match(app, /onRerun=\{startLiveAudit\}/);
 assert.match(routes, /auditWorkspacePath/);
@@ -20,5 +21,6 @@ assert.match(workspace, /ComparisonPanel/);
 assert.match(findings, /Bulk status/);
 assert.match(findings, /Filter by workflow status/);
 assert.match(findings, /Filter by error type/);
-assert.match(findings, /writeFindingNotes/);
+assert.match(findings, /onWorkflowSave/);
+assert.match(findingWorkflow, /writeFindingNotes/);
 console.log('Audit UI feature-retention smoke test passed.');

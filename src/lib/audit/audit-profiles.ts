@@ -100,9 +100,8 @@ export const AUDIT_PROFILES: Record<AuditProfile['id'], AuditProfile> = {
 };
 
 export function auditProfileIdFor(plan: UserPlan, mode: AuditMode): AuditProfile['id'] {
-  if (plan === 'admin') return mode === 'deep' ? 'admin_deep' : 'paid_standard';
-  if (plan === 'agency') return mode === 'deep' ? 'agency_deep' : 'paid_standard';
-  if (plan === 'paid') return 'paid_standard';
+  if (mode === 'deep') return plan === 'admin' ? 'admin_deep' : 'agency_deep';
+  if (mode === 'standard') return 'paid_standard';
   return 'free_quick';
 }
 

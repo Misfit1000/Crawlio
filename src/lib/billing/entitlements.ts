@@ -1,5 +1,6 @@
 import type { User as SupabaseAuthUser } from '@supabase/supabase-js';
 import type { AuditMode, UserPlan } from '../audit/resource-types';
+import { enforceAuditPageLimit, normalizeAuditModes } from '../audit/audit-config';
 import { getSupabaseAdminClient, requireSupabaseAdminClient } from '../supabase/server';
 
 export type UserRole = 'user' | 'admin' | 'support';
@@ -200,15 +201,24 @@ export function isBootstrapAdminEmail(email: string | null | undefined) {
 
 function rowToPlanLimits(row: any): PlanLimits {
   const fallback = DEFAULT_PLAN_LIMITS[normalizePlan(row?.plan)];
+  const maxPagesQuick = enforceAuditPageLimit('quick', row?.max_pages_quick, fallback.maxPagesQuick);
+  const maxPagesStandard = enforceAuditPageLimit('standard', row?.max_pages_standard, fallback.maxPagesStandard || 1);
+  const maxPagesDeep = enforceAuditPageLimit('deep', row?.max_pages_deep, fallback.maxPagesDeep || 1);
+  const configuredModes = normalizeAuditModes(row?.allowed_modes, fallback.allowedModes);
+  const allowedModes = configuredModes.filter((mode) => {
+    if (mode === 'quick') return Number(row?.max_pages_quick ?? fallback.maxPagesQuick) > 0;
+    if (mode === 'standard') return Number(row?.max_pages_standard ?? fallback.maxPagesStandard) > 0;
+    return Number(row?.max_pages_deep ?? fallback.maxPagesDeep) > 0;
+  });
   return {
     plan: fallback.plan,
     label: row?.label ?? fallback.label,
     dailyAudits: row?.daily_audits ?? fallback.dailyAudits,
     monthlyAudits: row?.monthly_audits ?? fallback.monthlyAudits,
-    maxPagesQuick: row?.max_pages_quick ?? fallback.maxPagesQuick,
-    maxPagesStandard: row?.max_pages_standard ?? fallback.maxPagesStandard,
-    maxPagesDeep: row?.max_pages_deep ?? fallback.maxPagesDeep,
-    allowedModes: (row?.allowed_modes ?? fallback.allowedModes) as AuditMode[],
+    maxPagesQuick,
+    maxPagesStandard: Number(row?.max_pages_standard ?? fallback.maxPagesStandard) > 0 ? maxPagesStandard : 0,
+    maxPagesDeep: Number(row?.max_pages_deep ?? fallback.maxPagesDeep) > 0 ? maxPagesDeep : 0,
+    allowedModes,
     auditTimeoutSeconds: row?.audit_timeout_seconds ?? fallback.auditTimeoutSeconds,
     concurrency: row?.concurrency ?? fallback.concurrency,
     maxEventsPerAudit: row?.max_events_per_audit ?? fallback.maxEventsPerAudit,
@@ -321,20 +331,15 @@ export async function getUserEntitlements(userId: string): Promise<{ profile: Us
 export function resolveEffectiveAuditMode(
   userPlan: UserPlan,
   requestedMode: AuditMode,
-  options: { deepAuditEnabled?: boolean } = {},
+  options: { deepAuditEnabled?: boolean; allowedModes?: AuditMode[] } = {},
 ): AuditMode {
   const plan = normalizePlan(userPlan);
-  if (plan === 'free' && requestedMode !== 'quick') {
-    throw new EntitlementError('Standard and Deep audits require a paid plan.', { upgradeRequired: true });
+  const allowedModes = options.allowedModes ?? DEFAULT_PLAN_LIMITS[plan].allowedModes;
+  if (!allowedModes.includes(requestedMode)) {
+    throw new EntitlementError('This audit mode is not enabled for your plan.', { upgradeRequired: plan !== 'admin' });
   }
-  if (plan === 'paid' && requestedMode === 'deep') {
-    throw new EntitlementError('Deep Audit requires an agency plan.', { upgradeRequired: true });
-  }
-  if ((plan === 'agency' || plan === 'admin') && requestedMode === 'deep' && !options.deepAuditEnabled) {
+  if (requestedMode === 'deep' && !options.deepAuditEnabled) {
     throw new EntitlementError('Deep Audit requires a dedicated always-on worker.', { upgradeRequired: plan !== 'admin' });
-  }
-  if ((plan === 'paid' || plan === 'agency' || plan === 'admin') && requestedMode === 'quick') {
-    return 'standard';
   }
   return requestedMode;
 }
@@ -361,9 +366,9 @@ export async function canStartAudit(
   requestedMode: AuditMode,
   options: { guestKey?: string; deepAuditEnabled?: boolean } = {},
 ): Promise<AuditStartDecision> {
-  const effectiveMode = resolveEffectiveAuditMode(userId ? (await getUserEntitlements(userId)).profile.plan : 'free', requestedMode, options);
   if (!userId) {
-    const limits = DEFAULT_PLAN_LIMITS.free;
+    const limits = await getPlanLimits('free');
+    const effectiveMode = resolveEffectiveAuditMode('free', requestedMode, { ...options, allowedModes: limits.allowedModes });
     return {
       userId: null,
       plan: 'free',
@@ -383,10 +388,7 @@ export async function canStartAudit(
   }
 
   const { profile, limits } = await getUserEntitlements(userId);
-  const finalMode = resolveEffectiveAuditMode(profile.plan, requestedMode, options);
-  if (!limits.allowedModes.includes(finalMode)) {
-    throw new EntitlementError('This audit mode is not enabled for your plan.', { upgradeRequired: true });
-  }
+  const finalMode = resolveEffectiveAuditMode(profile.plan, requestedMode, { ...options, allowedModes: limits.allowedModes });
   if (profile.plan === 'free' && (await getActiveAuditCount(userId)) > 0) {
     throw new EntitlementError('You already have an audit in progress. Please wait for it to finish.', { status: 429 });
   }

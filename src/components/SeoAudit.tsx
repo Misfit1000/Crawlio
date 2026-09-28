@@ -5,23 +5,24 @@ import { safeJsonFetch } from '../lib/http/safe-json';
 import React, { useState, useEffect, useRef } from 'react';
 import { Activity, Play, RefreshCw, CheckCircle2, Globe, Lock } from 'lucide-react';
 import { useNavigate } from '../app/router';
-import { useAuth } from '../contexts/AuthContext';
 import { FormField, Notice, PageHeader, Panel, SegmentedControl } from './ui/page-system';
 import { AUDIT_TARGET_INPUT_PROPS, normalizeAuditTarget } from '../lib/url/normalize-audit-target';
+import { AUDIT_MODES, getAuditModeConfig, type AuditMode } from '../lib/audit/audit-config';
+import { useAuditEntitlements } from '../hooks/useAuditEntitlements';
 
 export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const {
+    user, authLoading, refreshAuditEntitlements, plan, allowedModes, availableModes,
+    pageLimits, selectableModes, unavailableReasons,
+  } = useAuditEntitlements();
   const [url, setUrl] = useState(initialUrl || '');
   const [projectId, setProjectId] = useState<string | null>(null);
-  const [mode, setMode] = useState<'quick' | 'standard' | 'deep'>('quick');
+  const [mode, setMode] = useState<AuditMode>('quick');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const auditStartGuardRef = useRef(createAuditSubmitGuard());
   const autoStartedRef = useRef(false);
-  const plan = user?.plan || 'free';
-  const canUseStandard = plan === 'paid' || plan === 'agency' || plan === 'admin';
-  const canUseDeep = plan === 'agency' || plan === 'admin';
 
   useEffect(() => {
     if (initialUrl) return;
@@ -34,16 +35,15 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
   }, [initialUrl]);
 
   useEffect(() => {
-    if (initialUrl && !autoStartedRef.current && !loading) {
+    if (initialUrl && !autoStartedRef.current && !loading && !authLoading) {
       autoStartedRef.current = true;
       void startAudit();
     }
-  }, [initialUrl]);
+  }, [authLoading, initialUrl, loading]);
 
   useEffect(() => {
-    if (mode === 'standard' && !canUseStandard) setMode('quick');
-    if (mode === 'deep' && !canUseDeep) setMode('quick');
-  }, [canUseDeep, canUseStandard, mode]);
+    if (!selectableModes.includes(mode) && selectableModes[0]) setMode(selectableModes[0]);
+  }, [availableModes.join(','), allowedModes.join(','), mode, pageLimits.quick, pageLimits.standard, pageLimits.deep]);
 
   const startAudit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -58,6 +58,11 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
     setError(null);
     
     try {
+      if (user) {
+        const latest = await refreshAuditEntitlements();
+        if (!latest?.allowedModes.includes(mode)) throw new Error(`${getAuditModeConfig(mode).label} is not enabled for your current plan.`);
+        if (!latest.availableModes.includes(mode)) throw new Error(latest.unavailableReasons[mode] || `${getAuditModeConfig(mode).label} is temporarily unavailable.`);
+      }
       const dataResp = await safeJsonFetch<any>(API_ROUTES.auditStart, {
         method: 'POST',
         headers: await getAuditStartHeaders({ 'Content-Type': 'application/json' }),
@@ -89,20 +94,35 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
               </div>
             </FormField>
             <FormField label="Audit type" hint="Unavailable modes stay locked to protect plan limits and audit-engine capacity.">
-              <SegmentedControl<'quick' | 'standard' | 'deep'>
+              <SegmentedControl<AuditMode>
                 label="Audit type"
                 value={mode}
                 onChange={setMode}
-                options={[
-                  { value: 'quick', label: 'Quick' },
-                  { value: 'standard', label: 'Full', disabled: !canUseStandard },
-                  { value: 'deep', label: 'Deep', disabled: !canUseDeep },
-                ]}
+                options={AUDIT_MODES.map((candidate) => ({
+                  value: candidate,
+                  label: candidate === 'standard' ? 'Standard' : candidate[0].toUpperCase() + candidate.slice(1),
+                  disabled: !allowedModes.includes(candidate) || !availableModes.includes(candidate) || pageLimits[candidate] < 1,
+                }))}
               />
             </FormField>
-            {mode === 'deep' && <Notice tone="warning">Deep audits require an agency or admin plan and an available audit engine.</Notice>}
-            {plan === 'free' && <Notice tone="info" title="Free plan">Quick audits check up to 5 pages with core SEO, technical, and passive security observations. Server-side entitlements enforce the final limit.</Notice>}
-            <button type="submit" disabled={loading || !url.trim()} className="trust-button w-full sm:w-auto">
+            <div className="grid gap-3 sm:grid-cols-3" aria-label="Audit mode allowances">
+              {AUDIT_MODES.map((candidate) => {
+                const included = allowedModes.includes(candidate) && pageLimits[candidate] > 0;
+                const available = included && availableModes.includes(candidate);
+                const config = getAuditModeConfig(candidate);
+                return <div key={candidate} className={`rounded-xl border p-3 text-sm ${mode === candidate ? 'border-accent bg-accent/5' : 'border-border bg-muted/35'} ${available ? '' : 'opacity-70'}`}>
+                  <div className="flex items-center justify-between gap-2"><span className="font-semibold">{config.label}</span>{available ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <Lock className="h-4 w-4 text-muted-foreground" />}</div>
+                  <div className="mt-1 font-medium">{included ? `Up to ${pageLimits[candidate]} pages` : 'Not included'}</div>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{included && !available ? unavailableReasons[candidate] || 'Temporarily unavailable.' : config.description}</p>
+                </div>;
+              })}
+            </div>
+            <Notice tone="info" title={`${plan === 'paid' ? 'Plus' : plan[0].toUpperCase() + plan.slice(1)} plan`}>
+              {selectableModes.length
+                ? `${getAuditModeConfig(mode).label} will analyse up to ${pageLimits[mode]} successfully reached page${pageLimits[mode] === 1 ? '' : 's'}. The server confirms the final allowance when the audit starts.`
+                : 'No audit mode is currently available for this plan. Ask an administrator to review its mode settings.'}
+            </Notice>
+            <button type="submit" disabled={loading || authLoading || !url.trim() || !selectableModes.includes(mode)} className="trust-button w-full sm:w-auto">
               {loading ? <RefreshCw className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5" />}
               {loading ? 'Starting audit...' : 'Start live audit'}
             </button>

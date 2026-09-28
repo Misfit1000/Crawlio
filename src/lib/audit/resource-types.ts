@@ -1,13 +1,27 @@
 import {
   AUDIT_LIMITS,
+  AUDIT_MODES,
+  AUDIT_MODE_PAGE_CEILINGS,
+  createAuditRuntimeCapabilities,
+  enforceAuditPageLimit,
   getAuditModeConfig,
+  isAuditMode,
+  normalizeAuditModes,
   type AuditMode,
+  type AuditRuntimeCapabilities,
 } from './audit-config';
 
 export {
   AUDIT_LIMITS,
+  AUDIT_MODES,
+  AUDIT_MODE_PAGE_CEILINGS,
+  createAuditRuntimeCapabilities,
+  enforceAuditPageLimit,
   getAuditModeConfig,
+  isAuditMode,
+  normalizeAuditModes,
   type AuditMode,
+  type AuditRuntimeCapabilities,
 };
 
 export type AuditStatus = 'queued' | 'running' | 'completed' | 'completed_with_warnings' | 'failed' | 'cancelled' | 'abandoned';

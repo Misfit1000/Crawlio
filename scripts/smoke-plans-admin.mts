@@ -24,12 +24,13 @@ assert.equal(freeDecision.pageLimit, 5);
 
 await assert.rejects(
   () => canStartAudit(null, 'standard', { guestKey: 'guest:standard' }),
-  (error) => error instanceof EntitlementError && error.message === 'Standard and Deep audits require a paid plan.' && error.upgradeRequired,
+  (error) => error instanceof EntitlementError && error.message === 'This audit mode is not enabled for your plan.' && error.upgradeRequired,
 );
 
 assert.equal(resolveEffectiveAuditMode('paid', 'standard'), 'standard');
-assert.equal(resolveEffectiveAuditMode('paid', 'quick'), 'standard');
-assert.equal(resolveEffectiveAuditMode('admin', 'quick'), 'standard');
+assert.equal(resolveEffectiveAuditMode('paid', 'quick'), 'quick');
+assert.equal(resolveEffectiveAuditMode('admin', 'quick'), 'quick');
+assert.equal(resolveEffectiveAuditMode('free', 'standard', { allowedModes: ['quick', 'standard'] }), 'standard');
 assert.equal(resolveEffectiveAuditMode('agency', 'deep', { deepAuditEnabled: true }), 'deep');
 assert.equal(resolveEffectiveAuditMode('admin', 'deep', { deepAuditEnabled: true }), 'deep');
 assert.throws(() => resolveEffectiveAuditMode('agency', 'deep'), /Deep Audit requires a dedicated always-on worker/);
@@ -62,7 +63,22 @@ assert.match(migration, /audits_status_priority_created_at_idx/i);
 const adminPanel = readFileSync(join(root, 'src/components/AdminDashboard.tsx'), 'utf8');
 assert.match(adminPanel, /user\.role !== 'admin'/);
 assert.match(readFileSync(join(root, 'src/components/admin/AdminUsers.tsx'), 'utf8'), /updateUserAdminFields/);
-assert.match(readFileSync(join(root, 'src/components/admin/AdminPlans.tsx'), 'utf8'), /updatePlanLimit/);
+const adminPlans = readFileSync(join(root, 'src/components/admin/AdminPlans.tsx'), 'utf8');
+assert.match(adminPlans, /updatePlanLimit/);
+assert.match(adminPlans, /allowedModes/);
+assert.match(adminPlans, /AUDIT_MODE_PAGE_CEILINGS/);
+const auditForm = readFileSync(join(root, 'src/components/SeoAudit.tsx'), 'utf8');
+const analyzerForm = readFileSync(join(root, 'src/components/WebsiteAnalyzer.tsx'), 'utf8');
+const authContext = readFileSync(join(root, 'src/contexts/AuthContext.tsx'), 'utf8');
+const api = readFileSync(join(root, 'src/api/index.ts'), 'utf8');
+assert.match(auditForm, /useAuditEntitlements/);
+assert.match(analyzerForm, /useAuditEntitlements/);
+assert.doesNotMatch(auditForm, /canUseStandard|canUseDeep/);
+assert.doesNotMatch(analyzerForm, /canUseStandard|canUseDeep/);
+assert.match(authContext, /auditEntitlements/);
+assert.match(api, /allowed_modes/);
+assert.match(api, /AUDIT_MODE_PAGE_CEILINGS/);
+assert.match(api, /INVALID_AUDIT_MODE/);
 assert.match(readFileSync(join(root, 'src/components/admin/AdminWorkers.tsx'), 'utf8'), /getAdminWorkers/);
 
 const worker = readFileSync(join(root, 'src/workers/audit-worker.ts'), 'utf8');

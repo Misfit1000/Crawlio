@@ -1,6 +1,13 @@
+import {
+  AUDIT_MODES,
+  enforceAuditPageLimit,
+  normalizeAuditModes,
+  type AuditMode,
+} from '../audit/audit-config';
+
 export type PublicPlanId = 'free' | 'plus' | 'pro';
 export type PublicPlanSourceId = 'free' | 'paid' | 'agency';
-export type PublicAuditMode = 'quick' | 'standard' | 'deep';
+export type PublicAuditMode = AuditMode;
 
 export interface PublicPlanItem {
   id: PublicPlanId;
@@ -9,6 +16,8 @@ export interface PublicPlanItem {
   monthlyAudits: number;
   pagesPerAudit: number;
   allowedModes: PublicAuditMode[];
+  availableModes: PublicAuditMode[];
+  pageLimits: Record<PublicAuditMode, number>;
   exportsEnabled: boolean;
   pdfEnabled: boolean;
   scheduledAuditsEnabled: boolean;
@@ -30,7 +39,7 @@ export interface PublicPlanPresentation {
   features: string[];
   footer: string;
   recommended?: boolean;
-  capabilities?: Pick<PublicPlanItem, 'allowedModes' | 'exportsEnabled' | 'pdfEnabled' | 'scheduledAuditsEnabled'>;
+  capabilities?: Pick<PublicPlanItem, 'allowedModes' | 'availableModes' | 'pageLimits' | 'exportsEnabled' | 'pdfEnabled' | 'scheduledAuditsEnabled'>;
 }
 
 export const PUBLIC_AUDIT_PLANS: readonly PublicPlanPresentation[] = [
@@ -48,7 +57,7 @@ export const PUBLIC_AUDIT_PLANS: readonly PublicPlanPresentation[] = [
     footer: 'Best for small sites and first-time checks.',
   },
   {
-    id: 'plus', name: 'Plus', mode: 'Full standard audit', pagesPerAudit: 50,
+    id: 'plus', name: 'Plus', mode: 'Standard audit', pagesPerAudit: 50,
     allowance: '25 daily · 500 monthly', bestFor: 'Small businesses and growing content websites',
     features: [
       'Includes everything in Free',
@@ -60,7 +69,7 @@ export const PUBLIC_AUDIT_PLANS: readonly PublicPlanPresentation[] = [
     footer: 'Best for businesses managing one growing website.', recommended: true,
   },
   {
-    id: 'pro', name: 'Pro', mode: 'Agency deep audit', pagesPerAudit: 75,
+    id: 'pro', name: 'Pro', mode: 'Deep audit', pagesPerAudit: 75,
     allowance: '100 daily · 3,000 monthly', bestFor: 'Agencies, teams, and larger websites',
     features: [
       'Includes everything in Plus',
@@ -89,9 +98,9 @@ const PUBLIC_SOURCE_TO_ID: Record<PublicPlanSourceId, PublicPlanId> = {
 };
 
 const PUBLIC_PLAN_FALLBACKS: Record<PublicPlanId, PublicPlanItem> = {
-  free: { id: 'free', sourcePlan: 'free', dailyAudits: 3, monthlyAudits: 30, pagesPerAudit: 5, allowedModes: ['quick'], exportsEnabled: true, pdfEnabled: false, scheduledAuditsEnabled: false },
-  plus: { id: 'plus', sourcePlan: 'paid', dailyAudits: 25, monthlyAudits: 500, pagesPerAudit: 50, allowedModes: ['quick', 'standard'], exportsEnabled: true, pdfEnabled: true, scheduledAuditsEnabled: false },
-  pro: { id: 'pro', sourcePlan: 'agency', dailyAudits: 100, monthlyAudits: 3000, pagesPerAudit: 75, allowedModes: ['quick', 'standard', 'deep'], exportsEnabled: true, pdfEnabled: true, scheduledAuditsEnabled: true },
+  free: { id: 'free', sourcePlan: 'free', dailyAudits: 3, monthlyAudits: 30, pagesPerAudit: 5, allowedModes: ['quick'], availableModes: ['quick'], pageLimits: { quick: 5, standard: 0, deep: 0 }, exportsEnabled: true, pdfEnabled: false, scheduledAuditsEnabled: false },
+  plus: { id: 'plus', sourcePlan: 'paid', dailyAudits: 25, monthlyAudits: 500, pagesPerAudit: 50, allowedModes: ['quick', 'standard'], availableModes: ['quick', 'standard'], pageLimits: { quick: 50, standard: 50, deep: 0 }, exportsEnabled: true, pdfEnabled: true, scheduledAuditsEnabled: false },
+  pro: { id: 'pro', sourcePlan: 'agency', dailyAudits: 100, monthlyAudits: 3000, pagesPerAudit: 75, allowedModes: ['quick', 'standard', 'deep'], availableModes: ['quick', 'standard', 'deep'], pageLimits: { quick: 50, standard: 50, deep: 75 }, exportsEnabled: true, pdfEnabled: true, scheduledAuditsEnabled: true },
 };
 
 function boundedPositiveInteger(value: unknown, fallback: number) {
@@ -100,12 +109,14 @@ function boundedPositiveInteger(value: unknown, fallback: number) {
 }
 
 function publicModes(value: unknown, fallback: PublicAuditMode[]) {
-  if (!Array.isArray(value)) return fallback;
-  const allowed = value.filter((mode): mode is PublicAuditMode => mode === 'quick' || mode === 'standard' || mode === 'deep');
-  return allowed.length ? [...new Set(allowed)] : fallback;
+  return normalizeAuditModes(value, fallback);
 }
 
-export function createPublicPlanProjection(rows: Array<Record<string, unknown>>, updatedAt = new Date().toISOString()): PublicPlanProjection {
+export function createPublicPlanProjection(
+  rows: Array<Record<string, unknown>>,
+  updatedAt = new Date().toISOString(),
+  runtimeAvailableModes: readonly PublicAuditMode[] = AUDIT_MODES,
+): PublicPlanProjection {
   const safeRows = new Map<PublicPlanSourceId, Record<string, unknown>>();
   for (const row of rows) {
     const sourcePlan = String(row.plan || '') as PublicPlanSourceId;
@@ -115,17 +126,27 @@ export function createPublicPlanProjection(rows: Array<Record<string, unknown>>,
     const id = PUBLIC_SOURCE_TO_ID[sourcePlan];
     const fallback = PUBLIC_PLAN_FALLBACKS[id];
     const row = safeRows.get(sourcePlan) || {};
-    const allowedModes = publicModes(row.allowed_modes ?? row.allowedModes, fallback.allowedModes);
-    const mode = allowedModes.includes('deep') ? 'deep' : allowedModes.includes('standard') ? 'standard' : 'quick';
-    const pageField = mode === 'deep' ? 'max_pages_deep' : mode === 'standard' ? 'max_pages_standard' : 'max_pages_quick';
-    const camelField = mode === 'deep' ? 'maxPagesDeep' : mode === 'standard' ? 'maxPagesStandard' : 'maxPagesQuick';
+    const pageLimits = {
+      quick: Number(row.max_pages_quick ?? row.maxPagesQuick ?? fallback.pageLimits.quick) > 0
+        ? enforceAuditPageLimit('quick', row.max_pages_quick ?? row.maxPagesQuick, fallback.pageLimits.quick || 1) : 0,
+      standard: Number(row.max_pages_standard ?? row.maxPagesStandard ?? fallback.pageLimits.standard) > 0
+        ? enforceAuditPageLimit('standard', row.max_pages_standard ?? row.maxPagesStandard, fallback.pageLimits.standard || 1) : 0,
+      deep: Number(row.max_pages_deep ?? row.maxPagesDeep ?? fallback.pageLimits.deep) > 0
+        ? enforceAuditPageLimit('deep', row.max_pages_deep ?? row.maxPagesDeep, fallback.pageLimits.deep || 1) : 0,
+    };
+    const allowedModes = publicModes(row.allowed_modes ?? row.allowedModes, fallback.allowedModes)
+      .filter((mode) => pageLimits[mode] > 0);
+    const availableModes = allowedModes.filter((mode) => runtimeAvailableModes.includes(mode));
+    const mode = availableModes.includes('deep') ? 'deep' : availableModes.includes('standard') ? 'standard' : availableModes.includes('quick') ? 'quick' : null;
     return {
       id,
       sourcePlan,
       dailyAudits: boundedPositiveInteger(row.daily_audits ?? row.dailyAudits, fallback.dailyAudits),
       monthlyAudits: boundedPositiveInteger(row.monthly_audits ?? row.monthlyAudits, fallback.monthlyAudits),
-      pagesPerAudit: boundedPositiveInteger(row[pageField] ?? row[camelField], fallback.pagesPerAudit),
+      pagesPerAudit: mode ? pageLimits[mode] : 0,
       allowedModes,
+      availableModes,
+      pageLimits,
       exportsEnabled: typeof (row.exports_enabled ?? row.exportsEnabled) === 'boolean' ? Boolean(row.exports_enabled ?? row.exportsEnabled) : fallback.exportsEnabled,
       pdfEnabled: typeof (row.pdf_enabled ?? row.pdfEnabled) === 'boolean' ? Boolean(row.pdf_enabled ?? row.pdfEnabled) : fallback.pdfEnabled,
       scheduledAuditsEnabled: typeof (row.scheduled_audits_enabled ?? row.scheduledAuditsEnabled) === 'boolean' ? Boolean(row.scheduled_audits_enabled ?? row.scheduledAuditsEnabled) : fallback.scheduledAuditsEnabled,
@@ -138,18 +159,26 @@ export function mergePublicPlanPresentation(projection?: PublicPlanProjection | 
   const live = new Map(projection?.plans.map((plan) => [plan.id, plan]) || []);
   return PUBLIC_AUDIT_PLANS.map((plan) => {
     const limits = live.get(plan.id) || PUBLIC_PLAN_FALLBACKS[plan.id];
+    const displayedModes = limits.availableModes;
     const features = plan.features.filter((feature) => {
       if (!limits.pdfEnabled && /\bPDF\b/i.test(feature)) return false;
       if (!limits.exportsEnabled && /\b(?:JSON|CSV|exports?)\b/i.test(feature)) return false;
+      if (!limits.availableModes.includes('deep') && /\bDeep\b/i.test(feature)) return false;
       return true;
     });
+    const highestMode = displayedModes.includes('deep') ? 'Deep audit'
+      : displayedModes.includes('standard') ? 'Standard audit'
+        : displayedModes.includes('quick') ? 'Quick audit' : 'Temporarily unavailable';
     return {
       ...plan,
+      mode: highestMode,
       features,
       pagesPerAudit: limits.pagesPerAudit,
       allowance: `${limits.dailyAudits.toLocaleString('en-US')} daily · ${limits.monthlyAudits.toLocaleString('en-US')} monthly`,
       capabilities: {
         allowedModes: limits.allowedModes,
+        availableModes: limits.availableModes,
+        pageLimits: limits.pageLimits,
         exportsEnabled: limits.exportsEnabled,
         pdfEnabled: limits.pdfEnabled,
         scheduledAuditsEnabled: limits.scheduledAuditsEnabled,
@@ -161,7 +190,7 @@ export function mergePublicPlanPresentation(projection?: PublicPlanProjection | 
 export function createPublicPlanComparison(plans: PublicPlanPresentation[]) {
   return [
     { label: 'Pages per audit', values: plans.map((plan) => String(plan.pagesPerAudit)) },
-    { label: 'Audit modes', values: plans.map((plan) => (plan.capabilities?.allowedModes || []).map((mode) => mode[0].toUpperCase() + mode.slice(1)).join(' + ')) },
+    { label: 'Audit modes', values: plans.map((plan) => (plan.capabilities?.availableModes || plan.capabilities?.allowedModes || []).map((mode) => mode[0].toUpperCase() + mode.slice(1)).join(' + ')) },
     { label: 'PDF export', values: plans.map((plan) => plan.capabilities?.pdfEnabled ? 'Yes' : 'No') },
     { label: 'JSON and CSV exports', values: plans.map((plan) => plan.capabilities?.exportsEnabled ? 'Yes' : 'No') },
     { label: 'History and comparison', values: plans.map(() => 'Yes') },

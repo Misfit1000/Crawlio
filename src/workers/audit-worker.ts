@@ -23,7 +23,7 @@ import {
   type ResourceAuditPage,
   type ResourceAuditReport,
 } from '../lib/audit/resource-types';
-import { AUDIT_LIMITS } from '../lib/audit/audit-config';
+import { AUDIT_LIMITS, enforceAuditPageLimit } from '../lib/audit/audit-config';
 import { isTerminalAuditStatus } from '../lib/audit/audit-time';
 import type { AuditIssue } from '../lib/audit/types';
 import { safePublicFetch, type SafePublicFetchOptions } from '../lib/security/safe-public-fetch';
@@ -243,9 +243,13 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
   const admittedPageLimit = Number.isFinite(audit.pageLimit) && audit.pageLimit > 0
     ? Math.floor(audit.pageLimit)
     : profile.pageLimit;
+  const effectiveMode = audit.effectiveMode || audit.mode || 'quick';
   const config = {
     ...profile,
-    pageLimit: Math.min(profile.pageLimit, admittedPageLimit),
+    mode: effectiveMode,
+    pageLimit: enforceAuditPageLimit(effectiveMode, admittedPageLimit, profile.pageLimit),
+    deepSitemapExpansion: effectiveMode === 'deep',
+    exposedFileChecks: effectiveMode !== 'quick',
   };
   const startUrl = normalizeCrawlUrl(audit.normalizedUrl) || audit.normalizedUrl;
   const rootQueueItem: QueueItem = { url: startUrl, depth: 0, sourceUrls: [], anchorTexts: [] };
@@ -293,7 +297,8 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
   const workerStart = nowIso();
   const requestScheduler = new HostRequestScheduler(Math.min(2, config.concurrency), 150);
   const auditDeadline = Date.now() + Math.min(10 * 60_000, Math.max(45_000, config.pageLimit * config.timeoutMs));
-  const candidateLimit = Math.min(1_000, Math.max(config.pageLimit, config.pageLimit * 4));
+  const candidateMultiplier = effectiveMode === 'quick' ? 2 : 4;
+  const candidateLimit = Math.min(1_000, Math.max(config.pageLimit, config.pageLimit * candidateMultiplier));
   let durationLimitReached = false;
   const quotaReached = () => analysedPages >= config.pageLimit;
   const candidateBudgetReached = () => visited.size >= candidateLimit;
@@ -484,6 +489,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
   await writeProgress({
     status: 'running',
     progress: 5,
+    pageLimit: config.pageLimit,
     currentPhase: 'Preparing your audit',
     currentUrl: audit.normalizedUrl,
     currentCheck: 'URL normalization',
@@ -545,7 +551,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
   }
   const sitemapQueue = [...new Set(sitemapCandidates)];
   const visitedSitemaps = new Set<string>();
-  const sitemapDocumentLimit = config.deepSitemapExpansion ? 30 : 12;
+  const sitemapDocumentLimit = effectiveMode === 'deep' ? 30 : effectiveMode === 'standard' ? 12 : 3;
   while (sitemapQueue.length && visitedSitemaps.size < sitemapDocumentLimit && scheduled.size < candidateLimit) {
     const sitemapUrl = normalizeCrawlUrl(sitemapQueue.shift()!);
     if (!sitemapUrl || visitedSitemaps.has(sitemapUrl) || !isSameDomain(sitemapUrl, audit.normalizedUrl)) continue;
