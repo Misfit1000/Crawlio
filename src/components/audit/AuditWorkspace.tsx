@@ -18,6 +18,7 @@ import { AuditExecutiveSummary, PriorityRecommendations, type AuditCategoryScore
 import { AuditPageMap } from './AuditPageMap';
 import { AuditWorkspaceProvider, useAuditWorkspace } from './AuditWorkspaceContext';
 import FindingWorkspace from './FindingWorkspace';
+import PaginatedAuditEvidence from './PaginatedAuditEvidence';
 import { AuditReportReadyNote, AuditTerminalState } from './AuditTerminalState';
 import DomainStrengthCard from '../backlinks/DomainStrengthCard';
 
@@ -109,7 +110,16 @@ function ComparisonPanel() {
     <SurfaceCard id="audit-comparison" className="p-5 md:p-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><h2 className="text-xl font-semibold">Compare with an earlier audit</h2><p className="mt-1 text-sm text-muted-foreground">Review new, resolved, and persistent findings from stored audit history.</p></div><div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto"><select className="suite-input min-w-64" value={baselineId} onChange={(event) => setBaselineId(event.target.value)} aria-label="Earlier audit"><option value="">Choose an earlier audit</option>{history.items.filter((item) => item.audit.id !== auditId).map((item) => <option key={item.audit.id} value={item.audit.id}>{new Date(item.audit.createdAt).toLocaleString()} · {modeLabel(item.audit.effectiveMode)}</option>)}</select><button type="button" className="trust-button" onClick={compare} disabled={!baselineId || loading}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />} Compare</button></div></div>
       {error && <Notice tone="danger" className="mt-4">{error}</Notice>}
-      {comparison && <div className="mt-5 grid gap-4 xl:grid-cols-2"><div className="grid gap-3 sm:grid-cols-2"><MetricCard label="Score change" value={comparison.scoreDelta == null ? '—' : `${comparison.scoreDelta > 0 ? '+' : ''}${comparison.scoreDelta}`} detail="Compared with selected audit" icon={comparison.scoreDelta != null && comparison.scoreDelta >= 0 ? <ArrowUpRight className="h-5 w-5" /> : <ArrowDownRight className="h-5 w-5" />} tone={comparison.scoreDelta != null && comparison.scoreDelta >= 0 ? 'green' : 'red'} /><MetricCard label="Resolved" value={comparison.resolvedIssues.length} detail="No longer detected" icon={<CheckCircle2 className="h-5 w-5" />} tone="green" /></div><div className="grid gap-3 sm:grid-cols-2"><MetricCard label="New findings" value={comparison.newIssues.length} detail="Appeared in this audit" icon={<AlertTriangle className="h-5 w-5" />} tone={comparison.newIssues.length ? 'yellow' : 'green'} /><MetricCard label="Still present" value={comparison.persistentIssues.length} detail="Detected in both audits" icon={<Wrench className="h-5 w-5" />} /></div></div>}
+      {comparison && <div className="mt-5 grid gap-4 xl:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <MetricCard label="Score change" value={comparison.scoreDelta == null ? '—' : `${comparison.scoreDelta > 0 ? '+' : ''}${comparison.scoreDelta}`} detail="Compared with selected audit" icon={comparison.scoreDelta != null && comparison.scoreDelta >= 0 ? <ArrowUpRight className="h-5 w-5" /> : <ArrowDownRight className="h-5 w-5" />} tone={comparison.scoreDelta != null && comparison.scoreDelta >= 0 ? 'green' : 'red'} />
+          <MetricCard label="Resolved" value={comparison.issueCounts?.resolved ?? comparison.resolvedIssues.length} detail="No longer detected" icon={<CheckCircle2 className="h-5 w-5" />} tone="green" />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <MetricCard label="New findings" value={comparison.issueCounts?.new ?? comparison.newIssues.length} detail="Appeared in this audit" icon={<AlertTriangle className="h-5 w-5" />} tone={(comparison.issueCounts?.new ?? comparison.newIssues.length) ? 'yellow' : 'green'} />
+          <MetricCard label="Still present" value={comparison.issueCounts?.persistent ?? comparison.persistentIssues.length} detail="Detected in both audits" icon={<Wrench className="h-5 w-5" />} />
+        </div>
+      </div>}
     </SurfaceCard>
   );
 }
@@ -225,6 +235,7 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
       </nav>
 
       <AuditExecutiveSummary audit={audit} score={scores.overall} scoreDetail="Calculated from stored audit evidence" categoryScores={section === 'overview' ? categoryScores : []} unavailableChecks={unavailableChecks} />
+      {audit.processingVersion === 2 && <p className="text-xs text-muted-foreground">Maps, recommendations, delivery charts and section counts use a sample of {data.latestPages.length} pages and {data.latestIssues.length} findings, not the full audit. Browse all stored evidence below.</p>}
       {section === 'overview' && <AuditPageMap pages={data.latestPages} issues={data.latestIssues} audit={data.audit} />}
       <PriorityRecommendations issues={section === 'overview' ? data.latestIssues : issues} statuses={checklist} onViewFindings={() => document.getElementById('finding-workspace-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
 
@@ -236,12 +247,15 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
         <DomainStrengthCard domain={audit.hostname} auditScores={data.finalReport?.scores || {}} />
         {firstPage && <SitePreviewSection url={firstPage.url || audit.normalizedUrl} hostname={audit.hostname} title={firstPage.title} description={firstPage.metaDescription} h1={firstPage.h1} canonicalUrl={firstPage.canonicalUrl} siteName={firstPage.siteName} faviconUrl={firstPage.faviconUrl} openGraphImage={firstPage.openGraphImage} screenshotUrl={firstPage.screenshotUrl} themeColor={firstPage.themeColor} />}
         <ComparisonPanel />
-        <FindingWorkspace auditId={auditId} issues={data.latestIssues} statuses={checklist} onStatusChange={updateChecklist} />
+        {audit.processingVersion === 2 ? <PaginatedAuditEvidence auditId={auditId} kind="issues" statuses={checklist} onStatusChange={updateChecklist} /> : <FindingWorkspace auditId={auditId} issues={data.latestIssues} statuses={checklist} onStatusChange={updateChecklist} />}
       </>}
 
+      {audit.processingVersion === 2 && section !== 'overview' && <PaginatedAuditEvidence auditId={auditId} kind={section === 'pages' ? 'pages' : 'issues'} section={reportSectionForRoute[section]} statuses={checklist} onStatusChange={updateChecklist} />}
+      {audit.processingVersion !== 2 && <>
       {section === 'pages' && <SurfaceCard className="overflow-hidden p-0"><div className="border-b border-border p-5"><h2 className="text-xl font-semibold">Pages analysed</h2><p className="mt-1 text-sm text-muted-foreground">Actual page summaries stored by the audit service.</p></div><div className="overflow-x-auto" role="region" aria-label="Analysed pages" tabIndex={0}><table className="suite-table min-w-[760px]"><caption className="sr-only">Analysed pages with HTTP status, response time, response size, and finding count.</caption><thead><tr><th>URL</th><th>Status</th><th>Response</th><th>Size</th><th>Findings</th></tr></thead><tbody>{data.latestPages.length ? data.latestPages.map((page) => <tr key={page.id}><td className="max-w-xl"><div className="truncate font-semibold">{page.title || 'Untitled page'}</div><div className="truncate text-xs text-muted-foreground">{page.url}</div></td><td className="tabular-nums">{page.statusCode || '—'}</td><td className="tabular-nums">{page.responseTimeMs ? `${page.responseTimeMs} ms` : '—'}</td><td className="tabular-nums">{page.pageSizeBytes ? `${Math.round(page.pageSizeBytes / 1024)} KB` : '—'}</td><td className="tabular-nums">{page.issueCount}</td></tr>) : <tr><td colSpan={5} className="py-10 text-center text-muted-foreground">No page summaries were stored for this audit.</td></tr>}</tbody></table></div></SurfaceCard>}
 
       {section !== 'overview' && section !== 'pages' && <section><div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-2xl font-semibold">{sections.find((item) => item.id === section)?.label} findings</h2><p className="mt-1 text-sm text-muted-foreground">Open a row for evidence, affected pages, workflow status, and notes.</p></div>{section === 'security' && <StatusBadge tone="accent">Passive observations only</StatusBadge>}{section === 'accessibility' && <StatusBadge tone="warning">Automated signals, not certification</StatusBadge>}</div>{issues.length ? <div className="mt-5"><FindingWorkspace auditId={auditId} issues={issues} statuses={checklist} onStatusChange={updateChecklist} /></div> : <SurfaceCard className="mt-5 p-6"><EmptyState icon={CheckCircle2} title="No stored findings in this section" description="Review coverage and unavailable checks before treating the section as fully clear." /></SurfaceCard>}</section>}
+      </>}
     </div>
   );
 }

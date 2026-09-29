@@ -1,6 +1,7 @@
 import { Gauge,Loader2,RefreshCw } from 'lucide-react';
 import { useState } from 'react';
-import { AUDIT_MODES, AUDIT_MODE_PAGE_CEILINGS, type AuditMode } from '../../lib/audit/audit-config';
+import { AUDIT_MODES, type AuditMode } from '../../lib/audit/audit-config';
+import { planPageCeiling } from '../../lib/audit/scalable-policy';
 import {
 getPlanLimits,
 updatePlanLimit
@@ -51,9 +52,9 @@ export default function AdminPlans({ adminUserId }: { adminUserId: string }) {
                 </td>
                 <td><NumberInput label={`${plan.label || plan.plan} daily audits`} value={plan.dailyAudits} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'dailyAudits', value)} /></td>
                 <td><NumberInput label={`${plan.label || plan.plan} monthly audits`} value={plan.monthlyAudits} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'monthlyAudits', value)} /></td>
-                <td><NumberInput label={`${plan.label || plan.plan} Quick page limit`} value={plan.maxPagesQuick} max={AUDIT_MODE_PAGE_CEILINGS.quick} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'maxPagesQuick', value)} />{plan.maxPagesQuick > AUDIT_MODE_PAGE_CEILINGS.quick && <div className="mt-1 max-w-28 text-[11px] text-red-600">Maximum supported: {AUDIT_MODE_PAGE_CEILINGS.quick}</div>}</td>
-                <td><NumberInput label={`${plan.label || plan.plan} Standard page limit`} value={plan.maxPagesStandard} max={AUDIT_MODE_PAGE_CEILINGS.standard} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'maxPagesStandard', value)} />{plan.maxPagesStandard > AUDIT_MODE_PAGE_CEILINGS.standard && <div className="mt-1 max-w-28 text-[11px] text-red-600">Maximum supported: {AUDIT_MODE_PAGE_CEILINGS.standard}</div>}</td>
-                <td><NumberInput label={`${plan.label || plan.plan} Deep page limit`} value={plan.maxPagesDeep} max={AUDIT_MODE_PAGE_CEILINGS.deep} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'maxPagesDeep', value)} />{plan.maxPagesDeep > AUDIT_MODE_PAGE_CEILINGS.deep && <div className="mt-1 max-w-28 text-[11px] text-red-600">Maximum supported: {AUDIT_MODE_PAGE_CEILINGS.deep}</div>}</td>
+                <td><NumberInput label={`${plan.label || plan.plan} Quick page limit`} value={plan.maxPagesQuick} max={planPageCeiling(plan.plan)} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'maxPagesQuick', value)} />{<div className="mt-1 max-w-28 text-[11px] text-muted-foreground">Maximum supported: {planPageCeiling(plan.plan)}</div>}</td>
+                <td><NumberInput label={`${plan.label || plan.plan} Standard page limit`} value={plan.maxPagesStandard} max={planPageCeiling(plan.plan)} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'maxPagesStandard', value)} />{<div className="mt-1 max-w-28 text-[11px] text-muted-foreground">Maximum supported: {planPageCeiling(plan.plan)}</div>}</td>
+                <td><NumberInput label={`${plan.label || plan.plan} Deep page limit`} value={plan.maxPagesDeep} max={planPageCeiling(plan.plan)} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'maxPagesDeep', value)} />{<div className="mt-1 max-w-28 text-[11px] text-muted-foreground">Maximum supported: {planPageCeiling(plan.plan)}</div>}</td>
                 <td><NumberInput label={`${plan.label || plan.plan} queue priority`} value={plan.priority} max={1000} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'priority', value)} /></td>
                 <td className="text-xs">
                   <label className="flex items-center gap-2"><input type="checkbox" checked={Boolean(plan.exportsEnabled)} disabled={updatingPlan === plan.plan} onChange={(event) => void update(plan.plan, 'exportsEnabled', event.target.checked)} /> Exports</label>

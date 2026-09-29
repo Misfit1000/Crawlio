@@ -6,6 +6,7 @@ import { isSameDomain, normalizeUrl, stripTrackingParams } from '../lib/seo/url-
 import { AUDIT_CHECK_COUNT, runAllChecksSafely } from '../lib/seo/checks/runner';
 import { auditRepository } from '../lib/supabase/audit-repository';
 import { startWorkerHealthServer } from './audit-worker-health';
+import { isScalableWorkerStopRequested, requestScalableWorkerStop } from './scalable-worker-lifecycle';
 import {
   WORKER_ENV_ERROR,
   WORKER_HEARTBEAT_INTERVAL_MS,
@@ -90,7 +91,7 @@ function toSeverity(value: string | undefined): AuditSeverity {
   return 'medium';
 }
 
-function mapAuditIssue(issue: AuditIssue, fallbackUrl: string): Omit<ResourceAuditIssue, 'id' | 'detectedAt'> {
+export function mapAuditIssue(issue: AuditIssue, fallbackUrl: string): Omit<ResourceAuditIssue, 'id' | 'detectedAt'> {
   const affectedUrl = issue.affectedUrl || fallbackUrl;
   return {
     severity: toSeverity(issue.severity),
@@ -107,7 +108,7 @@ function mapAuditIssue(issue: AuditIssue, fallbackUrl: string): Omit<ResourceAud
   };
 }
 
-function buildSecurityIssues(page: FetchedPage): Omit<ResourceAuditIssue, 'id' | 'detectedAt'>[] {
+export function buildSecurityIssues(page: FetchedPage): Omit<ResourceAuditIssue, 'id' | 'detectedAt'>[] {
   const issues: Omit<ResourceAuditIssue, 'id' | 'detectedAt'>[] = [];
   const headers = page.headers;
   const add = (severity: AuditSeverity, title: string, evidence: string, recommendation: string) => {
@@ -153,7 +154,7 @@ function buildSecurityIssues(page: FetchedPage): Omit<ResourceAuditIssue, 'id' |
   return issues;
 }
 
-function workerFetchOptions(timeoutMs: number): SafePublicFetchOptions {
+export function workerFetchOptions(timeoutMs: number): SafePublicFetchOptions {
   const allowPrivateForTesting = process.env.SEOINTEL_ALLOW_PRIVATE_TEST_TARGETS === 'true';
   return {
     timeoutMs,
@@ -166,7 +167,7 @@ function workerFetchOptions(timeoutMs: number): SafePublicFetchOptions {
   };
 }
 
-async function fetchHtmlPage(url: string, timeoutMs: number): Promise<FetchedPage> {
+export async function fetchHtmlPage(url: string, timeoutMs: number): Promise<FetchedPage> {
   const response = await safePublicFetch(url, workerFetchOptions(timeoutMs));
   let parsed: ParsedPageData | null = null;
   if (response.body) {
@@ -230,7 +231,7 @@ async function ensureWorkerOwnership(auditId: string, workerId: string) {
   }
 }
 
-function normalizeCrawlUrl(input: string, base?: string) {
+export function normalizeCrawlUrl(input: string, base?: string) {
   const normalized = normalizeUrl(input, base);
   if (!normalized) return null;
   const url = new URL(stripTrackingParams(normalized));
@@ -1147,12 +1148,42 @@ function logNoQueuedAudits() {
   console.log('No queued audits found');
 }
 
+const preferScalableNext = new Map<string, boolean>();
+const activeScalableSlices = new Map<string, Promise<boolean>>();
+
+function runTrackedScalableSlice(workerId: string, runtimeState?: AuditWorkerRuntimeState): Promise<boolean> {
+  if (isScalableWorkerStopRequested(workerId)) return Promise.resolve(false);
+  const active = activeScalableSlices.get(workerId);
+  if (active) return active;
+  const task = (async () => {
+    const scalable = await import('./scalable-audit-worker');
+    if (isScalableWorkerStopRequested(workerId)) return false;
+    await scalable.maintainScalableWorker(workerId);
+    if (isScalableWorkerStopRequested(workerId)) return false;
+    return scalable.runScalableSlice(workerId, async (auditId) => {
+      if (runtimeState) await writeWorkerHeartbeat(runtimeState, {
+        status: isScalableWorkerStopRequested(workerId) ? 'stopping' : auditId ? 'running' : 'idle',
+        currentAuditId: auditId,
+      });
+    });
+  })().finally(() => { activeScalableSlices.delete(workerId); });
+  activeScalableSlices.set(workerId, task);
+  return task;
+}
+
 export async function runOneAudit(
   workerId = process.env.AUDIT_WORKER_ID || `worker-${process.pid}`,
   runtimeState?: AuditWorkerRuntimeState,
 ) {
+  if (isScalableWorkerStopRequested(workerId)) return false;
+  const scalableEnabled = process.env.SCALABLE_AUDITS_ENABLED === 'true' && auditRepository.isSupabaseEnabled();
+  const scalableFirst = preferScalableNext.get(workerId) ?? true;
+  if (scalableEnabled) preferScalableNext.set(workerId, !scalableFirst);
+  if (scalableEnabled && scalableFirst && await runTrackedScalableSlice(workerId, runtimeState)) return true;
+  if (isScalableWorkerStopRequested(workerId)) return false;
   const audit = await auditRepository.claimNextQueuedAudit(workerId, runtimeState?.runtime || 'node-worker');
   if (!audit) {
+    if (scalableEnabled && !scalableFirst && await runTrackedScalableSlice(workerId, runtimeState)) return true;
     if (runtimeState) {
       updateWorkerState(runtimeState, { status: 'idle', currentAuditId: null });
       logNoQueuedAudits();
@@ -1287,16 +1318,32 @@ export async function runAuditWorkerLoop() {
   let workerReady = false;
   let shutdownRequested = false;
   let shuttingDown = false;
+  let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+  let scalableHeartbeat: Promise<void> | null = null;
+  let exportTask: Promise<void> | null = null;
+  let exportTimer: ReturnType<typeof setInterval> | undefined;
+  let lastExportCleanup = 0;
   const healthServer = startWorkerHealthServer(state, () => workerReady, process.env.WORKER_HEALTH_PORT || process.env.PORT);
 
   const shutdown = async (signal: NodeJS.Signals) => {
     if (shuttingDown) return;
     shuttingDown = true;
     shutdownRequested = true;
+    workerReady = false;
+    requestScalableWorkerStop(config.workerId);
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    if (exportTimer) clearInterval(exportTimer);
+    const activeSlice = activeScalableSlices.get(config.workerId);
     console.log(`Audit worker received ${signal}; shutting down`);
     try {
+      // A v2 slice must finish its in-flight batch and durable checkpoint before exit.
+      if (activeSlice) await activeSlice.catch((error) => {
+        console.error(`Scalable slice shutdown failed: ${error instanceof Error ? error.message : String(error)}`);
+      });
+      if (scalableHeartbeat) await scalableHeartbeat.catch(() => undefined);
+      if (exportTask) await exportTask.catch(() => undefined);
       await writeWorkerHeartbeat(state, { status: 'stopping' });
-      if (state.currentAuditId) {
+      if (!activeSlice && state.currentAuditId) {
         await auditRepository.expireAuditLease(state.currentAuditId, config.workerId);
       }
       await writeWorkerHeartbeat(state, { status: 'stopped', currentAuditId: null });
@@ -1331,21 +1378,47 @@ export async function runAuditWorkerLoop() {
 
   workerReady = true;
   await writeWorkerHeartbeat(state, { status: 'idle', currentAuditId: null, queuePollingStatus: 'active', databaseConnected: true, lastFatalWorkerError: null });
-  const heartbeatTimer = setInterval(() => {
+  heartbeatTimer = setInterval(() => {
+    if (shutdownRequested) return;
     void writeWorkerHeartbeat(state).catch((error) => {
       console.error(`Periodic worker heartbeat failed: ${error instanceof Error ? error.message : String(error)}`);
     });
+    if (process.env.SCALABLE_AUDITS_ENABLED === 'true' && !scalableHeartbeat) {
+      scalableHeartbeat = import('./scalable-audit-worker')
+        .then((scalable) => shutdownRequested ? undefined : scalable.maintainScalableWorker(config.workerId))
+        .catch((error) => {
+          console.error(`Scalable worker registration failed: ${error instanceof Error ? error.message : String(error)}`);
+        })
+        .finally(() => { scalableHeartbeat = null; });
+    }
   }, WORKER_HEARTBEAT_INTERVAL_MS);
   heartbeatTimer.unref?.();
+  if (process.env.SCALABLE_AUDITS_ENABLED === 'true') {
+    exportTimer = setInterval(() => {
+      if (shutdownRequested || exportTask) return;
+      exportTask = import('./scalable-export-worker').then(async (exports) => {
+        await exports.runScalableExportWorkerOnce(config.workerId);
+        if (Date.now() - lastExportCleanup >= 60_000) {
+          lastExportCleanup = Date.now();
+          await exports.cleanupScalableExportsOnce();
+        }
+      }).catch((error) => {
+        console.error(`Export worker: ${error instanceof Error ? error.message : String(error)}`);
+      }).finally(() => { exportTask = null; });
+    }, config.pollIntervalMs);
+    exportTimer.unref?.();
+  }
   while (!shutdownRequested) {
     try {
       const recovering = state.queuePollingStatus === 'error' || !state.databaseConnected;
       const claimed = await runOneAudit(config.workerId, state);
+      if (shutdownRequested) break;
       if (recovering) {
         await writeWorkerHeartbeat(state, { status: claimed ? state.status : 'idle', queuePollingStatus: 'active', databaseConnected: true, lastFatalWorkerError: null });
       }
       if (!claimed) await wait(config.pollIntervalMs);
     } catch (error) {
+      if (shutdownRequested) break;
       const detail = error instanceof Error ? error.message : String(error || 'Worker polling failure');
       await writeWorkerHeartbeat(state, { status: 'idle', currentAuditId: null, queuePollingStatus: 'error', databaseConnected: false, lastFatalWorkerError: detail }).catch(() => undefined);
       console.error(`Worker queue polling failed: ${detail}`);
@@ -1361,6 +1434,9 @@ export async function runAuditWorkerLoop() {
   }
 
   clearInterval(heartbeatTimer);
+  if (exportTimer) clearInterval(exportTimer);
+  if (exportTask) await exportTask;
+  if (shuttingDown) return;
   await writeWorkerHeartbeat(state, { status: 'stopped', currentAuditId: null, queuePollingStatus: 'stopped' });
   healthServer?.close();
 }

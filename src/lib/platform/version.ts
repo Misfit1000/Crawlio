@@ -1,5 +1,5 @@
 export const APPLICATION_VERSION = '1.0.0-beta';
-export const API_SCHEMA_VERSION = 14;
+export const API_SCHEMA_VERSION = 15;
 // Migration 022 is additive. Keep audit admission compatible with schema 13
 // while the database-first rollout reaches the API and worker deployments.
 export const MINIMUM_AUDIT_DATABASE_SCHEMA_VERSION = 13;

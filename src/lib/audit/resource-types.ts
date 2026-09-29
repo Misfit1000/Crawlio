@@ -31,6 +31,7 @@ export type ProcessingTier = 'free' | 'paid' | 'agency' | 'admin';
 
 export interface ResourceAuditDocument {
   id: string;
+  processingVersion?: 1 | 2;
   userId: string | null;
   guestKeyHash: string | null;
   projectId: string | null;
@@ -194,6 +195,8 @@ export interface AuditHistoryPage<TReport = ResourceAuditReport> {
 }
 
 export interface AuditComparison {
+  issueCounts?: { new: number; resolved: number; persistent: number };
+  aggregateOnly?: boolean;
   currentAuditId: string;
   baselineAuditId: string;
   normalizedUrl: string;

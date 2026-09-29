@@ -1,0 +1,4 @@
+// Vercel API bundle. Rebuild with npm run build:vercel-api; PDFKit stays lazy-loaded.
+import { createRequire as __createRequire } from 'node:module';
+const require = __createRequire(import.meta.url);
+var FINDING_WORKFLOW_STATUSES=["not_started","in_progress","fixed","ignored","reopened","accepted_risk"];var FINDING_PRIORITY_OVERRIDES=["critical","high","medium","low","info"];function findingWorkflowKey(issue){const stored=String(issue.findingKey||"").trim().toLowerCase();if(stored)return stored.slice(0,512);return[issue.category,issue.title,issue.affectedUrl].map(value=>String(value||"").trim().toLowerCase()).join("|").slice(0,512)}function isFindingWorkflowStatus(value){return FINDING_WORKFLOW_STATUSES.includes(value)}function isFindingPriorityOverride(value){return FINDING_PRIORITY_OVERRIDES.includes(value)}export{FINDING_WORKFLOW_STATUSES,FINDING_PRIORITY_OVERRIDES,findingWorkflowKey,isFindingWorkflowStatus,isFindingPriorityOverride};

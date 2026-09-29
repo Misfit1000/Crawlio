@@ -1,6 +1,7 @@
 import type { User as SupabaseAuthUser } from '@supabase/supabase-js';
 import type { AuditMode, UserPlan } from '../audit/resource-types';
 import { enforceAuditPageLimit, normalizeAuditModes } from '../audit/audit-config';
+import { ADMIN_PAGE_DEFAULT } from '../audit/scalable-policy';
 import { getSupabaseAdminClient, requireSupabaseAdminClient } from '../supabase/server';
 
 export type UserRole = 'user' | 'admin' | 'support';
@@ -138,9 +139,9 @@ export const DEFAULT_PLAN_LIMITS: Record<UserPlan, PlanLimits> = {
     label: 'Admin Full Audit',
     dailyAudits: 1000,
     monthlyAudits: 100000,
-    maxPagesQuick: 50,
-    maxPagesStandard: 50,
-    maxPagesDeep: 100,
+    maxPagesQuick: ADMIN_PAGE_DEFAULT,
+    maxPagesStandard: ADMIN_PAGE_DEFAULT,
+    maxPagesDeep: ADMIN_PAGE_DEFAULT,
     allowedModes: ['quick', 'standard', 'deep'],
     auditTimeoutSeconds: 10,
     concurrency: 3,
@@ -201,9 +202,9 @@ export function isBootstrapAdminEmail(email: string | null | undefined) {
 
 function rowToPlanLimits(row: any): PlanLimits {
   const fallback = DEFAULT_PLAN_LIMITS[normalizePlan(row?.plan)];
-  const maxPagesQuick = enforceAuditPageLimit('quick', row?.max_pages_quick, fallback.maxPagesQuick);
-  const maxPagesStandard = enforceAuditPageLimit('standard', row?.max_pages_standard, fallback.maxPagesStandard || 1);
-  const maxPagesDeep = enforceAuditPageLimit('deep', row?.max_pages_deep, fallback.maxPagesDeep || 1);
+  const maxPagesQuick = enforceAuditPageLimit('quick', row?.max_pages_quick, fallback.maxPagesQuick, fallback.plan);
+  const maxPagesStandard = enforceAuditPageLimit('standard', row?.max_pages_standard, fallback.maxPagesStandard || 1, fallback.plan);
+  const maxPagesDeep = enforceAuditPageLimit('deep', row?.max_pages_deep, fallback.maxPagesDeep || 1, fallback.plan);
   const configuredModes = normalizeAuditModes(row?.allowed_modes, fallback.allowedModes);
   const allowedModes = configuredModes.filter((mode) => {
     if (mode === 'quick') return Number(row?.max_pages_quick ?? fallback.maxPagesQuick) > 0;
@@ -377,7 +378,7 @@ export async function canStartAudit(
       requestedMode,
       effectiveMode,
       processingTier: 'free',
-      pageLimit: limits.maxPagesQuick,
+      pageLimit: pageLimitForMode(limits, effectiveMode),
       queuePriority: limits.priority,
       quotaRemaining: {
         daily: limits.dailyAudits,

@@ -4,6 +4,7 @@ import { API_ROUTES } from "../lib/api/routes";
 import { safeJsonFetch } from "../lib/http/safe-json";
 import {
   AUDIT_MODES,
+  AUDIT_MODE_PAGE_CEILINGS,
   enforceAuditPageLimit,
   normalizeAuditModes,
   type AuditMode,
@@ -119,9 +120,11 @@ const FALLBACK_AUDIT_ENTITLEMENTS: Record<User['plan'], AuditEntitlements> = {
   admin: { allowedModes: ['quick', 'standard', 'deep'], availableModes: ['quick', 'standard'], pageLimits: { quick: 50, standard: 50, deep: 100 }, dailyAudits: 1000, monthlyAudits: 100000, exportsEnabled: true, pdfEnabled: true, scheduledAuditsEnabled: true, unavailableReasons: { deep: 'Deep audits are temporarily unavailable because the dedicated audit engine is not enabled.' }, updatedAt: null },
 };
 
-function clientPageLimit(mode: AuditMode, value: unknown, fallback: number) {
+function clientPageLimit(mode: AuditMode, value: unknown, fallback: number, plan: string, runtimeCeiling: unknown) {
   const numeric = Number(value);
-  return Number.isFinite(numeric) && numeric > 0 ? enforceAuditPageLimit(mode, numeric, fallback || 1) : 0;
+  const ceiling = Number(runtimeCeiling);
+  const runtimeLimit = Number.isFinite(ceiling) && ceiling >= 0 ? ceiling : AUDIT_MODE_PAGE_CEILINGS[mode];
+  return Number.isFinite(numeric) && numeric > 0 ? Math.min(runtimeLimit, enforceAuditPageLimit(mode, numeric, fallback || 1, plan)) : 0;
 }
 
 function mapAuditEntitlements(payload: any, plan: User['plan']): AuditEntitlements {
@@ -129,9 +132,9 @@ function mapAuditEntitlements(payload: any, plan: User['plan']): AuditEntitlemen
   const limits = payload?.limits || {};
   const capabilities = payload?.auditCapabilities || {};
   const pageLimits = {
-    quick: clientPageLimit('quick', limits.maxPagesQuick, fallback.pageLimits.quick),
-    standard: clientPageLimit('standard', limits.maxPagesStandard, fallback.pageLimits.standard),
-    deep: clientPageLimit('deep', limits.maxPagesDeep, fallback.pageLimits.deep),
+    quick: clientPageLimit('quick', limits.maxPagesQuick, fallback.pageLimits.quick, plan, capabilities.pageCeilings?.quick),
+    standard: clientPageLimit('standard', limits.maxPagesStandard, fallback.pageLimits.standard, plan, capabilities.pageCeilings?.standard),
+    deep: clientPageLimit('deep', limits.maxPagesDeep, fallback.pageLimits.deep, plan, capabilities.pageCeilings?.deep),
   };
   const allowedModes = normalizeAuditModes(limits.allowedModes, fallback.allowedModes).filter((mode) => pageLimits[mode] > 0);
   const runtimeModes = Array.isArray(capabilities.availableModes)

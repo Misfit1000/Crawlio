@@ -1,3 +1,5 @@
+import { planPageCeiling } from './scalable-policy';
+
 export type AuditMode = 'quick' | 'standard' | 'deep';
 
 export const AUDIT_MODES: readonly AuditMode[] = ['quick', 'standard', 'deep'];
@@ -83,16 +85,21 @@ export function normalizeAuditModes(value: unknown, fallback: readonly AuditMode
   return modes.length ? modes : [...fallback];
 }
 
-export function enforceAuditPageLimit(mode: AuditMode, value: unknown, fallback: number) {
+// Omitting the plan deliberately retains the legacy engine's safety bounds.
+export function enforceAuditPageLimit(mode: AuditMode, value: unknown, fallback: number, plan?: string) {
   const numeric = Number(value);
   const requested = Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : fallback;
-  return Math.max(1, Math.min(AUDIT_MODE_PAGE_CEILINGS[mode], requested));
+  return Math.max(1, Math.min(plan === undefined ? AUDIT_MODE_PAGE_CEILINGS[mode] : planPageCeiling(plan), requested));
 }
 
-export function createAuditRuntimeCapabilities(deepAuditEnabled: boolean): AuditRuntimeCapabilities {
+export function createAuditRuntimeCapabilities(deepAuditEnabled: boolean, readiness = { ready: false, deepReady: false }, plan = 'free'): AuditRuntimeCapabilities {
   return {
     availableModes: deepAuditEnabled ? [...AUDIT_MODES] : ['quick', 'standard'],
-    pageCeilings: { ...AUDIT_MODE_PAGE_CEILINGS },
+    pageCeilings: {
+      quick: readiness.ready ? planPageCeiling(plan) : AUDIT_MODE_PAGE_CEILINGS.quick,
+      standard: readiness.ready ? planPageCeiling(plan) : AUDIT_MODE_PAGE_CEILINGS.standard,
+      deep: readiness.ready && readiness.deepReady ? planPageCeiling(plan) : AUDIT_MODE_PAGE_CEILINGS.deep,
+    },
     unavailableReasons: deepAuditEnabled
       ? {}
       : { deep: 'Deep audits are temporarily unavailable because the dedicated audit engine is not enabled.' },

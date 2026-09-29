@@ -213,7 +213,9 @@ export async function renderAuditPdf(data: ResourceAuditLiveData): Promise<Buffe
       doc.y = y + 20;
     });
 
-    sectionTitle('Prioritized recommendations', 'Repeated findings are grouped by issue type and ordered by priority and affected-page count.');
+    sectionTitle('Prioritized recommendations', audit.processingVersion === 2
+      ? 'Sample of retained findings. Use the full evidence export for every finding; scores and severity totals cover the complete audit.'
+      : 'Repeated findings are grouped by issue type and ordered by priority and affected-page count.');
     const groupedIssues = groupRecommendations(data.latestIssues);
     groupedIssues.slice(0, 30).forEach((group, index) => {
       const representative = data.latestIssues.find((issue) => issue.title === group.title && issue.category === group.category);
@@ -237,7 +239,9 @@ export async function renderAuditPdf(data: ResourceAuditLiveData): Promise<Buffe
     }
 
     ensureSpace(92);
-    sectionTitle('Pages checked', 'Response, size, and issue counts from the stored audit page summaries.');
+    sectionTitle(audit.processingVersion === 2 ? 'Page sample' : 'Pages checked', audit.processingVersion === 2
+      ? `Showing up to 100 stored page summaries from ${audit.pagesCrawled} analysed pages. Open the audit workspace to download the complete pages CSV or JSON evidence.`
+      : 'Response, size, and issue counts from the stored audit page summaries.');
     drawPageTableHeader();
     data.latestPages.slice(0, 100).forEach(drawPageRow);
     if (data.latestPages.length > 100) {

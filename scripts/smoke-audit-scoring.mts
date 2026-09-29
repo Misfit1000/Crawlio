@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { calculateTransparentAuditScore } from '../src/lib/audit/audit-scoring';
+import { calculateTransparentAuditScore, categoryForIssue, normalizedIssueKey } from '../src/lib/audit/audit-scoring';
 import type { ResourceAuditIssue, ResourceAuditPage } from '../src/lib/audit/resource-types';
 
 const page = (url: string, patch: Partial<ResourceAuditPage> = {}): ResourceAuditPage => ({
@@ -60,3 +60,21 @@ for (const category of Object.values(siteWide.categories)) {
 }
 
 console.log('Transparent audit scoring smoke test passed.');
+
+for (const count of [500, 1000, 5000]) {
+  const pages = Array.from({ length: count }, (_, i) => page(`https://example.com/${i}`, {
+    statusCode: i % 20 === 0 ? 404 : 200, responseTimeMs: i % 3 === 0 ? 2000 : 200,
+    pageSizeBytes: i % 7 === 0 ? 2_000_000 : 1000,
+  }));
+  const issues = pages.filter((_, i) => i % 2 === 0).map(p => issue('Missing canonical', p.url));
+  const sample = issues[0];
+  const fromRows = calculateTransparentAuditScore({ pages, issues });
+  const fromAggregate = calculateTransparentAuditScore({ pages: [], issues: [], aggregate: {
+    pageCount: count, errorPages: pages.filter(p => p.statusCode >= 400).length, redirectPages: 0,
+    slowPages: pages.filter(p => p.responseTimeMs > 1500).length, largePages: pages.filter(p => p.pageSizeBytes > 1_000_000).length,
+    groups: [{ key: normalizedIssueKey(sample), category: categoryForIssue(sample), title: sample.title,
+      severity: sample.severity, affectedPages: issues.length }],
+  } });
+  assert.deepEqual(fromAggregate, fromRows, `Aggregate scoring must match all ${count} retained rows`);
+}
+console.log('Incremental scoring matches complete evidence at 500, 1000 and 5000 pages.');

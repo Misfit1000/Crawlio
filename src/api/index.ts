@@ -9,6 +9,8 @@ import { generateKeywords } from '../lib/keywords/generator';
 import { clusterKeywords } from '../lib/keywords/clustering';
 import { buildContentBrief } from '../lib/keywords/content-brief';
 import { auditRepository } from '../lib/supabase/audit-repository';
+import { scalableReadiness } from '../lib/supabase/scalable-audit-repository';
+import { planPageCeiling } from '../lib/audit/scalable-policy';
 import { isSupabaseAdminEnabled, requireSupabaseAdminClient } from '../lib/supabase/server';
 import {
   AUDIT_MODE_PAGE_CEILINGS,
@@ -84,6 +86,7 @@ import {
   syncSearchConsoleProperty,
 } from '../lib/search-console/server';
 import { registerImportRoutes } from './import-routes';
+import { registerScalableEvidenceRoutes } from './scalable-evidence-routes';
 
 const DUPLICATE_AUDIT_WINDOW_MS = 10 * 60 * 1000;
 
@@ -208,6 +211,12 @@ async function getRequester(req: any) {
 }
 
 registerImportRoutes(apiRouter, getRequester);
+registerScalableEvidenceRoutes(apiRouter, {
+  requireAccess: async (req, auditId) => {
+    const audit = await auditRepository.getAudit(auditId);
+    return audit && await canAccessAudit(req, audit) ? audit : null;
+  },
+});
 
 async function requireAdminRequester(req: any, res: any) {
   const requester = await getRequester(req);
@@ -454,11 +463,18 @@ apiRouter.get('/me/profile', asyncJsonRoute(async (req, res) => {
   }
   const profile = await ensureUserProfileFromAuthUser(authUser);
   const limits = await getPlanLimits(profile.plan);
+  const readiness = await scalableReadiness().catch(() => ({ ready: false, deepReady: false }));
+  const auditCapabilities = createAuditRuntimeCapabilities(isDeepAuditEnabled() || (readiness.ready && readiness.deepReady), readiness, profile.plan);
   res.setHeader('Cache-Control', 'private, no-store');
   res.json({ success: true, data: {
     profile,
-    limits,
-    auditCapabilities: createAuditRuntimeCapabilities(isDeepAuditEnabled()),
+    limits: {
+      ...limits,
+      maxPagesQuick: Math.min(limits.maxPagesQuick, auditCapabilities.pageCeilings.quick),
+      maxPagesStandard: Math.min(limits.maxPagesStandard, auditCapabilities.pageCeilings.standard),
+      maxPagesDeep: Math.min(limits.maxPagesDeep, auditCapabilities.pageCeilings.deep),
+    },
+    auditCapabilities,
   } });
 }));
 
@@ -526,10 +542,13 @@ apiRouter.get('/plans/public', asyncJsonRoute(async (req, res) => {
     .filter(Boolean)
     .sort()
     .at(-1) || new Date().toISOString();
+  const readiness = await scalableReadiness().catch(() => ({ ready: false, deepReady: false }));
+  const capabilities = createAuditRuntimeCapabilities(isDeepAuditEnabled() || (readiness.ready && readiness.deepReady), readiness);
   const projection = createPublicPlanProjection(
     data || [],
     latestUpdate,
-    createAuditRuntimeCapabilities(isDeepAuditEnabled()).availableModes,
+    capabilities.availableModes,
+    capabilities.pageCeilings,
   );
   const serialized = JSON.stringify(projection);
   const etag = `\"${createHash('sha256').update(serialized).digest('base64url')}\"`;
@@ -707,9 +726,9 @@ apiRouter.post('/admin/plans/:plan', asyncJsonRoute(async (req, res) => {
   const numericBounds: Record<string, [number, number]> = {
     daily_audits: [0, 100_000],
     monthly_audits: [0, 1_000_000],
-    max_pages_quick: [0, AUDIT_MODE_PAGE_CEILINGS.quick],
-    max_pages_standard: [0, AUDIT_MODE_PAGE_CEILINGS.standard],
-    max_pages_deep: [0, AUDIT_MODE_PAGE_CEILINGS.deep],
+    max_pages_quick: [0, planPageCeiling(String(req.params.plan))],
+    max_pages_standard: [0, planPageCeiling(String(req.params.plan))],
+    max_pages_deep: [0, planPageCeiling(String(req.params.plan))],
     audit_timeout_seconds: [3, 30],
     concurrency: [1, 8],
     max_events_per_audit: [50, 10_000],
@@ -748,8 +767,8 @@ apiRouter.post('/admin/plans/:plan', asyncJsonRoute(async (req, res) => {
     if (Number(merged[field] || 0) < 1) {
       throw new ApiError('AUDIT_MODE_LIMIT_REQUIRED', `${mode[0].toUpperCase() + mode.slice(1)} must have a page limit before it can be enabled.`, 400);
     }
-    if (Number(merged[field]) > AUDIT_MODE_PAGE_CEILINGS[mode]) {
-      throw new ApiError('AUDIT_MODE_LIMIT_UNSUPPORTED', `${mode[0].toUpperCase() + mode.slice(1)} currently supports at most ${AUDIT_MODE_PAGE_CEILINGS[mode]} pages.`, 400);
+    if (Number(merged[field]) > planPageCeiling(String(req.params.plan))) {
+      throw new ApiError('AUDIT_MODE_LIMIT_UNSUPPORTED', `${mode[0].toUpperCase() + mode.slice(1)} supports at most ${planPageCeiling(String(req.params.plan))} pages for this plan.`, 400);
     }
   }
   const { error } = await client.from('plan_limits').update({ ...patch, updated_at: new Date().toISOString() }).eq('plan', req.params.plan);
@@ -1708,11 +1727,13 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
     : { userId: null, guestKeyHash: guestIdentity.guestKeyHash };
   const createdAfterIso = new Date(Date.now() - DUPLICATE_AUDIT_WINDOW_MS).toISOString();
 
+  const readiness = await scalableReadiness().catch(() => ({ ready: false, deepReady: false }));
   let decision;
   try {
     decision = await canStartAudit(userId, requestedMode, {
       guestKey: guestIdentity.guestKey,
-      deepAuditEnabled: isDeepAuditEnabled(),
+      // Check runtime availability below so unavailable larger audits receive a 503, not an upgrade error.
+      deepAuditEnabled: true,
     });
   } catch (error) {
     if (error instanceof EntitlementError && /already have an audit in progress/i.test(error.message)) {
@@ -1726,6 +1747,17 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
       }
     }
     return sendEntitlementError(res, error);
+  }
+
+  const processingVersion = readiness.ready && (decision.effectiveMode !== 'deep' || readiness.deepReady) ? 2 : 1;
+  const legacyPageCeiling = AUDIT_MODE_PAGE_CEILINGS[decision.effectiveMode];
+  if (processingVersion === 1 && decision.pageLimit > legacyPageCeiling) {
+    throw new ApiError('SCALABLE_AUDIT_UNAVAILABLE', `The requested ${decision.pageLimit} pages exceed the legacy ${legacyPageCeiling}-page limit. The scalable audit migration or a live compatible v2 worker is unavailable, or scalable audits are disabled.`, 503, {
+      retryAfterSeconds: 120,
+    });
+  }
+  if (processingVersion === 1 && decision.effectiveMode === 'deep' && !isDeepAuditEnabled()) {
+    throw new ApiError('DEEP_AUDIT_UNAVAILABLE', 'Deep audits require a live compatible worker or the dedicated legacy engine.', 503, { retryAfterSeconds: 120 });
   }
 
   let admission: Awaited<ReturnType<typeof admitAuditSubmission>> | null = null;
@@ -1789,6 +1821,7 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
   try {
     audit = await auditRepository.createAuditJob({
       id: admission?.auditId,
+      processingVersion,
       submittedInput: String(url || '').trim(),
       normalizedUrl: normalized.normalizedUrl,
       hostname: normalized.hostname,
@@ -1960,6 +1993,7 @@ apiRouter.get('/audit/:id/finding-workflow', asyncJsonRoute(async (req, res) => 
 }));
 
 apiRouter.put('/audit/:id/finding-workflow/:findingKey', durableRateLimit({ namespace: 'finding-workflow', limit: 120, windowSeconds: 60 }), asyncJsonRoute(async (req, res) => {
+  res.setHeader('Cache-Control', 'private, no-store');
   const access = await requireWorkflowAudit(req, res);
   if (!access) return;
   const key = String(req.params.findingKey || '').trim().toLowerCase();
@@ -1977,8 +2011,9 @@ apiRouter.put('/audit/:id/finding-workflow/:findingKey', durableRateLimit({ name
   }
   const assignedTo = req.body?.assignedToSelf === true ? access.audit.userId : null;
 
-  const issues = await auditRepository.getLatestIssues(access.audit.id, 1000);
-  const finding = issues.find((issue) => findingWorkflowKey(issue) === key);
+  const finding = access.audit.processingVersion === 2
+    ? await auditRepository.getWorkflowFinding(access.audit.id, key)
+    : (await auditRepository.getLatestIssues(access.audit.id, 1000)).find((issue) => findingWorkflowKey(issue) === key);
   if (!finding) throw new ApiError('FINDING_NOT_FOUND', 'Finding not found for this audit.', 404);
 
   const client = requireSupabaseAdminClient();
@@ -2086,6 +2121,7 @@ apiRouter.get('/audits/history', asyncJsonRoute(async (req, res) => {
 }));
 
 apiRouter.get('/audit/compare/:currentId/:baselineId', asyncJsonRoute(async (req, res) => {
+  res.setHeader('Cache-Control', 'private, no-store');
   const [currentAudit, baselineAudit] = await Promise.all([
     auditRepository.getAudit(req.params.currentId),
     auditRepository.getAudit(req.params.baselineId),
@@ -2100,6 +2136,21 @@ apiRouter.get('/audit/compare/:currentId/:baselineId', asyncJsonRoute(async (req
   const comparison = await auditRepository.compareAudits(currentAudit.id, baselineAudit.id);
   if (!comparison) return res.status(404).json({ success: false, error: 'Audit comparison is unavailable.' });
   res.json({ success: true, data: comparison });
+}));
+
+apiRouter.get('/audit/export-status/:id/:format', durableRateLimit({ namespace: 'export-status', limit: 120, windowSeconds: 300 }), asyncJsonRoute(async (req, res) => {
+  res.setHeader('Cache-Control', 'private, no-store');
+  const audit = await auditRepository.getAudit(req.params.id);
+  if (!audit || !(await canAccessAudit(req, audit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
+  if (!(await getPlanLimits(audit.plan)).exportsEnabled) throw new ApiError('EXPORT_NOT_ALLOWED', 'Data exports are not enabled for this plan.', 403);
+  if (!['json', 'pages.csv', 'issues.csv'].includes(req.params.format)) throw new ApiError('INVALID_FORMAT', 'Unsupported export format.', 400);
+  const { data, error } = await requireSupabaseAdminClient().from('audit_export_jobs').select('state,expires_at')
+    .eq('audit_id', audit.id).eq('format', req.params.format).maybeSingle();
+  if (error) throw error;
+  if (!data || Date.parse(data.expires_at) <= Date.now()) throw new ApiError('EXPORT_EXPIRED', 'Request a new export.', 410);
+  if (data.state === 'failed') throw new ApiError('EXPORT_FAILED', 'Export generation failed.', 503);
+  res.setHeader('Retry-After', '2');
+  res.status(data.state === 'ready' ? 200 : 202).json({ success: true, data: { state: data.state } });
 }));
 
 apiRouter.get('/audit/export/:id/:format', asyncJsonRoute(async (req, res) => {
@@ -2122,6 +2173,10 @@ apiRouter.get('/audit/export/:id/:format', asyncJsonRoute(async (req, res) => {
     return res.status(403).json({ success: false, error: 'Data exports are not enabled for this plan.', upgradeRequired: true });
   }
 
+  if (audit.processingVersion === 2 && format !== 'pdf') {
+    const { handleScalableExportDownload, isScalableExportFormat } = await import('../lib/report/scalable-exports');
+    if (isScalableExportFormat(format)) return handleScalableExportDownload(res, audit, format);
+  }
   const liveData = await auditRepository.getLiveData(id, audit);
 
   if (format === 'pdf') {

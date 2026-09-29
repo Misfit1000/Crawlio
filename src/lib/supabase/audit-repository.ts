@@ -154,10 +154,11 @@ async function withTransientRetry<T>(action: string, operation: () => Promise<T>
   throw lastError instanceof Error ? lastError : new Error(`${action} failed.`);
 }
 
-function toAuditDocument(row: DbRow | null | undefined): ResourceAuditDocument | null {
+export function toAuditDocument(row: DbRow | null | undefined): ResourceAuditDocument | null {
   if (!row) return null;
   return {
     id: row.id,
+    processingVersion: row.processing_version === 2 ? 2 : 1,
     userId: row.user_id ?? null,
     guestKeyHash: row.guest_key_hash ?? null,
     projectId: row.project_id ?? null,
@@ -215,6 +216,7 @@ function toAuditDocument(row: DbRow | null | undefined): ResourceAuditDocument |
 function auditToRow(audit: ResourceAuditDocument) {
   return {
     id: audit.id,
+    ...(audit.processingVersion === 2 ? { processing_version: 2 } : {}),
     user_id: audit.userId,
     guest_key_hash: audit.guestKeyHash,
     project_id: audit.projectId,
@@ -351,7 +353,7 @@ function eventToRow(auditId: string, event: ResourceAuditEvent) {
   };
 }
 
-function toAuditPage(row: DbRow): ResourceAuditPage {
+export function toAuditPage(row: DbRow): ResourceAuditPage {
   return {
     id: row.id,
     url: row.url,
@@ -385,7 +387,7 @@ function toAuditPage(row: DbRow): ResourceAuditPage {
   };
 }
 
-function pageToRow(auditId: string, page: ResourceAuditPage) {
+export function pageToRow(auditId: string, page: ResourceAuditPage) {
   return {
     id: page.id,
     audit_id: auditId,
@@ -470,7 +472,7 @@ async function upsertAuditPages(
   assertNoError(legacyResult.error, 'Append audit pages without preview metadata');
 }
 
-function toAuditIssue(row: DbRow): ResourceAuditIssue {
+export function toAuditIssue(row: DbRow): ResourceAuditIssue {
   return {
     id: row.id,
     severity: row.severity,
@@ -489,7 +491,7 @@ function toAuditIssue(row: DbRow): ResourceAuditIssue {
   };
 }
 
-function issueToRow(auditId: string, issue: ResourceAuditIssue) {
+export function issueToRow(auditId: string, issue: ResourceAuditIssue) {
   return {
     id: issue.id,
     audit_id: auditId,
@@ -550,7 +552,7 @@ function toAuditReport(row: DbRow | null | undefined): ResourceAuditReport | nul
   };
 }
 
-function reportToRow(auditId: string, report: ResourceAuditReport) {
+export function reportToRow(auditId: string, report: ResourceAuditReport) {
   return {
     audit_id: auditId,
     scores: report.scores,
@@ -689,6 +691,7 @@ export const auditRepository = {
 
   async createAuditJob(input: {
     id?: string;
+    processingVersion?: 1 | 2;
     submittedInput: string;
     normalizedUrl: string;
     hostname: string;
@@ -712,6 +715,7 @@ export const auditRepository = {
     const plan = input.plan || 'free';
     const audit: ResourceAuditDocument = {
       id,
+      processingVersion: input.processingVersion || 1,
       userId: input.userId ?? null,
       guestKeyHash: input.guestKeyHash ?? null,
       projectId: input.projectId ?? null,
@@ -1277,6 +1281,35 @@ export const auditRepository = {
     return this.getLatestIssues(auditId, limit);
   },
 
+  async getWorkflowFinding(auditId: string, key: string): Promise<ResourceAuditIssue | null> {
+    const { findingWorkflowKey } = await import('../audit/finding-workflow');
+    if (!key || key.length > 512 || findingWorkflowKey({ findingKey: key, category: '', title: '', affectedUrl: '' }) !== key) return null;
+    const client = getSupabaseAdminClient();
+    if (!client) return (memory.issues.get(auditId) || []).find(issue => findingWorkflowKey(issue) === key) || null;
+    // Escape LIKE metacharacters so a URL cannot broaden a targeted lookup.
+    const literal = (value: string) => value.replace(/[\\%_]/g, character => `\\${character}`);
+    const { data, error } = await client.from('audit_issues').select('*')
+      .eq('audit_id', auditId).ilike('finding_key', `${literal(key)}${key.length === 512 ? '%' : ''}`)
+      .order('id').limit(1);
+    assertNoError(error, 'Find audit workflow issue');
+    if (data?.length) {
+      const issue = toAuditIssue(data[0]);
+      return findingWorkflowKey(issue) === key ? issue : null;
+    }
+    // Passive security findings may not carry a stored key. Match their actual
+    // category/title/URL rather than scanning the first N findings in the audit.
+    const [category, title, ...urlParts] = key.split('|');
+    if (!category || !title || !urlParts.length) return null;
+    const fallback = await client.from('audit_issues').select('*').eq('audit_id', auditId)
+      .or('finding_key.is.null,finding_key.eq.')
+      .ilike('category', literal(category)).ilike('title', literal(title))
+      .ilike('affected_url', `${literal(urlParts.join('|'))}${key.length === 512 ? '%' : ''}`)
+      .order('id').limit(1);
+    assertNoError(fallback.error, 'Find audit workflow issue without stored key');
+    const issue = fallback.data?.length ? toAuditIssue(fallback.data[0]) : null;
+    return issue && findingWorkflowKey(issue) === key ? issue : null;
+  },
+
   async saveFinalReport(auditId: string, report: ResourceAuditReport) {
     const client = getSupabaseAdminClient();
     if (client) {
@@ -1397,6 +1430,20 @@ export const auditRepository = {
       this.getAuditJob(baselineAuditId),
     ]);
     if (!currentAudit || !baselineAudit) return null;
+    if (currentAudit.processingVersion === 2 || baselineAudit.processingVersion === 2) {
+      const client = getSupabaseAdminClient();
+      if (!client) return null;
+      const [counts, currentReport, baselineReport] = await Promise.all([
+        client.rpc('scalable_comparison_counts', { p_current: currentAuditId, p_baseline: baselineAuditId }),
+        this.getFinalReport(currentAuditId), this.getFinalReport(baselineAuditId),
+      ]);
+      assertNoError(counts.error, 'Compare complete audit evidence');
+      const currentScore = reportOverallScore(currentReport);
+      const baselineScore = reportOverallScore(baselineReport);
+      return { currentAuditId, baselineAuditId, normalizedUrl: currentAudit.normalizedUrl,
+        currentScore, baselineScore, scoreDelta: currentScore == null || baselineScore == null ? null : currentScore - baselineScore,
+        issueCounts: counts.data, aggregateOnly: true, newIssues: [], resolvedIssues: [], persistentIssues: [] };
+    }
     const [currentIssuesResult, baselineIssuesResult, currentReport, baselineReport] = await Promise.all([
       this.getIssues(currentAuditId),
       this.getIssues(baselineAuditId),

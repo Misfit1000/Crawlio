@@ -34,6 +34,7 @@ import {
 import { AuditExecutiveSummary, PriorityRecommendations } from './AuditExecutiveSummary';
 import { AuditPageMap } from './AuditPageMap';
 import FindingWorkspace from './FindingWorkspace';
+import PaginatedAuditEvidence from './PaginatedAuditEvidence';
 import { AuditReportReadyNote, AuditTerminalState } from './AuditTerminalState';
 import DomainStrengthCard from '../backlinks/DomainStrengthCard';
 import { useFindingWorkflow } from './useFindingWorkflow';
@@ -466,6 +467,7 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
         unavailableChecks={liveScore.unavailableCount}
       />
       {data.finalReport && <DomainStrengthCard domain={audit.hostname} auditScores={data.finalReport.scores} />}
+      {audit.processingVersion === 2 && <p className="text-xs text-muted-foreground">Maps, recommendations and workflow charts use a sample of {data.latestPages.length} pages and {data.latestIssues.length} findings, not the full audit. Summary counters cover the audit.</p>}
       <AuditPageMap pages={data.latestPages} issues={data.latestIssues} audit={audit} />
       <PriorityRecommendations issues={data.latestIssues} statuses={checklist} onViewFindings={() => document.getElementById('finding-workspace-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
       <SurfaceCard className="p-5 md:p-6">
@@ -494,6 +496,7 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
       />
 
       <AuditWorkflowPanel
+        paginated={audit.processingVersion === 2}
         auditId={auditId}
         auditUrl={audit.normalizedUrl}
         issues={data.latestIssues}
@@ -632,7 +635,7 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
         </div>
       )}
 
-      <section className="bg-card border border-border rounded-xl overflow-hidden">
+      {audit.processingVersion === 2 ? <PaginatedAuditEvidence auditId={auditId} kind="pages" /> : <section className="bg-card border border-border rounded-xl overflow-hidden">
         <div className="p-4 border-b border-border">
           <h3 className="font-semibold">Pages checked</h3>
         </div>
@@ -669,7 +672,7 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
             </tbody>
           </table>
         </div>
-      </section>
+      </section>}
 
     </div>
   );
@@ -760,6 +763,7 @@ function Info({ label, value }: { label: string; value: string }) {
 }
 
 function AuditWorkflowPanel({
+  paginated,
   auditId,
   auditUrl,
   issues,
@@ -780,6 +784,7 @@ function AuditWorkflowPanel({
   onCopyReportLink,
   onRerun,
 }: {
+  paginated?: boolean;
   auditId: string;
   auditUrl: string;
   issues: ResourceAuditLiveData['latestIssues'];
@@ -839,7 +844,7 @@ function AuditWorkflowPanel({
         <MetricCard label="Score change" value={comparison.scoreDelta === null ? '-' : `${comparison.scoreDelta > 0 ? '+' : ''}${comparison.scoreDelta}`} detail={latestScore === null ? auditId : `Current score ${latestScore}`} icon={<Radio className="h-6 w-6" />} tone={comparison.scoreDelta && comparison.scoreDelta < 0 ? 'red' : 'green'} />
       </div>
 
-      <div className="mt-6"><FindingWorkspace auditId={auditId} issues={issues} statuses={checklist} onStatusChange={onChecklistStatus} workflowRecords={workflowRecords} workflowStorage={workflowStorage} workflowError={workflowError} savingKeys={savingKeys} onWorkflowSave={onWorkflowSave} /></div>
+      <div className="mt-6">{paginated ? <PaginatedAuditEvidence auditId={auditId} kind="issues" statuses={checklist} onStatusChange={onChecklistStatus} workflowRecords={workflowRecords} workflowStorage={workflowStorage} workflowError={workflowError} savingKeys={savingKeys} onWorkflowSave={onWorkflowSave} /> : <FindingWorkspace auditId={auditId} issues={issues} statuses={checklist} onStatusChange={onChecklistStatus} workflowRecords={workflowRecords} workflowStorage={workflowStorage} workflowError={workflowError} savingKeys={savingKeys} onWorkflowSave={onWorkflowSave} />}</div>
       <div className="mt-6 grid gap-4 md:grid-cols-3">
         <InsightChart title="Score trend" emptyText="Rerun this audit to build a trend." items={scoreTrend.map((entry) => ({ label: new Date(entry.updatedAt).toLocaleDateString(), value: entry.score }))} maxValue={100} />
         <InsightChart title="Crawl depth" emptyText="Pages appear as the audit engine scans." items={crawlDepth} maxValue={maxDepthCount} />

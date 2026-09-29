@@ -1,5 +1,6 @@
 import {
   AUDIT_MODES,
+  AUDIT_MODE_PAGE_CEILINGS,
   enforceAuditPageLimit,
   normalizeAuditModes,
   type AuditMode,
@@ -116,6 +117,7 @@ export function createPublicPlanProjection(
   rows: Array<Record<string, unknown>>,
   updatedAt = new Date().toISOString(),
   runtimeAvailableModes: readonly PublicAuditMode[] = AUDIT_MODES,
+  runtimePageCeilings: Readonly<Record<AuditMode, number>> = AUDIT_MODE_PAGE_CEILINGS,
 ): PublicPlanProjection {
   const safeRows = new Map<PublicPlanSourceId, Record<string, unknown>>();
   for (const row of rows) {
@@ -128,11 +130,11 @@ export function createPublicPlanProjection(
     const row = safeRows.get(sourcePlan) || {};
     const pageLimits = {
       quick: Number(row.max_pages_quick ?? row.maxPagesQuick ?? fallback.pageLimits.quick) > 0
-        ? enforceAuditPageLimit('quick', row.max_pages_quick ?? row.maxPagesQuick, fallback.pageLimits.quick || 1) : 0,
+        ? Math.min(runtimePageCeilings.quick, enforceAuditPageLimit('quick', row.max_pages_quick ?? row.maxPagesQuick, fallback.pageLimits.quick || 1, sourcePlan)) : 0,
       standard: Number(row.max_pages_standard ?? row.maxPagesStandard ?? fallback.pageLimits.standard) > 0
-        ? enforceAuditPageLimit('standard', row.max_pages_standard ?? row.maxPagesStandard, fallback.pageLimits.standard || 1) : 0,
+        ? Math.min(runtimePageCeilings.standard, enforceAuditPageLimit('standard', row.max_pages_standard ?? row.maxPagesStandard, fallback.pageLimits.standard || 1, sourcePlan)) : 0,
       deep: Number(row.max_pages_deep ?? row.maxPagesDeep ?? fallback.pageLimits.deep) > 0
-        ? enforceAuditPageLimit('deep', row.max_pages_deep ?? row.maxPagesDeep, fallback.pageLimits.deep || 1) : 0,
+        ? Math.min(runtimePageCeilings.deep, enforceAuditPageLimit('deep', row.max_pages_deep ?? row.maxPagesDeep, fallback.pageLimits.deep || 1, sourcePlan)) : 0,
     };
     const allowedModes = publicModes(row.allowed_modes ?? row.allowedModes, fallback.allowedModes)
       .filter((mode) => pageLimits[mode] > 0);

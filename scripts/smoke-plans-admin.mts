@@ -8,6 +8,7 @@ import {
   resolveEffectiveAuditMode,
 } from '../src/lib/billing/entitlements.ts';
 import { getAuditProfile, isSeoIssueAllowedForProfile } from '../src/lib/audit/audit-profiles.ts';
+import { planPageCeiling } from '../src/lib/audit/scalable-policy.ts';
 
 const root = process.cwd();
 
@@ -47,7 +48,11 @@ const agencyProfile = getAuditProfile('agency', 'deep');
 assert.equal(freeProfile.pageLimit, 5);
 assert.equal(DEFAULT_PLAN_LIMITS.paid.maxPagesStandard, 50);
 assert.equal(DEFAULT_PLAN_LIMITS.agency.maxPagesStandard, 50);
-assert.equal(DEFAULT_PLAN_LIMITS.admin.maxPagesStandard, 50);
+assert.equal(DEFAULT_PLAN_LIMITS.admin.maxPagesStandard, 1000);
+assert.equal(DEFAULT_PLAN_LIMITS.admin.maxPagesQuick, 1000);
+assert.equal(DEFAULT_PLAN_LIMITS.admin.maxPagesDeep, 1000);
+for (const plan of ['free', 'paid', 'agency']) assert.equal(planPageCeiling(plan), 500);
+assert.equal(planPageCeiling('admin'), 5000);
 assert.equal(paidProfile.pageLimit, 50);
 assert.equal(agencyProfile.pageLimit, 75);
 assert.equal(isSeoIssueAllowedForProfile(freeProfile, { category: 'performance', id: 'heavy-js' }), false);
@@ -66,7 +71,8 @@ assert.match(readFileSync(join(root, 'src/components/admin/AdminUsers.tsx'), 'ut
 const adminPlans = readFileSync(join(root, 'src/components/admin/AdminPlans.tsx'), 'utf8');
 assert.match(adminPlans, /updatePlanLimit/);
 assert.match(adminPlans, /allowedModes/);
-assert.match(adminPlans, /AUDIT_MODE_PAGE_CEILINGS/);
+assert.equal((adminPlans.match(/max=\{planPageCeiling\(plan.plan\)\}/g) || []).length, 3);
+assert.doesNotMatch(adminPlans, /AUDIT_MODE_PAGE_CEILINGS/);
 const auditForm = readFileSync(join(root, 'src/components/SeoAudit.tsx'), 'utf8');
 const analyzerForm = readFileSync(join(root, 'src/components/WebsiteAnalyzer.tsx'), 'utf8');
 const authContext = readFileSync(join(root, 'src/contexts/AuthContext.tsx'), 'utf8');
@@ -78,6 +84,8 @@ assert.doesNotMatch(analyzerForm, /canUseStandard|canUseDeep/);
 assert.match(authContext, /auditEntitlements/);
 assert.match(api, /allowed_modes/);
 assert.match(api, /AUDIT_MODE_PAGE_CEILINGS/);
+assert.equal((api.match(/max_pages_(?:quick|standard|deep): \[0, planPageCeiling\(String\(req.params.plan\)\)\]/g) || []).length, 3);
+assert.match(api, /SCALABLE_AUDIT_UNAVAILABLE/);
 assert.match(api, /INVALID_AUDIT_MODE/);
 assert.match(readFileSync(join(root, 'src/components/admin/AdminWorkers.tsx'), 'utf8'), /getAdminWorkers/);
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { getAuditModeConfig } from '../src/lib/audit/audit-config.ts';
+import { AUDIT_MODE_PAGE_CEILINGS, createAuditRuntimeCapabilities, getAuditModeConfig } from '../src/lib/audit/audit-config.ts';
 import { AUDIT_PROFILES } from '../src/lib/audit/audit-profiles.ts';
 import { DEFAULT_PLAN_LIMITS } from '../src/lib/billing/entitlements.ts';
 import {
@@ -21,8 +21,20 @@ assert.equal(publicLimits.plus, AUDIT_PROFILES.paid_standard.pageLimit);
 assert.equal(publicLimits.pro, AUDIT_PROFILES.agency_deep.pageLimit);
 assert.equal(publicLimits.plus, getAuditModeConfig('standard').pageLimit);
 assert.equal(publicLimits.pro, getAuditModeConfig('deep').pageLimit);
-assert.equal(DEFAULT_PLAN_LIMITS.admin.maxPagesDeep, AUDIT_PROFILES.admin_deep.pageLimit);
-assert.equal(DEFAULT_PLAN_LIMITS.admin.maxPagesDeep, 100);
+assert.equal(AUDIT_PROFILES.admin_deep.pageLimit, AUDIT_MODE_PAGE_CEILINGS.deep, 'legacy engine profile remains bounded');
+assert.deepEqual([DEFAULT_PLAN_LIMITS.admin.maxPagesQuick, DEFAULT_PLAN_LIMITS.admin.maxPagesStandard, DEFAULT_PLAN_LIMITS.admin.maxPagesDeep], [1000, 1000, 1000]);
+const configuredRows = [{ plan: 'agency', max_pages_quick: 500, max_pages_standard: 500, max_pages_deep: 500 }];
+for (const readiness of [{ ready: false, deepReady: false }, { ready: true, deepReady: false }, { ready: true, deepReady: true }]) {
+  const capabilities = createAuditRuntimeCapabilities(readiness.deepReady, readiness);
+  const projected = createPublicPlanProjection(configuredRows, 'test', capabilities.availableModes, capabilities.pageCeilings);
+  const pro = projected.plans[2];
+  assert.equal(pro.pageLimits.quick, readiness.ready ? 500 : 50);
+  assert.equal(pro.pageLimits.standard, readiness.ready ? 500 : 50);
+  assert.equal(pro.pageLimits.deep, readiness.deepReady ? 500 : 100);
+  assert.equal(pro.availableModes.includes('deep'), readiness.deepReady);
+  assert.equal(pro.pagesPerAudit, readiness.ready ? 500 : 50);
+  assert.equal(mergePublicPlanPresentation(projected)[2].pagesPerAudit, pro.pagesPerAudit);
+}
 
 const pagesRow = PUBLIC_PLAN_COMPARISON.find((row) => row.label === 'Pages per audit');
 assert.deepEqual(pagesRow?.values, ['5', '50', '75']);
@@ -82,4 +94,4 @@ assert.match(migration, /max_pages_standard\s*=\s*50/);
 assert.match(docs, /50 pages/);
 assert.match(worker, /enforceAuditPageLimit\(effectiveMode, admittedPageLimit, profile\.pageLimit\)/, 'worker must honor the admitted row limit without exceeding the supported mode ceiling');
 
-console.log('Public plan presentation smoke test passed: Free 5, Plus 50, Pro 75, Admin Deep 100.');
+console.log('Public plan presentation passed: customer defaults preserved, admin default 1000, runtime readiness caps enforced.');
