@@ -2,19 +2,20 @@ import { createHash } from 'node:crypto';
 import { auditRepository, issueToRow, pageToRow } from '../lib/supabase/audit-repository';
 import { claimScalableAudit, finishScalableSlice, frontierItem, hasPendingFrontier, readFrontier, readScoreAggregate, registerScalableWorker, scalableRpc, type CrawlRun, type FrontierItem } from '../lib/supabase/scalable-audit-repository';
 import { requireSupabaseAdminClient } from '../lib/supabase/server';
-import { calculateTransparentAuditScore, categoryForIssue, normalizedIssueKey, toReportScoreRecord } from '../lib/audit/audit-scoring';
+import { calculateTransparentAuditScore, categoryForIssue, deduplicatePageIssues, normalizedIssueKey, toReportScoreRecord } from '../lib/audit/audit-scoring';
 import { CRAWL_SLICE_MS, CRAWL_SLICE_PAGES, retryDelayMs } from '../lib/audit/scalable-policy';
 import { getAuditModeConfig } from '../lib/audit/audit-config';
 import { getAuditProfileForDocument, isSeoIssueAllowedForProfile } from '../lib/audit/audit-profiles';
 import { shouldPublishProvisionalScore } from '../lib/audit/audit-provisional-score';
+import { measuredAuditCategories, storedMeasuredAuditCategories } from '../lib/audit/audit-evidence-quality';
 import { classifyAuditFailure, failureForCode, failureForHttpStatus, type AuditFailure } from '../lib/audit/audit-failures';
 import type { ResourceAuditDocument, ResourceAuditIssue, ResourceAuditPage, ResourceAuditReport } from '../lib/audit/resource-types';
-import { runAllChecksSafely } from '../lib/seo/checks/runner';
+import { CHECKS, runCheckSetSafely } from '../lib/seo/checks/runner';
 import { isSameDomain } from '../lib/seo/url-utils';
 import { parseRobotsTxt, isBlockedByRobots } from '../lib/seo/robots';
 import { parseSitemapXml } from '../lib/seo/sitemap';
 import { safePublicFetch } from '../lib/security/safe-public-fetch';
-import { AUDIT_ENGINE_VERSION, SCORING_VERSION, CHECK_REGISTRY_VERSION } from '../lib/platform/version';
+import { AUDIT_ENGINE_VERSION, SCORING_VERSION, LEGACY_SCORING_VERSION, CHECK_REGISTRY_VERSION } from '../lib/platform/version';
 import { HostRequestScheduler } from './host-request-scheduler';
 import { isScalableWorkerStopRequested } from './scalable-worker-lifecycle';
 import { recordProjectAuditCompletion, recordProjectAuditFailure } from '../lib/projects/completion';
@@ -22,6 +23,16 @@ import { buildSecurityIssues, fetchHtmlPage, mapAuditIssue, normalizeCrawlUrl, w
 
 const severityRanks = { critical: 5, high: 4, medium: 3, low: 2, info: 1 };
 const stableId = (value: string) => createHash('sha256').update(value).digest('hex').slice(0, 40);
+const QUICK_CHECK_MODULES = new Set(['images', 'indexability', 'robots', 'sitemap', 'security', 'on-page', 'content', 'accessibility']);
+
+function scoreOptions(run: CrawlRun): { scoringVersion: '2.1' | '2.2'; measuredCategories?: ReturnType<typeof measuredAuditCategories> } {
+  const scoringVersion = run.metadata.scoringVersion === SCORING_VERSION ? SCORING_VERSION : LEGACY_SCORING_VERSION;
+  return {
+    scoringVersion,
+    measuredCategories: !run.analysed ? [] : scoringVersion === SCORING_VERSION
+      ? storedMeasuredAuditCategories(run.metadata.measuredCategories) : undefined,
+  };
+}
 
 export function scoreGroups(issues: ResourceAuditIssue[]) {
   const groups = new Map<string, { key: string; category: string; title: string; severity: string; rank: number }>();
@@ -83,19 +94,23 @@ export async function analyseScalableItem(audit: ResourceAuditDocument, run: Cra
     if (!isSameDomain(fetched.finalUrl,audit.normalizedUrl)) return failurePage(audit,item,failureForCode('UNKNOWN_TARGET_FAILURE',{ affectedUrl: item.url, internalDetails: 'Redirect left the audited domain.' }));
     if (fetched.statusCode>=400) return failurePage(audit,item,failureForHttpStatus(fetched.statusCode,{ affectedUrl:item.url,attemptCount:item.attempts+1 }));
     if (!fetched.html.trim()) return failurePage(audit,item,failureForCode('EMPTY_RESPONSE',{ affectedUrl:item.url }));
-    const checks = runAllChecksSafely({ ...fetched.parsed, url:fetched.finalUrl,finalUrl:fetched.finalUrl,status:fetched.statusCode,
-      headers:fetched.headers,loadTimeMs:fetched.responseTimeMs,pageSizeBytes:fetched.pageSizeBytes,contentType:fetched.contentType,depth:item.depth });
     const profile = getAuditProfileForDocument(audit);
+    const checkModules = run.metadata.scoringVersion === SCORING_VERSION && profile.processingTier === 'free'
+      ? CHECKS.filter(check => QUICK_CHECK_MODULES.has(check.id)) : CHECKS;
+    const checks = runCheckSetSafely(checkModules, { ...fetched.parsed, url:fetched.finalUrl,finalUrl:fetched.finalUrl,status:fetched.statusCode,
+      headers:fetched.headers,loadTimeMs:fetched.responseTimeMs,pageSizeBytes:fetched.pageSizeBytes,contentType:fetched.contentType,depth:item.depth });
     const now = new Date().toISOString();
-    const issues: ResourceAuditIssue[] = [ ...checks.issues.filter(issue=>isSeoIssueAllowedForProfile(profile,issue)).map(issue=>mapAuditIssue(issue,fetched.finalUrl)), ...buildSecurityIssues(fetched) ]
+    const recordedIssues: ResourceAuditIssue[] = [ ...checks.issues.filter(issue=>isSeoIssueAllowedForProfile(profile,issue)).map(issue=>mapAuditIssue(issue,fetched.finalUrl)), ...buildSecurityIssues(fetched) ]
       .map(issue=>({ ...issue, id:stableId(`${audit.id}:${fetched.finalUrl}:${issue.checkId || issue.title}:${issue.category}`),detectedAt:now }));
+    const issues = run.metadata.scoringVersion === SCORING_VERSION ? deduplicatePageIssues(recordedIssues) : recordedIssues;
     const page: ResourceAuditPage = { id:stableId(`${audit.id}:${fetched.finalUrl}`),url:fetched.finalUrl,statusCode:fetched.statusCode,
       responseTimeMs:fetched.responseTimeMs,pageSizeBytes:fetched.pageSizeBytes,title:fetched.parsed?.title || '',metaDescription:fetched.parsed?.metaDescription || '',
       h1:fetched.parsed?.h1?.[0] || '',canonicalUrl:fetched.parsed?.canonical || '',siteName:fetched.parsed?.siteName || '',faviconUrl:fetched.parsed?.faviconUrl || '',
       openGraphImage:fetched.parsed?.ogImage || '',themeColor:fetched.parsed?.themeColor || '',wordCount:fetched.parsed?.wordCount || 0,
       crawlDepth:item.depth,issueCount:issues.length,crawledAt:now,fetchStatus:'success',attemptCount:item.attempts+1,recoveredAfterRetry:item.attempts>0,sourceUrl:item.source_url };
     const children = (fetched.parsed?.internalLinks || []).map(link=>eligibleChild(audit,link.href,'page',item.depth+1,fetched.finalUrl,link.text)).filter(Boolean);
-    return { key:item.key,page:pageToRow(audit.id,page),issues:issues.map(issue=>issueToRow(audit.id,issue)),groups:scoreGroups(issues),checks:checks.completedChecks+2,unavailable:checks.unavailableChecks.length,children };
+    return { key:item.key,page:pageToRow(audit.id,page),issues:issues.map(issue=>issueToRow(audit.id,issue)),groups:scoreGroups(issues),checks:checks.completedChecks+2,unavailable:checks.unavailableChecks.length,children,
+      measuredCategories: measuredAuditCategories(checks.completedCheckIds) };
   } catch (error) {
     if (item.kind === 'robots') return item.attempts < 2
       ? { key: item.key, retryAt: new Date(Date.now() + retryDelayMs(undefined, item.attempts)).toISOString() }
@@ -130,7 +145,7 @@ export async function runScalableSlice(workerId: string, onActivity?: (auditId: 
   leaseTimer.unref();
   const publishScore = async (force = false) => {
     if (!shouldPublishProvisionalScore({ pagesAnalysed:run.analysed,lastPublishedPages:run.last_score_pages,nowMs:Date.now(),lastPublishedAtMs:run.last_score_at ? Date.parse(run.last_score_at) : 0,force })) return;
-    const result = calculateTransparentAuditScore({issues:[],pages:[],aggregate:await readScoreAggregate(run)});
+    const result = calculateTransparentAuditScore({issues:[],pages:[],aggregate:await readScoreAggregate(run),...scoreOptions(run)});
     await commit({score:{ overallScore:result.overall,categoryScores:Object.fromEntries(Object.entries(result.categories).map(([key,value])=>[key,value.score])),
       scoreState:'provisional',pagesAnalysed:run.analysed,pagesDiscovered:run.discovered,pageLimit:audit.pageLimit,unavailableCount:run.unavailable_count,updatedAt:new Date().toISOString() }});
   };
@@ -138,7 +153,7 @@ export async function runScalableSlice(workerId: string, onActivity?: (auditId: 
     if (!run.metadata.initialized) {
       const origin = new URL(audit.normalizedUrl).origin;
       const sitemapPaths = audit.effectiveMode==='deep' ? ['/sitemap.xml','/sitemap_index.xml','/page-sitemap.xml','/post-sitemap.xml','/product-sitemap.xml'] : ['/sitemap.xml'];
-      await commit({seed:[frontierItem(new URL('/robots.txt',origin).href,'robots'), ...sitemapPaths.map(path=>frontierItem(new URL(path,origin).href,'sitemap'))],metadata:{initialized:true}});
+      await commit({seed:[frontierItem(new URL('/robots.txt',origin).href,'robots'), ...sitemapPaths.map(path=>frontierItem(new URL(path,origin).href,'sitemap'))],metadata:{initialized:true,scoringVersion:SCORING_VERSION,measuredCategories:[]}});
     }
     let pauseReason: string | undefined;
     crawl: while (!isScalableWorkerStopRequested(workerId) && processed<CRAWL_SLICE_PAGES && Date.now()-started<CRAWL_SLICE_MS && run.analysed<audit.pageLimit && run.active_ms+Date.now()-started<run.budget_ms) {
@@ -164,7 +179,12 @@ export async function runScalableSlice(workerId: string, onActivity?: (auditId: 
           }
         }
         result.children = children;
-        await commit({items:[result],metadata:result.robots ? {robots:result.robots} : result.robotsUnavailable ? {robotsUnavailable:true} : {},currentUrl:items.find(item=>item.key===result.key)?.url});
+        const metadata: Record<string, unknown> = result.robots ? {robots:result.robots} : result.robotsUnavailable ? {robotsUnavailable:true} : {};
+        const measured = storedMeasuredAuditCategories(run.metadata.measuredCategories);
+        const newlyMeasured = storedMeasuredAuditCategories(result.measuredCategories).filter(category => !measured.includes(category));
+        if (newlyMeasured.length) metadata.measuredCategories = [...measured, ...newlyMeasured];
+        delete result.measuredCategories;
+        await commit({items:[result],metadata,currentUrl:items.find(item=>item.key===result.key)?.url});
         processed++;
         await publishScore();
       }
@@ -173,12 +193,15 @@ export async function runScalableSlice(workerId: string, onActivity?: (auditId: 
     const timedOut=run.active_ms+Date.now()-started>=run.budget_ms;
     const pending=await hasPendingFrontier(audit.id);
     if (run.analysed>=audit.pageLimit || timedOut || !pending) {
-      const score=calculateTransparentAuditScore({issues:[],pages:[],aggregate:await readScoreAggregate(run),measuredCategories:run.analysed ? undefined : [],
-        unavailableChecks:{mobile:['Browser-rendered Core Web Vitals were not collected.'],technical:run.unavailable_count ? [`${run.unavailable_count} checks could not complete.`] : []}});
+      const score=calculateTransparentAuditScore({issues:[],pages:[],aggregate:await readScoreAggregate(run),...scoreOptions(run),
+        limitations:['Scores cover the automated checks actually run, not every possible SEO requirement.',
+          'Response timing measures the HTML request, not Core Web Vitals or time to first byte.',
+          'Internal-link observations do not verify every destination or measure external backlinks.'],
+        unavailableChecks:{mobile:['Browser-rendered layout and Core Web Vitals were not collected.'],technical:run.unavailable_count ? [`${run.unavailable_count} check groups could not complete.`] : []}});
       const [pages,topIssues]=await Promise.all([auditRepository.getLatestPages(audit.id,25),auditRepository.getLatestIssues(audit.id,25)]);
       const reason=run.analysed>=audit.pageLimit ? 'page_limit_reached' : timedOut ? 'audit_deadline_reached' : run.discovered>=run.candidate_limit ? 'safety_limit_reached' : 'crawl_queue_exhausted';
-      const report:ResourceAuditReport={scores:{...toReportScoreRecord(score),auditEngineVersion:AUDIT_ENGINE_VERSION,scoringVersion:SCORING_VERSION,checkRegistryVersion:CHECK_REGISTRY_VERSION,
-        processingVersion:2,unavailableCount:run.unavailable_count,evidenceSample:true,coverage:{pagesDiscovered:run.discovered,pagesAttempted:run.attempted,pagesAnalysed:run.analysed,pagesFailed:run.failed,pagesBlocked:run.blocked,pageLimit:audit.pageLimit,coveragePercent:Math.round(100*run.analysed/audit.pageLimit),quotaReached:run.analysed>=audit.pageLimit,stopReason:reason}},
+      const report:ResourceAuditReport={scores:{...toReportScoreRecord(score),auditEngineVersion:AUDIT_ENGINE_VERSION,scoringVersion:scoreOptions(run).scoringVersion,checkRegistryVersion:CHECK_REGISTRY_VERSION,
+        processingVersion:2,unavailableCount:run.unavailable_count,evidenceSample:true,checkCountUnit:'groups',coverage:{pagesDiscovered:run.discovered,pagesAttempted:run.attempted,pagesAnalysed:run.analysed,pagesFailed:run.failed,pagesBlocked:run.blocked,pageLimit:audit.pageLimit,coveragePercent:Math.round(100*run.analysed/audit.pageLimit),discoveredCoveragePercent:run.discovered ? Math.round(100*run.analysed/run.discovered) : null,quotaReached:run.analysed>=audit.pageLimit,stopReason:reason}},
         summary:`Analysed ${run.analysed} of up to ${audit.pageLimit} pages. ${run.failed} failed and ${run.blocked} were blocked. Full evidence is available in the paginated report and exports.`,
         pages,topIssues,exports:{json:`/api/tools/audit/export/${audit.id}/json`,issuesCsv:`/api/tools/audit/export/${audit.id}/issues.csv`,pagesCsv:`/api/tools/audit/export/${audit.id}/pages.csv`},generatedAt:new Date().toISOString()};
       await finishScalableSlice(run,report,reason);

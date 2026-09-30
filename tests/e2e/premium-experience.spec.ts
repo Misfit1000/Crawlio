@@ -36,15 +36,28 @@ test('guest audit reuses the opening snapshot and stops on permanent access fail
 });
 
 test('observed page map displays evidence at each responsive width', async ({ page }, testInfo) => {
-  await page.route('**/api/tools/audit/**', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, data: auditSnapshot() }) }));
+  const snapshot = auditSnapshot();
+  Object.assign(snapshot.audit, { processingVersion: 2, pageLimit: 1000, pagesDiscovered: 30, pagesCrawled: 24, issuesFound: 48, highCount: 1, mediumCount: 47 });
+  snapshot.latestPages = Array.from({ length: 24 }, (_, index) => ({ ...snapshot.latestPages[0], id: `page-${index}`, url: `https://example.com/page-${index}`, title: index ? `Observed page ${index}` : 'Example Domain', crawlDepth: Math.floor(index / 8), issueCount: index % 7 }));
+  Object.assign(snapshot.finalReport!.scores, { seo: 78, scoringVersion: '2.2' });
+  await page.route('**/api/tools/audit/**', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, data: route.request().url().includes('/evidence/') ? { items: snapshot.latestIssues, nextCursor: null, total: 48 } : snapshot }) }));
   await page.route('**/api/tools/domain/**', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ success: false, error: 'Unavailable' }) }));
   await page.goto(`/audit/live/${AUDIT_ID}`);
   const map = page.getByRole('region', { name: 'Your website, page by page' });
-  await map.getByRole('button', { name: /Example Domain/ }).click();
+  await map.locator('.page-map-node').filter({ hasText: 'Example Domain' }).click();
   await expect(map).toContainText('200');
+  await expect(page.getByRole('progressbar', { name: 'Plan allowance used', exact: true })).toHaveAttribute('aria-valuenow', '2');
+  await expect(page.getByRole('region', { name: 'Audit summary' }).getByRole('progressbar', { name: 'Discovered pages analysed', exact: true })).toHaveAttribute('aria-valuenow', '80');
+  await expect(page.getByRole('region', { name: 'Audit summary' })).toContainText('Final score');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   for (const width of [390, 768, 1440]) {
     await page.setViewportSize({ width, height: 1000 });
-    await expect(expectNoHorizontalOverflow(page)).resolves.toBe(true);
-    await map.screenshot({ path: testInfo.outputPath(`page-map-${width}.png`) });
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate(value => document.documentElement.classList.toggle('dark', value === 'dark'), theme);
+      if (theme === 'dark') expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--background').trim())).toBe('#000000');
+      await expect(expectNoHorizontalOverflow(page)).resolves.toBe(true);
+      await map.screenshot({ path: testInfo.outputPath(`page-map-${width}-${theme}.png`) });
+      await page.getByRole('region', { name: 'Audit summary' }).screenshot({ path: testInfo.outputPath(`audit-summary-${width}-${theme}.png`) });
+    }
   }
 });

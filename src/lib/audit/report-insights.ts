@@ -189,8 +189,9 @@ export function findingEffort(issue: Pick<ResourceAuditIssue, 'category' | 'titl
 }
 
 export function observedPageMetrics(pages: ResourceAuditPage[]) {
-  const responseTimes = pages.map((page) => page.responseTimeMs).filter((value) => Number.isFinite(value) && value >= 0).sort((a, b) => a - b);
-  const sizes = pages.map((page) => page.pageSizeBytes).filter((value) => Number.isFinite(value) && value >= 0);
+  const deliveredPages = pages.filter((page) => page.fetchStatus !== 'failed' && page.fetchStatus !== 'blocked' && page.statusCode >= 200 && page.statusCode < 400);
+  const responseTimes = deliveredPages.map((page) => page.responseTimeMs).filter((value) => Number.isFinite(value) && value >= 0).sort((a, b) => a - b);
+  const sizes = deliveredPages.map((page) => page.pageSizeBytes).filter((value) => Number.isFinite(value) && value >= 0);
   const totalSize = sizes.reduce((total, value) => total + value, 0);
   const averageResponseMs = responseTimes.length
     ? Math.round(responseTimes.reduce((total, value) => total + value, 0) / responseTimes.length)

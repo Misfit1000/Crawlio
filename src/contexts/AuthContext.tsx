@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { Session, User as SupabaseUser } from "@supabase/supabase-js";
-import { AccountProfileError, accountActionError, finishRegistration, type RegistrationOutcome } from '../lib/auth/account-state';
+import { AccountActionError, AccountProfileError, accountActionError, finishRegistration, type RegistrationOutcome } from '../lib/auth/account-state';
 import type { PlanLimits, UserProfileEntitlement } from '../lib/billing/entitlements';
 import { API_ROUTES } from "../lib/api/routes";
 import { safeJsonFetch } from "../lib/http/safe-json";
@@ -352,9 +352,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (result.status === 'confirmation_required') setUnverifiedEmail(email);
         return result;
       } catch (error) {
-        const message = accountActionError(error, 'register');
-        setError(message);
-        throw new Error(message);
+        const failure = new AccountActionError(error, 'register');
+        setError(failure.message);
+        throw failure;
       }
     };
     const promise = attempt().finally(() => { registrationRef.current = null; });

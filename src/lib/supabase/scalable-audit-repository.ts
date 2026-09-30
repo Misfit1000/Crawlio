@@ -121,14 +121,30 @@ export async function finishScalableSlice(run: CrawlRun, report: ResourceAuditRe
 }
 
 export type EvidenceKind = 'pages' | 'issues' | 'events';
-export async function readEvidencePage(auditId: string, kind: EvidenceKind, input: { cursor?: string; limit?: number; severity?: string; category?: string } = {}) {
+export function buildEvidenceSearchFilter(query?: string): string | undefined {
+  if (query !== undefined && (query.length > 160 || /[\u0000-\u001f\u007f]/.test(query))) throw new Error('Invalid query');
+  const search = query?.trim();
+  if (!search) return undefined;
+  // PostgREST rewrites every ILIKE asterisk, so use a literal regex for those searches.
+  const filter = search.includes('*')
+    ? { operator: 'imatch', pattern: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') }
+    : { operator: 'ilike', pattern: `%${search.replace(/[\\%_]/g, '\\$&')}%` };
+  // Quote the already-escaped pattern separately for PostgREST's logic parser.
+  const value = JSON.stringify(filter.pattern);
+  return ['title', 'description', 'affected_url'].map(column => `${column}.${filter.operator}.${value}`).join(',');
+}
+
+export async function readEvidencePage(auditId: string, kind: EvidenceKind, input: { cursor?: string; limit?: number; severity?: string; category?: string; query?: string } = {}) {
   const limit = Math.min(EVIDENCE_MAX_PAGE_SIZE, Math.max(1, Math.floor(input.limit || EVIDENCE_PAGE_SIZE)));
   if (input.cursor && !/^[a-zA-Z0-9_-]{1,100}$/.test(input.cursor)) throw new Error('Invalid evidence cursor');
+  if (kind !== 'issues' && input.query !== undefined) throw new Error('Filters require issues');
+  const searchFilter = kind === 'issues' ? buildEvidenceSearchFilter(input.query) : undefined;
   const table = kind === 'pages' ? 'audit_pages' : kind === 'issues' ? 'audit_issues' : 'audit_events';
   let query = requireSupabaseAdminClient().from(table).select('*').eq('audit_id', auditId).order('id').limit(limit + 1);
   if (input.cursor) query = query.gt('id', input.cursor);
   if (kind === 'issues' && input.severity) query = query.eq('severity', input.severity);
   if (kind === 'issues' && input.category) query = query.eq('category', input.category.slice(0, 100));
+  if (searchFilter) query = query.or(searchFilter);
   const { data, error } = await query;
   if (error) throw error;
   const rows = (data || []).slice(0, limit);

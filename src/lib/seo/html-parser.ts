@@ -1,5 +1,7 @@
 import * as cheerio from 'cheerio';
 import { removeStopwords } from '../keywords/stopwords';
+import { collectInsecureFormActionUrls, collectInsecureResourceUrls } from './security-resources';
+import { isSameDomain } from './url-utils';
 
 export interface ParsedPageData {
   title: string;
@@ -8,11 +10,15 @@ export interface ParsedPageData {
   h2: string[];
   h3: string[];
   wordCount: number;
-  internalLinks: { href: string; text: string }[];
-  externalLinks: { href: string; text: string; rel: string }[];
+  internalLinks: { href: string; text: string; rawHref?: string }[];
+  externalLinks: { href: string; text: string; rel: string; rawHref?: string }[];
   imageCount: number;
   imagesWithoutAlt: number;
+  imagesWithEmptyAlt?: number;
   canonical: string;
+  canonicalRaw?: string;
+  insecureResourceUrls?: string[];
+  insecureFormActionUrls?: string[];
   metaRobots: string;
   ogTitle: string;
   ogDescription: string;
@@ -78,6 +84,16 @@ function getTopPhrases(text: string): { topKeywords: string[], topPhrases: strin
 
 export function parseHtml(html: string, baseUrl: string): ParsedPageData {
   const $ = cheerio.load(html);
+  let documentBaseUrl = baseUrl;
+  const baseHref = $('base[href]').first().attr('href');
+  if (baseHref) {
+    try {
+      const resolvedBase = new URL(baseHref, baseUrl);
+      if (resolvedBase.protocol === 'http:' || resolvedBase.protocol === 'https:') {
+        documentBaseUrl = resolvedBase.toString();
+      }
+    } catch {}
+  }
   
   const lang = $('html').attr('lang') || '';
   const title = $('title').text().trim();
@@ -88,9 +104,9 @@ export function parseHtml(html: string, baseUrl: string): ParsedPageData {
   const ogTitle = $('meta[property="og:title"]').attr('content') || '';
   const ogDescription = $('meta[property="og:description"]').attr('content') || '';
   const resolvePublicAssetUrl = (value: string) => {
-    if (!value) return '';
+    if (!value.trim()) return '';
     try {
-      const resolved = new URL(value, baseUrl);
+      const resolved = new URL(value, documentBaseUrl);
       return resolved.protocol === 'http:' || resolved.protocol === 'https:' ? resolved.toString() : '';
     } catch {
       return '';
@@ -113,47 +129,44 @@ export function parseHtml(html: string, baseUrl: string): ParsedPageData {
   const h2 = $('h2').map((_, el) => $(el).text().trim()).get();
   const h3 = $('h3').map((_, el) => $(el).text().trim()).get();
   
-  const bodyText = $('body').text();
+  const textBody = $('body').clone();
+  textBody.find('script,style,template').remove();
+  const bodyText = textBody.text();
   const wordCount = bodyText.split(/\s+/).filter(w => w.length > 0).length;
   
-  const internalLinks: { href: string; text: string }[] = [];
-  const externalLinks: { href: string; text: string; rel: string }[] = [];
-  
-  let baseHostname = '';
-  try {
-    baseHostname = new URL(baseUrl).hostname;
-  } catch (e) {}
+  const internalLinks: ParsedPageData['internalLinks'] = [];
+  const externalLinks: ParsedPageData['externalLinks'] = [];
   
   $('a').each((_, el) => {
-    const href = $(el).attr('href');
+    const rawHref = $(el).attr('href') || '';
+    const href = resolvePublicAssetUrl(rawHref);
     const text = $(el).text().trim();
     const rel = $(el).attr('rel') || '';
-    if (!href || href.startsWith('javascript:') || href.startsWith('mailto:')) return;
-    
-    if (href.startsWith('http')) {
-      try {
-        const urlObj = new URL(href);
-        if (urlObj.hostname === baseHostname || urlObj.hostname.endsWith('.' + baseHostname)) {
-          internalLinks.push({ href, text });
-        } else {
-          externalLinks.push({ href, text, rel });
-        }
-      } catch (e) {}
+    if (!href) return;
+
+    if (isSameDomain(href, baseUrl)) {
+      internalLinks.push({ href, text, rawHref });
     } else {
-      internalLinks.push({ href, text }); // relative is usually internal
+      externalLinks.push({ href, text, rel, rawHref });
     }
   });
 
   const imageCount = $('img').length;
   let imagesWithoutAlt = 0;
+  let imagesWithEmptyAlt = 0;
   $('img').each((_, el) => {
     const alt = $(el).attr('alt');
-    if (!alt || alt.trim() === '') {
+    if (alt === undefined) {
       imagesWithoutAlt++;
+    } else if (alt.trim() === '') {
+      imagesWithEmptyAlt++;
     }
   });
 
-  const canonical = resolvePublicAssetUrl($('link[rel="canonical"]').attr('href') || '');
+  const canonicalRaw = $('link[rel~="canonical"]').first().attr('href') || '';
+  const canonical = resolvePublicAssetUrl(canonicalRaw);
+  const insecureResourceUrls = collectInsecureResourceUrls($, baseUrl, documentBaseUrl);
+  const insecureFormActionUrls = collectInsecureFormActionUrls($, baseUrl, documentBaseUrl);
 
   const ids = new Map<string, number>();
   const idText = new Map<string, string>();
@@ -217,7 +230,7 @@ export function parseHtml(html: string, baseUrl: string): ParsedPageData {
     && $('script[src],script[type="module"]').length >= 2
     && $('#root,#app,#__next,[data-reactroot],[ng-version]').length > 0;
   
-  const allText = `${title} ${metaDescription} ${h1.join(' ')} ${h2.join(' ')} ${$('p').text()}`;
+  const allText = `${title} ${metaDescription} ${h1.join(' ')} ${h2.join(' ')} ${textBody.find('p').text()}`;
   const { topKeywords, topPhrases } = getTopPhrases(allText);
 
   return {
@@ -231,7 +244,11 @@ export function parseHtml(html: string, baseUrl: string): ParsedPageData {
     externalLinks,
     imageCount,
     imagesWithoutAlt,
+    imagesWithEmptyAlt,
     canonical,
+    canonicalRaw,
+    insecureResourceUrls,
+    insecureFormActionUrls,
     metaRobots,
     ogTitle,
     ogDescription,

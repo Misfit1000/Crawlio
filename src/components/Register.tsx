@@ -3,6 +3,7 @@ import { Eye, EyeOff, Loader2, Lock, Mail, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { BrandMark } from './ui/visual-system';
 import { FormField, Notice } from './ui/page-system';
+import { AccountActionError } from '../lib/auth/account-state';
 import { LEGAL_VERSION } from '../lib/legal/version';
 
 export default function Register({
@@ -18,11 +19,12 @@ export default function Register({
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; code?: AccountActionError['code'] } | null>(null);
   const [success, setSuccess] = useState(false);
   const [legalAccepted, setLegalAccepted] = useState(false);
   const { register } = useAuth();
   const submitting = useRef(false);
+  const rateLimited = error?.code === 'over_email_send_rate_limit' || error?.code === 'over_request_rate_limit';
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -39,10 +41,10 @@ export default function Register({
         setSuccess(true);
         onSuccess?.();
       } else if (outcome.status === 'profile_pending') {
-        setError(outcome.message);
+        setError({ message: outcome.message });
       }
-    } catch (err: any) {
-      setError(err.message || 'Registration failed');
+    } catch (err: unknown) {
+      setError(new AccountActionError(err, 'register'));
     } finally {
       submitting.current = false;
       setLoading(false);
@@ -111,7 +113,21 @@ export default function Register({
           <span id="registration-consent" className="text-muted-foreground">I agree to the <a href="/terms" className="font-semibold text-accent hover:underline">Terms</a> and acknowledge the <a href="/privacy" className="font-semibold text-accent hover:underline">Privacy Notice</a>.</span>
         </label>
 
-        {error && <Notice tone="danger">{error}</Notice>}
+        {error && (
+          <Notice
+            tone={rateLimited ? 'warning' : 'danger'}
+            title={error.code === 'over_email_send_rate_limit'
+              ? 'Confirmation email limit reached'
+              : error.code === 'over_request_rate_limit' ? 'Account request limit reached' : undefined}
+          >
+            <p>{error.message}</p>
+            {rateLimited && (
+              <button type="button" onClick={onToggle} className="quiet-button mt-3">
+                Sign in to an existing account
+              </button>
+            )}
+          </Notice>
+        )}
 
         {success && <Notice tone="success">Account created. Loading your dashboard...</Notice>}
 

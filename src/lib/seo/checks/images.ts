@@ -13,9 +13,9 @@ export function run(pageData: any, auditId?: string): AuditIssue[] {
     }
   };
 
-  // Evaluate checks
-  if (d.fakeCondition) p('missing-alt-text', 'Evidence');
-  if (d.imagesWithoutAlt && d.imagesWithoutAlt > 0) p('missing-alt-text', d.imagesWithoutAlt + ' images missing alt');
+  if (Number.isInteger(d.imagesWithoutAlt) && d.imagesWithoutAlt > 0) {
+    p('missing-alt-text', d.imagesWithoutAlt + ' images have no alt attribute; images with empty alt attributes are excluded.');
+  }
 
   return issues;
 }

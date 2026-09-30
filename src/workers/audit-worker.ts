@@ -33,7 +33,7 @@ import { buildProvisionalAuditScore, shouldPublishProvisionalScore } from '../li
 import { AuditWriteBatch } from './audit-write-batch';
 import { HostRequestScheduler } from './host-request-scheduler';
 import { isAuditJobType } from './audit-job-types';
-import { AUDIT_ENGINE_VERSION, CHECK_REGISTRY_VERSION, SCORING_VERSION } from '../lib/platform/version';
+import { AUDIT_ENGINE_VERSION, CHECK_REGISTRY_VERSION, LEGACY_SCORING_VERSION as SCORING_VERSION } from '../lib/platform/version';
 import {
   aggregateFailureCounts,
   classifyAuditFailure,
@@ -144,11 +144,18 @@ export function buildSecurityIssues(page: FetchedPage): Omit<ResourceAuditIssue,
   if (!headers['permissions-policy']) {
     add('low', 'Missing Permissions-Policy header', 'permissions-policy header not present', 'Add a Permissions-Policy header for unused browser features.');
   }
-  if (page.finalUrl.startsWith('https://') && /(?:src|href)=["']http:\/\//i.test(page.html)) {
-    add('medium', 'Mixed content references detected', 'HTML references http:// assets from an HTTPS page', 'Update insecure asset references to HTTPS.');
+  const securityEvidence = page.parsed?.insecureResourceUrls !== undefined && page.parsed?.insecureFormActionUrls !== undefined
+    ? page.parsed
+    : parseHtml(page.html, page.finalUrl);
+  if (securityEvidence.insecureResourceUrls?.length) {
+    add('medium', 'Mixed content references detected',
+      `The downloaded HTML references HTTP resources: ${securityEvidence.insecureResourceUrls.join(', ')}. Browser loading or blocking was not observed.`,
+      'Update insecure asset references to HTTPS.');
   }
-  if (/<form[^>]+action=["']http:\/\//i.test(page.html)) {
-    add('high', 'Insecure form action detected', 'Form posts to an http:// endpoint', 'Use HTTPS form actions for all public forms.');
+  if (securityEvidence.insecureFormActionUrls?.length) {
+    add('high', 'Insecure form action detected',
+      `The downloaded HTML contains HTTP form targets: ${securityEvidence.insecureFormActionUrls.join(', ')}. Browser submission was not observed.`,
+      'Use HTTPS form actions for all public forms.');
   }
 
   return issues;

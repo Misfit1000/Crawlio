@@ -4,6 +4,7 @@ import type { AuditScoreState } from '../../lib/audit/audit-live-score';
 import { isTerminalAuditStatus } from '../../lib/audit/audit-time';
 import { issueSignature, type ChecklistStatus } from '../../lib/audit/client-insights';
 import { findingImpact } from '../../lib/audit/report-insights';
+import { auditCoverage } from '../../lib/audit/audit-evidence-quality';
 import { AuditScoreOverview, CategoryScoreBar, ProgressBar, SeverityDistribution, StatusBadge, SurfaceCard } from '../ui/visual-system';
 
 export interface AuditCategoryScore {
@@ -32,10 +33,7 @@ export function AuditExecutiveSummary({
   progress?: number;
   unavailableChecks?: number | null;
 }) {
-  const coverageTarget = Math.max(1, audit.pageLimit);
-  const coverage = Math.min(100, Math.round((audit.pagesCrawled / coverageTarget) * 100));
-  const checksTotal = Math.max(audit.checksCompleted, audit.checksTotal);
-  const checkProgress = checksTotal ? Math.round((audit.checksCompleted / checksTotal) * 100) : 0;
+  const coverage = auditCoverage(audit);
   const terminal = isTerminalAuditStatus(audit.status);
   const warningCount = audit.warningCount || 0;
   const limitationCount = unavailableChecks ?? warningCount;
@@ -54,7 +52,7 @@ export function AuditExecutiveSummary({
             <StatusBadge tone={scoreState === 'final' ? 'success' : scoreState === 'provisional' ? 'accent' : 'neutral'}>
               {scoreState === 'final' ? 'Final score' : scoreState === 'provisional' ? 'Preliminary' : terminal ? 'Unavailable' : 'Not available yet'}
             </StatusBadge>
-            {score != null && <span className="text-xs font-medium text-muted-foreground">Based on completed checks</span>}
+            {score != null && <span className="text-xs font-medium text-muted-foreground">Measured evidence only</span>}
           </div>
           {score == null ? (
             <div className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 px-5 text-center"><FileSearch className="h-7 w-7 text-muted-foreground" /><div className="mt-3 font-semibold">{terminal ? 'Score unavailable' : 'Score pending'}</div><div className="mt-1 max-w-56 text-xs leading-5 text-muted-foreground">{terminal ? 'This audit ended without a saved score. Collected findings remain available below.' : 'Available after enough evidence is analysed'}</div></div>
@@ -67,25 +65,28 @@ export function AuditExecutiveSummary({
         </div>
 
         <div className="p-5 lg:p-6">
-          <div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">Coverage</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Only collected evidence is counted.</p></div><Layers className="h-5 w-5 text-accent" /></div>
+          <div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">Crawl coverage</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Discovered URLs, not total site size.</p></div><Layers className="h-5 w-5 text-accent" /></div>
           <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4 text-sm">
-            <div><dt className="text-xs text-muted-foreground">Pages analysed</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{audit.pagesCrawled}<span className="ml-1 text-xs font-normal text-muted-foreground">/ {coverageTarget}</span></dd></div>
-            <div><dt className="text-xs text-muted-foreground">Coverage</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{coverage}%</dd></div>
-            <div><dt className="text-xs text-muted-foreground">Checks completed</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{audit.checksCompleted}<span className="ml-1 text-xs font-normal text-muted-foreground">/ {checksTotal || '—'}</span></dd></div>
+            <div><dt className="text-xs text-muted-foreground">Pages analysed</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{coverage.analysed}<span className="ml-1 text-xs font-normal text-muted-foreground">/ {coverage.discovered} found</span></dd></div>
+            <div><dt className="text-xs text-muted-foreground">Plan allowance</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{coverage.allowance.toLocaleString()}<span className="ml-1 text-xs font-normal text-muted-foreground">pages</span></dd></div>
+            <div><dt className="text-xs text-muted-foreground">Check groups run</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{audit.checksCompleted.toLocaleString()}</dd></div>
             <div><dt className="text-xs text-muted-foreground">{limitationLabel}</dt><dd className={`mt-1 text-xl font-semibold tabular-nums ${limitationCount ? 'text-amber-600 dark:text-amber-300' : ''}`}>{limitationCount}</dd></div>
           </dl>
           <div className="mt-5 space-y-3">
-            <ProgressBar label="Pages reached" value={coverage} tone={coverage >= 80 ? 'green' : 'yellow'} />
-            <ProgressBar label="Checks processed" value={checkProgress} tone="accent" />
+            {coverage.discoveredPercent != null && <ProgressBar label="Discovered pages analysed" value={coverage.discoveredPercent} tone="green" />}
+            <ProgressBar label="Plan allowance used" value={coverage.allowancePercent} tone="accent" />
           </div>
         </div>
       </div>
 
       {categoryScores.length > 0 && (
-        <div className="grid gap-px border-t border-border bg-border sm:grid-cols-2 xl:grid-cols-4">
+        <div className="border-t border-border p-5 lg:p-6">
+          <div className="mb-4 flex items-center justify-between gap-3"><h2 className="text-sm font-semibold">Measured score factors</h2><span className="text-xs text-muted-foreground">Higher is healthier</span></div>
+          <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
           {categoryScores.map((item) => (
-            <div key={item.label} className="bg-card p-3"><CategoryScoreBar {...item} /></div>
+            <CategoryScoreBar key={item.label} label={item.label} value={item.value} detail={item.detail} framed={false} />
           ))}
+          </div>
         </div>
       )}
     </SurfaceCard>

@@ -13,10 +13,19 @@ export function run(pageData: any, auditId?: string): AuditIssue[] {
     }
   };
 
-  // Evaluate checks
-  if (d.fakeCondition) p('missing-canonical', 'Evidence');
-  if (!d.canonical) p('missing-canonical', 'No canonical URL');
-  else if (!d.canonical.startsWith('http')) p('relative-canonical', 'Relative canonical');
+  const canonicalRaw = typeof d.canonicalRaw === 'string' ? d.canonicalRaw.trim() : undefined;
+  if (!d.canonical) {
+    p('missing-canonical', canonicalRaw
+      ? `Canonical href does not resolve to a supported HTTP(S) URL: ${canonicalRaw}`
+      : 'No canonical URL');
+  } else {
+    const canonicalHref = canonicalRaw ?? d.canonical;
+    try {
+      new URL(canonicalHref);
+    } catch {
+      p('relative-canonical', `Relative canonical href: ${canonicalHref}; resolved URL: ${d.canonical}`);
+    }
+  }
   if (d.metaRobots && d.metaRobots.toLowerCase().includes('noindex')) p('meta-noindex', 'Meta robots noindex');
 
   return issues;

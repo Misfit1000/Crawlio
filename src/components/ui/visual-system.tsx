@@ -552,7 +552,7 @@ export function AuditScoreOverview({
         <div className="min-w-0">
           <div className="text-sm font-semibold text-muted-foreground">{label}</div>
           <div className="mt-1 flex items-baseline gap-1.5 tabular-nums">
-            <span className={`text-5xl font-bold leading-none ${scoreTextClass(tone)}`}>{Math.round(safeValue)}</span>
+            <span className={`text-5xl font-bold leading-none ${scoreTextClass(tone)}`}><UpdatedValue value={Math.round(safeValue)} /></span>
             <span className="text-sm font-semibold text-muted-foreground">/100</span>
           </div>
           <div className="mt-2 text-sm font-semibold">{scoreBandLabel(safeValue)} website health</div>
@@ -570,9 +570,9 @@ export function AuditScoreOverview({
         </div>
         <div className="relative pt-2">
           <span
-            className="absolute top-0 z-10 h-4 w-0.5 -translate-x-1/2 rounded-full bg-foreground shadow-sm transition-[left] duration-700"
-            style={{ left: `${markerPosition}%` }}
-          />
+            className="absolute top-0 z-10 h-4 w-full origin-left transition-transform duration-300"
+            style={{ transform: `translateX(${markerPosition}%)` }}
+          ><span className="block h-4 w-0.5 rounded-full bg-foreground" /></span>
           <div className="grid h-2.5 grid-cols-[5fr_2fr_1fr_1fr_1fr] gap-1 overflow-hidden rounded-full bg-muted">
             <span className="bg-red-500/80" />
             <span className="bg-amber-500/85" />
@@ -581,8 +581,8 @@ export function AuditScoreOverview({
             <span className="bg-emerald-500" />
           </div>
         </div>
-        <div className="mt-1.5 flex justify-between text-[10px] tabular-nums text-muted-foreground">
-          <span>0</span><span>50</span><span>70</span><span>80</span><span>90</span><span>100</span>
+        <div className="relative mt-1.5 h-4 text-[10px] tabular-nums text-muted-foreground">
+          {[0, 50, 70, 80, 90, 100].map(value => <span key={value} className="absolute" style={{ left: `${value}%`, transform: value === 0 ? undefined : value === 100 ? 'translateX(-100%)' : 'translateX(-50%)' }}>{value}</span>)}
         </div>
       </div>
 
@@ -609,16 +609,18 @@ export function CategoryScoreBar({
   value,
   detail,
   tone,
+  framed = true,
 }: {
   label: string;
   value: number;
   detail?: string;
   tone?: ScoreTone;
+  framed?: boolean;
 }) {
   const safeValue = safeScore(value);
   const resolvedTone = tone || scoreTone(safeValue);
   return (
-    <div className="space-y-2 rounded-lg border border-border bg-background/70 p-3">
+    <div className={framed ? 'space-y-2 rounded-lg border border-border bg-background/70 p-3' : 'space-y-2'}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-sm font-bold">{label}</div>

@@ -48,11 +48,13 @@ export interface SafeCheckRunResult {
   issues: AuditIssue[];
   unavailableChecks: UnavailableAuditCheck[];
   completedChecks: number;
+  completedCheckIds: string[];
 }
 
 export function runCheckSetSafely(checks: Array<{ id: string; title: string; run: CheckRunner }>, pageData: any, auditId?: string): SafeCheckRunResult {
   const issues: AuditIssue[] = [];
   const unavailableChecks: UnavailableAuditCheck[] = [];
+  const completedCheckIds: string[] = [];
   let completedChecks = 0;
 
   for (const check of checks) {
@@ -60,6 +62,7 @@ export function runCheckSetSafely(checks: Array<{ id: string; title: string; run
       const checkIssues = check.run(pageData, auditId) || [];
       issues.push(...checkIssues);
       completedChecks += 1;
+      completedCheckIds.push(check.id);
     } catch (error) {
       unavailableChecks.push({
         checkId: check.id,
@@ -69,7 +72,7 @@ export function runCheckSetSafely(checks: Array<{ id: string; title: string; run
     }
   }
 
-  return { issues, unavailableChecks, completedChecks };
+  return { issues, unavailableChecks, completedChecks, completedCheckIds };
 }
 
 export function runAllChecksSafely(pageData: any, auditId?: string): SafeCheckRunResult {

@@ -7,6 +7,7 @@ import { getAuditAccessHeaders } from '../../lib/api/auth-headers';
 import { readChecklist, writeChecklist, type ChecklistStatus } from '../../lib/audit/client-insights';
 import { isCompletedAuditStatus } from '../../lib/audit/audit-time';
 import { customerSafeDiagnosticText } from '../../lib/audit/audit-failures';
+import { getAuditLiveScore } from '../../lib/audit/audit-live-score';
 import { classifyReportSection, extractReportScores, observedPageMetrics } from '../../lib/audit/report-insights';
 import type { AuditComparison, AuditHistoryPage, AuditMode } from '../../lib/audit/resource-types';
 import { downloadAuditExport } from '../../lib/http/download';
@@ -44,10 +45,12 @@ const reportSectionForRoute: Partial<Record<AuditWorkspaceSection, ReturnType<ty
   security: 'security',
 };
 
-const sectionScoreKey: Partial<Record<AuditWorkspaceSection, 'seo' | 'technical' | 'crawlability' | 'performance' | 'accessibility' | 'security'>> = {
+const sectionScoreKey: Partial<Record<AuditWorkspaceSection, 'overall' | 'seo' | 'technical' | 'crawlability' | 'internalLinks' | 'performance' | 'accessibility' | 'security'>> = {
+  overview: 'overall',
   seo: 'seo',
   technical: 'technical',
   crawlability: 'crawlability',
+  links: 'internalLinks',
   performance: 'performance',
   accessibility: 'accessibility',
   security: 'security',
@@ -128,7 +131,10 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
   const { auditId, data, loading, error, connection, reportPending, reportRetrying, refresh, retryFinalReport } = useAuditWorkspace();
   const audit = data.audit;
   const safeWorkspaceError = customerSafeDiagnosticText(error) || 'The stored audit could not be loaded.';
-  const scores = extractReportScores(data.finalReport?.scores);
+  const liveScore = audit ? getAuditLiveScore({ audit, events: data.latestEvents, finalReport: data.finalReport }) : null;
+  const scores = extractReportScores(data.finalReport?.scores || (liveScore ? {
+    ...liveScore.categoryScores, overall: liveScore.overallScore, seo: liveScore.categoryScores.onPage,
+  } : undefined));
   const metrics = observedPageMetrics(data.latestPages);
   const firstPage = data.latestPages.find((page) => page.title || page.metaDescription) || data.latestPages[0];
   const [checklist, setChecklist] = useState<Record<string, ChecklistStatus>>(() => readChecklist(auditId));
@@ -137,12 +143,6 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
     const target = reportSectionForRoute[section];
     return target ? data.latestIssues.filter((issue) => classifyReportSection(issue) === target) : data.latestIssues;
   }, [data.latestIssues, section]);
-  const sectionCounts = useMemo(() => Object.fromEntries(sections.map((item) => {
-    if (item.id === 'overview') return [item.id, data.latestIssues.length];
-    if (item.id === 'pages') return [item.id, data.latestPages.length];
-    const target = reportSectionForRoute[item.id];
-    return [item.id, target ? data.latestIssues.filter((issue) => classifyReportSection(issue) === target).length : 0];
-  })), [data.latestIssues, data.latestPages]);
 
   const updateChecklist = (signature: string, status: ChecklistStatus) => {
     setChecklist((current) => {
@@ -184,6 +184,9 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
     { label: 'On-page SEO', value: scores.seo, detail: 'Titles, descriptions, headings', tone: 'green' },
     { label: 'Technical SEO', value: scores.technical, detail: 'Delivery and status signals', tone: 'accent' },
     { label: 'Crawlability', value: scores.crawlability, detail: 'Search access and indexing', tone: 'accent' },
+    { label: 'Internal links', value: scores.internalLinks, detail: 'Observed HTML link signals', tone: 'accent' },
+    { label: 'Performance observations', value: scores.performance, detail: 'HTML request duration and size', tone: 'accent' },
+    { label: 'Structured data', value: scores.structuredData, detail: 'Recorded markup checks', tone: 'accent' },
     { label: 'Passive security', value: scores.security, detail: 'Public browser protections', tone: 'green' },
     { label: 'Accessibility', value: scores.accessibility, detail: 'Automated HTML signals', tone: 'accent' },
   ];
@@ -213,7 +216,7 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
             <button type="button" onClick={() => downloadAuditExport(auditId, 'json')} disabled={!data.finalReport} className="quiet-button min-h-10 px-3 py-2 text-sm"><FileDown className="h-4 w-4" /> JSON</button>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-border bg-[var(--surface-inset)] px-5 py-3 text-xs text-muted-foreground lg:px-6"><span className="inline-flex items-center gap-2"><Clock3 className="h-3.5 w-3.5" /> {connection.message}</span><span className="inline-flex items-center gap-2"><Layers className="h-3.5 w-3.5" /> {audit.pagesCrawled} of {Math.max(audit.pagesDiscovered, audit.pagesCrawled)} discovered pages analysed</span><span className="inline-flex items-center gap-2"><Search className="h-3.5 w-3.5" /> {audit.checksCompleted} checks completed</span></div>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-border bg-[var(--surface-inset)] px-5 py-3 text-xs text-muted-foreground lg:px-6"><span className="inline-flex items-center gap-2"><Clock3 className="h-3.5 w-3.5" /> {connection.message}</span><span className="inline-flex items-center gap-2"><Layers className="h-3.5 w-3.5" /> {audit.pagesCrawled} of {Math.max(audit.pagesDiscovered, audit.pagesCrawled)} discovered pages analysed</span><span className="inline-flex items-center gap-2"><Search className="h-3.5 w-3.5" /> {audit.checksCompleted} check groups run</span></div>
       </header>
       <AuditTerminalState
         audit={audit}
@@ -230,11 +233,12 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
         {sections.map((item) => {
           const scoreKey = sectionScoreKey[item.id];
           const score = scoreKey ? scores[scoreKey] : null;
-          return <NavLink key={item.id} to={auditWorkspacePath(auditId, item.id)} className={({ isActive }) => `flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition-colors ${isActive ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}><span>{item.label}</span><span className={`rounded-full px-1.5 py-0.5 text-[11px] ${score != null ? 'bg-current/10' : 'bg-muted'}`}>{score != null ? Math.round(score) : sectionCounts[item.id]}</span></NavLink>;
+          return <NavLink key={item.id} to={auditWorkspacePath(auditId, item.id)} className={({ isActive }) => `flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition-colors ${isActive ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}><span>{item.label}</span><span className="rounded-full bg-current/10 px-1.5 py-0.5 text-[11px]" title={scoreKey ? 'Measured score out of 100' : 'Successfully analysed pages'}>{scoreKey ? score != null ? Math.round(score) : '—' : audit.pagesCrawled}</span></NavLink>;
         })}
       </nav>
 
-      <AuditExecutiveSummary audit={audit} score={scores.overall} scoreDetail="Calculated from stored audit evidence" categoryScores={section === 'overview' ? categoryScores : []} unavailableChecks={unavailableChecks} />
+      <AuditExecutiveSummary audit={audit} score={scores.overall} scoreState={liveScore?.scoreState} scoreDetail={liveScore?.scoreState === 'provisional' ? 'Preliminary score from analysed pages so far' : 'Calculated from stored audit evidence'} categoryScores={categoryScores} unavailableChecks={unavailableChecks} />
+      {data.finalReport?.scores?.scoringVersion && <p className="text-xs text-muted-foreground">Scoring model {String(data.finalReport.scores.scoringVersion)}. Historical report scores are preserved; compare audits using the same scoring model.</p>}
       {audit.processingVersion === 2 && <p className="text-xs text-muted-foreground">Maps, recommendations, delivery charts and section counts use a sample of {data.latestPages.length} pages and {data.latestIssues.length} findings, not the full audit. Browse all stored evidence below.</p>}
       {section === 'overview' && <AuditPageMap pages={data.latestPages} issues={data.latestIssues} audit={data.audit} />}
       <PriorityRecommendations issues={section === 'overview' ? data.latestIssues : issues} statuses={checklist} onViewFindings={() => document.getElementById('finding-workspace-title')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import type { User } from '@supabase/supabase-js';
-import { AccountProfileError, accountActionError, finishRegistration } from '../src/lib/auth/account-state.ts';
+import { AccountActionError, AccountProfileError, accountActionError, finishRegistration } from '../src/lib/auth/account-state.ts';
 import { ensureUserProfileFromAuthUser } from '../src/lib/billing/entitlements.ts';
 
 let profileCalls = 0;
@@ -16,6 +16,23 @@ await assert.rejects(finishRegistration(true, async () => { throw new AccountPro
 assert.equal(accountActionError({ code: 'user_already_exists' }, 'register'), 'An account already uses this email. Sign in instead of registering again.');
 assert.match(accountActionError({ code: 'email_not_confirmed' }, 'login'), /Confirm your email/);
 assert.doesNotMatch(accountActionError({ message: 'new row violates row-level security policy' }, 'register'), /row-level|policy/);
+
+for (const code of ['over_email_send_rate_limit', 'over_request_rate_limit'] as const) {
+  const failure = new AccountActionError({ code, message: 'raw provider failure with secret', status: 429 }, 'register');
+  assert.equal(failure.code, code, 'Signup must preserve the specific provider rate-limit code.');
+  assert.match(failure.message, code === 'over_email_send_rate_limit' ? /Confirmation emails/ : /limiting requests/);
+  assert.match(failure.message, /inbox and spam folder/);
+  assert.match(failure.message, /sign in/);
+  assert.doesNotMatch(failure.message, /raw provider|secret|Too many attempts|\d+|few minutes/);
+  assert.equal('retryAfterSeconds' in failure, false, 'No provider retry timing is available from the signup SDK.');
+  const recovered = new AccountActionError(failure, 'register');
+  assert.equal(recovered.code, code, 'The signup form must retain the safe code received from AuthContext.');
+  assert.equal(recovered.message, failure.message);
+}
+const unknownFailure = new AccountActionError({ code: 'provider_secret_code', message: 'provider_secret_message' }, 'register');
+assert.equal(unknownFailure.code, 'unknown');
+assert.doesNotMatch(JSON.stringify(unknownFailure), /provider_secret/);
+assert.equal(new AccountActionError(new AccountProfileError(401), 'register').code, 'session_expired');
 
 const originalFetch = globalThis.fetch;
 const originalEnv = { url: process.env.SUPABASE_URL, key: process.env.SUPABASE_SERVICE_ROLE_KEY, admins: process.env.ADMIN_EMAILS };

@@ -13,12 +13,14 @@ export function parseEvidenceQuery(query: Record<string, unknown>, kind: Evidenc
   const rawLimit = scalar('limit');
   const severity = scalar('severity');
   const category = scalar('category');
+  const search = scalar('query');
   if (cursor !== undefined && !/^[a-zA-Z0-9_-]{1,100}$/.test(cursor)) throw new Error('Invalid cursor');
   if (rawLimit !== undefined && (!/^\d+$/.test(rawLimit) || !Number.isSafeInteger(Number(rawLimit)) || Number(rawLimit) < 1)) throw new Error('Invalid limit');
   if (severity !== undefined && !['critical', 'high', 'medium', 'low', 'info'].includes(severity)) throw new Error('Invalid severity');
   if (category !== undefined && (!category.trim() || category.length > 100)) throw new Error('Invalid category');
-  if (kind !== 'issues' && (severity !== undefined || category !== undefined)) throw new Error('Filters require issues');
-  return { cursor, limit: Math.min(100, Number(rawLimit ?? 50)), severity, category };
+  if (search !== undefined && (search.length > 160 || /[\u0000-\u001f\u007f]/.test(search))) throw new Error('Invalid query');
+  if (kind !== 'issues' && (severity !== undefined || category !== undefined || search !== undefined)) throw new Error('Filters require issues');
+  return { cursor, limit: Math.min(100, Number(rawLimit ?? 50)), severity, category, query: search?.trim() || undefined };
 }
 
 export async function evidenceTotal(audit: ResourceAuditDocument, kind: EvidenceKind): Promise<number | null> {
@@ -53,8 +55,8 @@ export function registerScalableEvidenceRoutes(router: Router, dependencies: {
       res.json({ success: true, data: {
         ...page, auditId: audit.id, kind,
         total, totalScope: 'audit',
-        // Summary counters do not contain category intersections or event counts.
-        filteredTotal: input.severity || input.category ? null : total,
+        // Summary counters do not contain filter intersections, search matches or event counts.
+        filteredTotal: input.severity || input.category || input.query ? null : total,
       } });
     } catch (error) { next(error); }
   });

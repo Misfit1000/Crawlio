@@ -22,19 +22,44 @@ export class AccountProfileError extends Error {
   }
 }
 
+const ACCOUNT_ACTION_MESSAGES = {
+  user_already_exists: 'An account already uses this email. Sign in instead of registering again.',
+  email_exists: 'An account already uses this email. Sign in instead of registering again.',
+  email_not_confirmed: 'Confirm your email using the link in your inbox, then sign in.',
+  user_banned: 'This account is unavailable. Contact support if you believe this is a mistake.',
+  invalid_credentials: 'Email or password is incorrect',
+  weak_password: 'Choose a stronger password with at least 8 characters.',
+  email_address_invalid: 'Enter a valid email address.',
+  over_email_send_rate_limit: 'Confirmation emails are temporarily limited by the account service. Check your inbox and spam folder for an earlier confirmation link. If you already have an account, sign in instead of registering again.',
+  over_request_rate_limit: 'The account service is temporarily limiting requests. Check your inbox and spam folder for an earlier confirmation link, or sign in if you already have an account. If you still need to register, try again later.',
+};
+
+function providerActionCode(error: unknown): keyof typeof ACCOUNT_ACTION_MESSAGES | 'unknown' {
+  const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
+  if (typeof code === 'string' && Object.prototype.hasOwnProperty.call(ACCOUNT_ACTION_MESSAGES, code)) return code as keyof typeof ACCOUNT_ACTION_MESSAGES;
+  if (typeof error === 'object' && error !== null && 'status' in error && error.status === 429) return 'over_request_rate_limit';
+  return 'unknown';
+}
+
 export function accountActionError(error: unknown, action: 'register' | 'login') {
-  if (error instanceof AccountProfileError) return error.message;
-  const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
-  if (code === 'user_already_exists' || code === 'email_exists') return 'An account already uses this email. Sign in instead of registering again.';
-  if (code === 'email_not_confirmed') return 'Confirm your email using the link in your inbox, then sign in.';
-  if (code === 'user_banned') return 'This account is unavailable. Contact support if you believe this is a mistake.';
-  if (code === 'invalid_credentials') return 'Email or password is incorrect';
-  if (code === 'weak_password') return 'Choose a stronger password with at least 8 characters.';
-  if (code === 'email_address_invalid') return 'Enter a valid email address.';
-  if (code === 'over_email_send_rate_limit' || code === 'over_request_rate_limit') return 'Too many attempts. Wait a few minutes before trying again.';
+  if (error instanceof AccountProfileError || error instanceof AccountActionError) return error.message;
+  const code = providerActionCode(error);
+  if (code !== 'unknown') return ACCOUNT_ACTION_MESSAGES[code];
   return action === 'register'
     ? 'Account creation could not be confirmed. Check your email or try signing in before registering again.'
     : 'Unable to sign in. Check your connection and try again.';
+}
+
+export class AccountActionError extends Error {
+  readonly code: keyof typeof ACCOUNT_ACTION_MESSAGES | AccountProfileError['code'] | 'unknown';
+
+  constructor(error: unknown, action: 'register' | 'login') {
+    super(accountActionError(error, action));
+    this.name = 'AccountActionError';
+    this.code = error instanceof AccountProfileError || error instanceof AccountActionError
+      ? error.code
+      : providerActionCode(error);
+  }
 }
 
 export async function finishRegistration(

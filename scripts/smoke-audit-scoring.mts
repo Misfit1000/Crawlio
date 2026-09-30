@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { calculateTransparentAuditScore, categoryForIssue, normalizedIssueKey } from '../src/lib/audit/audit-scoring';
+import { calculateTransparentAuditScore, categoryForIssue, deduplicatePageIssues, normalizedIssueKey } from '../src/lib/audit/audit-scoring';
 import type { ResourceAuditIssue, ResourceAuditPage } from '../src/lib/audit/resource-types';
+import { auditCoverage, measuredAuditCategories } from '../src/lib/audit/audit-evidence-quality';
 
 const page = (url: string, patch: Partial<ResourceAuditPage> = {}): ResourceAuditPage => ({
   id: url,
@@ -78,3 +79,19 @@ for (const count of [500, 1000, 5000]) {
   assert.deepEqual(fromAggregate, fromRows, `Aggregate scoring must match all ${count} retained rows`);
 }
 console.log('Incremental scoring matches complete evidence at 500, 1000 and 5000 pages.');
+
+const slowPage = page('https://example.com/slow', { responseTimeMs: 2000, pageSizeBytes: 1_500_000 });
+const performanceIssues = [issue('Slow HTML Request', slowPage.url, 'medium', 'performance'), issue('Large HTML Page Size', slowPage.url, 'medium', 'performance')];
+const current = calculateTransparentAuditScore({ pages: [slowPage], issues: performanceIssues, scoringVersion: '2.2', measuredCategories: ['performance'] });
+assert.equal(current.deductions.length, 2, 'Page aggregates must not duplicate explicit performance findings.');
+assert.equal(deduplicatePageIssues([performanceIssues[0], { ...performanceIssues[0], id: 'duplicate-check' }]).length, 1);
+assert.equal(current.categories.structuredData.score, null, 'Unperformed categories must remain unavailable, not perfect.');
+const legacy = calculateTransparentAuditScore({ pages: [slowPage], issues: performanceIssues });
+assert.equal(legacy.deductions.length, 4, 'The legacy scoring model remains unchanged.');
+assert.deepEqual(auditCoverage({ pagesCrawled: 20, pagesDiscovered: 25, pageLimit: 1000 }), {
+  analysed: 20, discovered: 25, allowance: 1000, discoveredPercent: 80, allowancePercent: 2,
+});
+assert.equal(auditCoverage({ pagesCrawled: 0, pagesDiscovered: 0, pageLimit: 1000 }).discoveredPercent, null);
+assert(!measuredAuditCategories(['on-page', 'accessibility']).includes('structuredData'));
+assert(!measuredAuditCategories(['mobile']).includes('mobile'), 'Viewport presence is not browser-measured mobile usability.');
+console.log('Evidence-aware scoring avoids double penalties and distinguishes coverage from allowance.');

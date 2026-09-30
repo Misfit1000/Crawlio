@@ -93,6 +93,16 @@ export function categoryForIssue(issue: ResourceAuditIssue) {
   return SECTION_CATEGORY[classifyReportSection(issue)];
 }
 
+export function deduplicatePageIssues(issues: ResourceAuditIssue[]) {
+  const distinct = new Map<string, ResourceAuditIssue>();
+  for (const issue of issues) {
+    const key = `${issue.affectedUrl}|${normalizedIssueKey(issue)}`;
+    const previous = distinct.get(key);
+    if (!previous || SEVERITY_POINTS[issue.severity] > SEVERITY_POINTS[previous.severity]) distinct.set(key, issue);
+  }
+  return [...distinct.values()];
+}
+
 function clampScore(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
@@ -146,6 +156,7 @@ export function calculateTransparentAuditScore(input: {
   unavailableChecks?: Partial<Record<AuditScoreCategory, string[]>>;
   limitations?: string[];
   aggregate?: AuditScoreAggregate;
+  scoringVersion?: '2.1' | '2.2';
 }): TransparentAuditScore {
   const pageUrls = uniquePublicPages(input.pages);
   const pageCount = Math.max(1, input.aggregate?.pageCount ?? (pageUrls.size || input.pages.length));
@@ -194,12 +205,26 @@ export function calculateTransparentAuditScore(input: {
     });
   }
 
-  deductions.push(...derivePageDeductions(input.aggregate ?? {
+  const derived = derivePageDeductions(input.aggregate ?? {
     errorPages: input.pages.filter((page) => page.statusCode <= 0 || page.statusCode >= 400).length,
     redirectPages: input.pages.filter((page) => page.statusCode >= 300 && page.statusCode < 400).length,
     slowPages: input.pages.filter((page) => page.responseTimeMs > 1_500).length,
     largePages: input.pages.filter((page) => page.pageSizeBytes > 1_000_000).length,
-  }, pageCount));
+  }, pageCount);
+  deductions.push(...derived.filter((deduction) => {
+    if (input.scoringVersion !== '2.2') return true;
+    // Explicit findings already account for these observations. One observation
+    // must not be charged again through the page aggregate.
+    const sameObservation: Record<string, RegExp> = {
+      'derived:http-errors': /http error|status code|server error|error response/,
+      'derived:crawl-errors': /could not|failed|unavailable|blocked|request|timeout|response/,
+      'derived:slow-pages': /slow|response time|ttfb|download duration/,
+      'derived:large-pages': /large|page size|html size|payload/,
+    };
+    if (deduction.key === 'derived:redirects') return false;
+    const match = sameObservation[deduction.key];
+    return !match || !groups.some((group) => group.category === deduction.category && match.test(`${group.key} ${group.title}`.toLowerCase()));
+  }));
   const categories = Object.fromEntries(CATEGORIES.map((category) => {
     const categoryDeductions = deductions.filter((deduction) => deduction.category === category);
     const isMeasured = measured.has(category);

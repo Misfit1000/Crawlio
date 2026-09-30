@@ -66,6 +66,53 @@ async function submitSignup(page: Page) {
   await page.getByRole('button', { name: 'Create account', exact: true }).evaluate((button: HTMLButtonElement) => { button.click(); button.click(); });
 }
 
+test('signup email-send rate limit offers inbox guidance and sign-in recovery without resubmitting', async ({ page }) => {
+  const requests = await mockAccount(page);
+  await page.route('**/auth/v1/signup*', async (route) => {
+    requests.signups++;
+    await route.fulfill({
+      status: 429,
+      headers: {
+        'X-Supabase-Api-Version': '2024-01-01',
+        'Access-Control-Expose-Headers': 'X-Supabase-Api-Version',
+      },
+      json: {
+        code: 'over_email_send_rate_limit',
+        error_code: 'over_email_send_rate_limit',
+        message: 'raw provider failure with synthetic-secret',
+      },
+    });
+  });
+
+  await submitSignup(page);
+  const signup = page.getByRole('dialog', { name: 'Create account' });
+  const notice = signup.getByRole('status');
+  await expect(notice).toContainText('Confirmation email limit reached');
+  await expect(notice).toContainText('Confirmation emails are temporarily limited by the account service.');
+  await expect(notice).toContainText('Check your inbox and spam folder for an earlier confirmation link.');
+  await expect(notice).toContainText('If you already have an account, sign in instead of registering again.');
+  await expect(signup).not.toContainText(/raw provider|synthetic-secret|Too many attempts/);
+  await expect(signup).not.toContainText(/countdown|retry in|try again in|wait \d|seconds?|minutes?|\b\d+:\d{2}\b/i);
+  await expect(signup.getByRole('timer')).toHaveCount(0);
+  await expect(signup.getByRole('button', { name: 'Create account', exact: true })).toBeEnabled();
+  expect(requests.signups).toBe(1);
+  expect(requests.profiles).toBe(0);
+
+  const recovery = notice.getByRole('button', { name: 'Sign in to an existing account' });
+  await expect(recovery).toHaveAttribute('type', 'button');
+  await recovery.click();
+  await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
+  expect(requests.signups).toBe(1);
+
+  await page.getByLabel('Email', { exact: true }).fill(email);
+  await page.locator('#login-password').fill(password);
+  await page.getByRole('dialog', { name: 'Sign in' }).getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page).toHaveURL('/app');
+  expect(requests.signups).toBe(1);
+  expect(requests.profiles).toBe(1);
+  expect(requests.browserProfileWrites).toBe(0);
+});
+
 test('confirmation-required signup avoids profile writes, then confirmed sign-in recovers the profile', async ({ page }) => {
   const requests = await mockAccount(page, { confirmation: true });
   await submitSignup(page);
