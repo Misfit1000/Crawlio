@@ -8,7 +8,6 @@ const migration = (name: string) => readFile(new URL(`../supabase/migrations/${n
 await db.exec(`
   create role anon; create role authenticated; create role service_role;
   create schema storage; create table storage.buckets(id text primary key,name text,public boolean);
-  create function digest(text,text) returns bytea language sql immutable as 'select sha256(convert_to($1,''UTF8''))';
 `);
 const baseline = await migration('001_resource_light_audit.sql');
 await db.exec(baseline.slice(baseline.indexOf('create or replace function'), baseline.indexOf('alter publication')));
@@ -23,6 +22,7 @@ await db.exec(`
   insert into plan_limits values ('admin','["quick","standard","deep"]',1000,1000,1000),('paid','["quick","standard"]',25,50,0);
 `);
 await db.exec(await migration('025_scalable_audits.sql'));
+await db.exec(await migration('026_scalable_frontier_hash.sql'));
 const rpc = async (name: string, args: unknown[]) => {
   const result = await db.query<{ result: any }>(`select ${name}(${args.map((_, i) => `$${i+1}`).join(',')}) as result`, args);
   return result.rows[0].result;
@@ -35,6 +35,8 @@ try {
     const root = `https://fixture-${limit}.example/`;
     await db.query(`insert into audits(id,submitted_input,normalized_url,hostname,plan,page_limit,processing_version)
       values($1,$2,$2,$3,$4,$5,2)`, [id,root,`fixture-${limit}.example`,limit>500?'admin':'paid',limit]);
+    const seeded = await db.query<{key:string}>(`select key from audit_crawl_frontier where audit_id=$1`,[id]);
+    assert.equal(seeded.rows[0].key,key(root),'database frontier hash must match the worker without pgcrypto');
     let claim = await rpc('claim_scalable_audit',['worker-a',true]);
     assert.equal(claim.audit.id,id);
     const commit = (payload: unknown, generation = claim.run.generation) => rpc('scalable_audit_commit',[id,'worker-a',generation,JSON.stringify(payload)]);

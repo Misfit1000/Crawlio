@@ -115,7 +115,7 @@ begin
     values(new.id,case when new.plan='admin' then 43200000 else 7200000 end,
       least(20000,new.page_limit*case when new.effective_mode='quick' then 2 else 4 end));
     insert into public.audit_crawl_frontier(audit_id,key,url,kind,depth)
-    values(new.id,encode(digest('page:'||new.normalized_url,'sha256'),'hex'),new.normalized_url,'page',0);
+    values(new.id,encode(sha256(convert_to('page:'||new.normalized_url,'UTF8')),'hex'),new.normalized_url,'page',0);
     update public.audit_crawl_runs set discovered=1 where audit_id=new.id;
   end if;
   return new;
