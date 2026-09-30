@@ -24,6 +24,7 @@ import {
 
 const Login = lazy(() => import('./components/Login'));
 const Register = lazy(() => import('./components/Register'));
+const AccountRecovery = lazy(() => import('./components/AccountRecovery'));
 const Sidebar = lazy(() => import('./components/Sidebar'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
 const ProjectsPage = lazy(() => import('./components/projects/ProjectsPage'));
@@ -48,7 +49,7 @@ const NotFoundPage = lazy(() => import('./components/NotFoundPage'));
 export type { TabType } from './app/routes';
 
 export default function App() {
-  const { user, loading: authLoading, logout, unverifiedEmail, setUnverifiedEmail } = useAuth();
+  const { user, loading: authLoading, logout, profilePending, unverifiedEmail, setUnverifiedEmail } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const routerLocation = useLocation();
   const navigate = useNavigate();
@@ -153,7 +154,10 @@ export default function App() {
       '/settings': '/app/settings',
     };
     if (legacyRoutes[pathname]) navigate(legacyRoutes[pathname], { replace: true });
-    if (user && (pathname === '/login' || pathname === '/register')) navigate('/app', { replace: true });
+    if (user && (pathname === '/login' || pathname === '/register')) {
+      setAuthMode(null);
+      navigate('/app', { replace: true });
+    }
   }, [navigate, pathname, user]);
 
   useEffect(() => {
@@ -229,14 +233,15 @@ export default function App() {
           <div className="mb-4 inline-block rounded-xl bg-accent/10 p-3 text-accent">
             <Mail className="w-12 h-12" />
           </div>
-          <h1 className="text-2xl font-bold font-display text-foreground mb-4">Verify your email</h1>
+          <h1 className="text-2xl font-bold font-display text-foreground mb-4">Check your email</h1>
           <p className="text-muted-foreground mb-8">
-            A verification link was sent to <span className="text-foreground font-medium">{unverifiedEmail}</span>. Open it to verify the address, then sign in.
+            Check <span className="text-foreground font-medium">{unverifiedEmail}</span> for a confirmation link, including your spam folder. Confirm your email, then sign in. If you already have an account, sign in instead.
           </p>
           <button
             onClick={() => {
               setUnverifiedEmail(null);
               setAuthMode('login');
+              navigate('/login', { replace: true });
             }}
             className="trust-button w-full"
           >
@@ -245,6 +250,10 @@ export default function App() {
         </div>
       </div>
     );
+  }
+
+  if (profilePending && !user) {
+    return <Suspense fallback={<LoadingSkeleton rows={4} />}><AccountRecovery /></Suspense>;
   }
 
   if (isSearching && authLoading) {
@@ -358,9 +367,9 @@ export default function App() {
           <div className="relative w-full max-w-md">
             <Suspense fallback={<div className="flex items-center justify-center rounded-xl border border-border bg-card p-8"><Loader2 className="h-6 w-6 animate-spin text-accent" /></div>}>
               {authMode === 'login' ? (
-                <Login onToggle={() => { setAuthMode('register'); if (pathname === '/login') navigate('/register'); }} onClose={() => { setAuthMode(null); if (pathname === '/login' || pathname === '/admin/login') navigate('/'); }} />
+                <Login onSuccess={() => { setAuthMode(null); navigate('/app'); }} onToggle={() => { setAuthMode('register'); if (pathname === '/login') navigate('/register'); }} onClose={() => { setAuthMode(null); if (pathname === '/login' || pathname === '/admin/login') navigate('/'); }} />
               ) : (
-                <Register onToggle={() => { setAuthMode('login'); if (pathname === '/register') navigate('/login'); }} onClose={() => { setAuthMode(null); if (pathname === '/register') navigate('/'); }} />
+                <Register onSuccess={() => { setAuthMode(null); navigate('/app'); }} onToggle={() => { setAuthMode('login'); if (pathname === '/register') navigate('/login'); }} onClose={() => { setAuthMode(null); if (pathname === '/register') navigate('/'); }} />
               )}
             </Suspense>
           </div>

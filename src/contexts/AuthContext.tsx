@@ -1,5 +1,7 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
-import type { User as SupabaseUser } from "@supabase/supabase-js";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import type { Session, User as SupabaseUser } from "@supabase/supabase-js";
+import { AccountProfileError, accountActionError, finishRegistration, type RegistrationOutcome } from '../lib/auth/account-state';
+import type { PlanLimits, UserProfileEntitlement } from '../lib/billing/entitlements';
 import { API_ROUTES } from "../lib/api/routes";
 import { safeJsonFetch } from "../lib/http/safe-json";
 import {
@@ -44,7 +46,9 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, legalConsent: { accepted: boolean; version: string }) => Promise<void>;
+  register: (email: string, password: string, legalConsent: { accepted: boolean; version: string }) => Promise<RegistrationOutcome>;
+  retryProfile: () => Promise<void>;
+  profilePending: boolean;
   logout: () => Promise<void>;
   updateUserProfile: (data: Partial<User>) => Promise<void>;
   refreshAuditEntitlements: () => Promise<AuditEntitlements | null>;
@@ -55,7 +59,15 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-type SupabaseDataService = typeof import("../services/supabaseDataService");
+interface ServerProfilePayload {
+  profile: UserProfileEntitlement;
+  limits: PlanLimits & { updatedAt?: string };
+  auditCapabilities?: {
+    availableModes?: AuditMode[];
+    pageCeilings?: Partial<Record<AuditMode, number>>;
+    unavailableReasons?: Partial<Record<AuditMode, string>>;
+  };
+}
 
 function fallbackAvatar(userId: string) {
   return `https://api.dicebear.com/7.x/avataaars/svg?seed=${userId}`;
@@ -101,16 +113,17 @@ function scheduleIdleWork(callback: () => void) {
 }
 
 async function fetchServerProfile(accessToken?: string) {
-  if (!accessToken) return null;
-  try {
-    const response = await safeJsonFetch<any>(API_ROUTES.meProfile, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (!response.success) return null;
-    return response.data.data || response.data || null;
-  } catch {
-    return null;
-  }
+  if (!accessToken) throw new AccountProfileError(401);
+  const response = await safeJsonFetch<{ success: boolean; data?: ServerProfilePayload }>(API_ROUTES.meProfile, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: 'no-store',
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (response.success === false) throw new AccountProfileError(response.status);
+  const payload = response.data.success ? response.data.data : undefined;
+  if (!payload?.profile?.id || !payload.limits) throw new AccountProfileError();
+  if (payload.profile.disabled) throw new AccountProfileError(403);
+  return payload;
 }
 
 const FALLBACK_AUDIT_ENTITLEMENTS: Record<User['plan'], AuditEntitlements> = {
@@ -127,9 +140,9 @@ function clientPageLimit(mode: AuditMode, value: unknown, fallback: number, plan
   return Number.isFinite(numeric) && numeric > 0 ? Math.min(runtimeLimit, enforceAuditPageLimit(mode, numeric, fallback || 1, plan)) : 0;
 }
 
-function mapAuditEntitlements(payload: any, plan: User['plan']): AuditEntitlements {
+function mapAuditEntitlements(payload: ServerProfilePayload, plan: User['plan']): AuditEntitlements {
   const fallback = FALLBACK_AUDIT_ENTITLEMENTS[plan];
-  const limits = payload?.limits || {};
+  const limits = payload.limits;
   const capabilities = payload?.auditCapabilities || {};
   const pageLimits = {
     quick: clientPageLimit('quick', limits.maxPagesQuick, fallback.pageLimits.quick, plan, capabilities.pageCeilings?.quick),
@@ -165,65 +178,42 @@ function normalizePlan(value: unknown): User['plan'] {
   return 'free';
 }
 
-async function mapSupabaseUser(supabaseUser: SupabaseUser, dataService: SupabaseDataService, accessToken?: string): Promise<User> {
+async function mapSupabaseUser(supabaseUser: SupabaseUser, accessToken?: string): Promise<User> {
   const email = supabaseUser.email || '';
   const metadata = supabaseUser.user_metadata || {};
 
-  try {
-    const serverPayload = await fetchServerProfile(accessToken);
-    let profile = serverPayload?.profile;
-    if (!profile) {
-      await dataService.initUserProfile(supabaseUser.id, {
-        email,
-        displayName: metadata.display_name || metadata.full_name || (email ? email.split('@')[0] : 'User'),
-      });
-      profile = await dataService.getUserProfile(supabaseUser.id) || {};
-    }
-
-    const plan = normalizePlan(profile.plan);
-    return {
-      id: supabaseUser.id,
-      username: profile.username || email.split('@')[0] || 'User',
-      email,
-      fullName: metadata.full_name || profile.fullName || profile.full_name || profile.displayName || '',
-      bio: profile.bio || '',
-      photoURL: metadata.avatar_url || profile.photoURL || fallbackAvatar(supabaseUser.id),
-      creationTime: supabaseUser.created_at || new Date().toISOString(),
-      lastSignInTime: supabaseUser.last_sign_in_at || new Date().toISOString(),
-      role: normalizeRole(profile.role),
-      plan,
-      subscriptionStatus: profile.subscriptionStatus || profile.subscription_status || 'inactive',
-      auditQuotaUsedDaily: Number(profile.auditQuotaUsedDaily ?? profile.audit_quota_used_daily ?? 0),
-      auditQuotaUsedMonthly: Number(profile.auditQuotaUsedMonthly ?? profile.audit_quota_used_monthly ?? 0),
-      auditEntitlements: mapAuditEntitlements(serverPayload, plan),
-    };
-  } catch (err) {
-    console.error("Error loading user profile:", err);
-    return {
-      id: supabaseUser.id,
-      username: email.split('@')[0] || 'User',
-      email,
-      fullName: metadata.full_name || '',
-      bio: '',
-      photoURL: metadata.avatar_url || fallbackAvatar(supabaseUser.id),
-      creationTime: supabaseUser.created_at || new Date().toISOString(),
-      lastSignInTime: supabaseUser.last_sign_in_at || new Date().toISOString(),
-      role: 'user',
-      plan: 'free',
-      subscriptionStatus: 'inactive',
-      auditQuotaUsedDaily: 0,
-      auditQuotaUsedMonthly: 0,
-      auditEntitlements: FALLBACK_AUDIT_ENTITLEMENTS.free,
-    };
-  }
+  const serverPayload = await fetchServerProfile(accessToken);
+  const profile = serverPayload.profile;
+  if (!profile) throw new AccountProfileError();
+  if (profile.id !== supabaseUser.id) throw new AccountProfileError(401);
+  const plan = normalizePlan(profile.plan);
+  return {
+    id: supabaseUser.id,
+    username: email.split('@')[0] || 'User',
+    email,
+    fullName: profile.fullName || metadata.full_name || '',
+    bio: '',
+    photoURL: metadata.avatar_url || fallbackAvatar(supabaseUser.id),
+    creationTime: supabaseUser.created_at || '',
+    lastSignInTime: supabaseUser.last_sign_in_at || '',
+    role: normalizeRole(profile.role),
+    plan,
+    subscriptionStatus: profile.subscriptionStatus,
+    auditQuotaUsedDaily: profile.auditQuotaUsedDaily,
+    auditQuotaUsedMonthly: profile.auditQuotaUsedMonthly,
+    auditEntitlements: mapAuditEntitlements(serverPayload, plan),
+  };
 }
 
 let recentHydration: { key: string; expiresAt: number; promise: Promise<User> } | null = null;
 
-function hydrateSupabaseUser(user: SupabaseUser, dataService: SupabaseDataService, accessToken?: string) {
-  const key = `${user.id}:${String(accessToken || '').slice(-24)}`;
+function hydrateSupabaseUser(user: SupabaseUser, accessToken?: string) {
+  const key = `${user.id}:${accessToken || ''}`;
   if (recentHydration?.key === key && recentHydration.expiresAt > Date.now()) return recentHydration.promise;
-  const promise = mapSupabaseUser(user, dataService, accessToken);
+  const promise = mapSupabaseUser(user, accessToken).catch((error) => {
+    if (recentHydration?.promise === promise) clearRecentHydration();
+    throw error;
+  });
   recentHydration = { key, expiresAt: Date.now() + 5_000, promise };
   return promise;
 }
@@ -238,6 +228,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(() => hasSupabaseBrowserConfig() && shouldHydrateAuthOnLoad());
   const [error, setError] = useState<string | null>(null);
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
+  const [profilePending, setProfilePending] = useState(false);
+  const sessionRef = useRef<Session | null>(null);
+  const generationRef = useRef(0);
+  const registrationRef = useRef<Promise<RegistrationOutcome> | null>(null);
+
+  const hydrateSession = useCallback(async (session: Session | null, retry = false) => {
+    if (retry || sessionRef.current?.user.id !== session?.user.id || sessionRef.current?.access_token !== session?.access_token) {
+      generationRef.current += 1;
+      clearRecentHydration();
+    }
+    sessionRef.current = session;
+    const generation = generationRef.current;
+    if (!session) {
+      setUser(null);
+      setProfilePending(false);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+    // An account switch must never retain another account's verified profile.
+    setUser((previous) => previous?.id === session.user.id ? previous : null);
+    try {
+      const nextUser = await hydrateSupabaseUser(session.user, session.access_token);
+      if (generation !== generationRef.current) throw new AccountProfileError(401);
+      setUser(nextUser);
+      setProfilePending(false);
+      setUnverifiedEmail(null);
+      setError(null);
+    } catch (error) {
+      const failure = error instanceof AccountProfileError ? error : new AccountProfileError();
+      if (generation === generationRef.current) {
+        setError(failure.message);
+        setProfilePending(failure.retryable);
+        setUser((previous) => failure.retryable && previous?.id === session.user.id ? previous : null);
+      }
+      throw failure;
+    } finally {
+      if (generation === generationRef.current) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!hasSupabaseBrowserConfig() || !authRequested) {
@@ -251,30 +281,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const hydrateAuth = async () => {
       const client = await getSupabaseClientOrThrow();
-      const dataService = await loadSupabaseDataService();
-
-      const [{ data }, session] = await Promise.all([client.auth.getUser(), client.auth.getSession()]);
-      const hydratedUser = data.user ? await hydrateSupabaseUser(data.user, dataService, session.data.session?.access_token) : null;
-      if (active) {
-        setUser(hydratedUser);
-        setLoading(false);
-      }
-
-      const { data: subscription } = client.auth.onAuthStateChange(async (event, session) => {
+      if (!active) return;
+      const { data: subscription } = client.auth.onAuthStateChange((event, session) => {
         if (!active) return;
-        if (event === 'SIGNED_OUT' || !session?.user) clearRecentHydration();
-        const nextUser = session?.user ? await hydrateSupabaseUser(session.user, dataService, session.access_token) : null;
-        if (!active) return;
-        setUser(nextUser);
-        setLoading(false);
+        if (event === 'SIGNED_OUT') clearRecentHydration();
+        // Do not await account requests inside Supabase's auth callback lock.
+        void Promise.resolve().then(() => {
+          if (active) return hydrateSession(session);
+        }).catch(() => { /* hydrateSession exposes safe recovery state. */ });
       });
       unsubscribe = () => subscription.subscription.unsubscribe();
+      const { data, error: sessionError } = await client.auth.getSession();
+      if (!active) return;
+      if (sessionError) throw new AccountProfileError(401);
+      await hydrateSession(data.session);
     };
 
     const cancelIdleWork = scheduleIdleWork(() => {
       hydrateAuth().catch((err) => {
         if (active) {
-          console.error("Error loading auth session:", err);
+          setError(err instanceof AccountProfileError ? err.message : 'Account services are unavailable. Check your connection and retry.');
           setLoading(false);
         }
       });
@@ -285,58 +311,71 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       cancelIdleWork();
       unsubscribe?.();
     };
-  }, [authRequested]);
+  }, [authRequested, hydrateSession]);
 
   const login = async (email: string, password: string) => {
     setError(null);
     setAuthRequested(true);
     setLoading(true);
-    const client = await getSupabaseClientOrThrow();
-
-    const { data, error: signInError } = await client.auth.signInWithPassword({ email, password });
-    if (signInError) {
+    try {
+      const client = await getSupabaseClientOrThrow();
+      const { data, error: signInError } = await client.auth.signInWithPassword({ email, password });
+      if (signInError) throw signInError;
+      if (!data.session) throw new AccountProfileError(401);
+      await hydrateSession(data.session);
+    } catch (error) {
+      const message = accountActionError(error, 'login');
+      setError(message);
+      throw new Error(message);
+    } finally {
       setLoading(false);
-      if (signInError.message.toLowerCase().includes('invalid')) {
-        throw new Error("Email or password is incorrect");
-      }
-      throw new Error('Unable to sign in. Please try again.');
     }
-    if (data.user) {
-      const dataService = await loadSupabaseDataService();
-      setUser(await hydrateSupabaseUser(data.user, dataService, data.session?.access_token));
-    }
-    setLoading(false);
   };
 
-  const register = async (email: string, password: string, legalConsent: { accepted: boolean; version: string }) => {
-    setError(null);
-    if (!legalConsent.accepted) throw new Error('Accept the Terms and Privacy Notice to create an account.');
-    setAuthRequested(true);
-    const client = await getSupabaseClientOrThrow();
-    const acceptedAt = new Date().toISOString();
-
-    const { data, error: signUpError } = await client.auth.signUp({
-      email,
-      password,
-      options: { data: { legal_consent_version: legalConsent.version, terms_accepted_at: acceptedAt, privacy_accepted_at: acceptedAt } },
-    });
-    if (signUpError) {
-      if (signUpError.message.toLowerCase().includes('already')) {
-        throw new Error("User already exists. Please sign in");
+  const register = (email: string, password: string, legalConsent: { accepted: boolean; version: string }): Promise<RegistrationOutcome> => {
+    if (registrationRef.current) return registrationRef.current;
+    const attempt = async (): Promise<RegistrationOutcome> => {
+      setError(null);
+      if (!legalConsent.accepted) throw new Error('Accept the Terms and Privacy Notice to create an account.');
+      if (sessionRef.current) return finishRegistration(true, () => hydrateSession(sessionRef.current, true));
+      setAuthRequested(true);
+      try {
+        const client = await getSupabaseClientOrThrow();
+        const acceptedAt = new Date().toISOString();
+        const { data, error: signUpError } = await client.auth.signUp({
+          email, password,
+          options: { data: { legal_consent_version: legalConsent.version, terms_accepted_at: acceptedAt, privacy_accepted_at: acceptedAt } },
+        });
+        if (signUpError) throw signUpError;
+        if (!data.user) throw new Error('Missing signup result');
+        const result = await finishRegistration(Boolean(data.session), () => hydrateSession(data.session));
+        if (result.status === 'confirmation_required') setUnverifiedEmail(email);
+        return result;
+      } catch (error) {
+        const message = accountActionError(error, 'register');
+        setError(message);
+        throw new Error(message);
       }
-      throw new Error('Account could not be created. Please try again.');
-    }
+    };
+    const promise = attempt().finally(() => { registrationRef.current = null; });
+    registrationRef.current = promise;
+    return promise;
+  };
 
-    if (data.user) {
-      const dataService = await loadSupabaseDataService();
-      await dataService.initUserProfile(data.user.id, {
-        email,
-        displayName: email.split('@')[0] || 'User',
-        termsAcceptedAt: acceptedAt,
-        privacyAcceptedAt: acceptedAt,
-        legalVersion: legalConsent.version,
-      });
-      if (data.session) setUser(await hydrateSupabaseUser(data.user, dataService, data.session.access_token));
+  const retryProfile = async () => {
+    setLoading(true);
+    try {
+      const client = await getSupabaseClientOrThrow();
+      const { data } = await client.auth.getSession();
+      if (!data.session) throw new AccountProfileError(401);
+      await hydrateSession(data.session, true);
+    } catch (error) {
+      const failure = error instanceof AccountProfileError ? error : new AccountProfileError();
+      setError(failure.message);
+      if (!failure.retryable) { setProfilePending(false); setUser(null); }
+      throw failure;
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -363,17 +402,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!user || !hasSupabaseBrowserConfig()) return user?.auditEntitlements || null;
     const client = await getSupabaseClientOrThrow();
     const { data } = await client.auth.getSession();
-    const payload = await fetchServerProfile(data.session?.access_token);
-    if (!payload?.profile || !payload?.limits) return user.auditEntitlements;
+    let payload: ServerProfilePayload;
+    try {
+      payload = await fetchServerProfile(data.session?.access_token);
+      if (payload.profile.id !== user.id) throw new AccountProfileError(401);
+    } catch (error) {
+      if (error instanceof AccountProfileError && !error.retryable && sessionRef.current?.user.id === user.id) setUser(null);
+      throw error;
+    }
     const plan = normalizePlan(payload.profile.plan);
     const entitlements = mapAuditEntitlements(payload, plan);
-    setUser((previous) => previous ? {
+    setUser((previous) => previous?.id === user.id ? {
       ...previous,
       plan,
       role: normalizeRole(payload.profile.role),
-      subscriptionStatus: payload.profile.subscriptionStatus || payload.profile.subscription_status || previous.subscriptionStatus,
-      auditQuotaUsedDaily: Number(payload.profile.auditQuotaUsedDaily ?? payload.profile.audit_quota_used_daily ?? previous.auditQuotaUsedDaily),
-      auditQuotaUsedMonthly: Number(payload.profile.auditQuotaUsedMonthly ?? payload.profile.audit_quota_used_monthly ?? previous.auditQuotaUsedMonthly),
+      subscriptionStatus: payload.profile.subscriptionStatus,
+      auditQuotaUsedDaily: payload.profile.auditQuotaUsedDaily,
+      auditQuotaUsedMonthly: payload.profile.auditQuotaUsedMonthly,
       auditEntitlements: entitlements,
     } : previous);
     return entitlements;
@@ -385,11 +430,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { error: signOutError } = await client.auth.signOut();
     if (signOutError) throw signOutError;
     clearRecentHydration();
-    setUser(null);
+    await hydrateSession(null);
+    setUnverifiedEmail(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, updateUserProfile, refreshAuditEntitlements, error, unverifiedEmail, setUnverifiedEmail }}>
+    <AuthContext.Provider value={{ user, loading, login, register, retryProfile, profilePending, logout, updateUserProfile, refreshAuditEntitlements, error, unverifiedEmail, setUnverifiedEmail }}>
       {children}
     </AuthContext.Provider>
   );

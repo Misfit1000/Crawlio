@@ -457,6 +457,8 @@ function auditStartResponseData(audit: ResourceAuditDocument, extras: Record<str
 }
 
 apiRouter.get('/me/profile', asyncJsonRoute(async (req, res) => {
+  res.setHeader('Cache-Control', 'private, no-store');
+  if (!isSupabaseAdminEnabled()) throw new ApiError('PROFILE_SERVICE_UNAVAILABLE', 'Account profile services are temporarily unavailable.', 503);
   const authUser = await getAuthenticatedUserFromRequest(req);
   if (!authUser) {
     return res.status(401).json({ success: false, error: 'Not authenticated' });
@@ -465,7 +467,6 @@ apiRouter.get('/me/profile', asyncJsonRoute(async (req, res) => {
   const limits = await getPlanLimits(profile.plan);
   const readiness = await scalableReadiness().catch(() => ({ ready: false, deepReady: false }));
   const auditCapabilities = createAuditRuntimeCapabilities(isDeepAuditEnabled() || (readiness.ready && readiness.deepReady), readiness, profile.plan);
-  res.setHeader('Cache-Control', 'private, no-store');
   res.json({ success: true, data: {
     profile,
     limits: {

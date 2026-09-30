@@ -24,6 +24,12 @@ export default defineConfig({
     url: `http://127.0.0.1:${port}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
-    env: { ...process.env, PORT: String(port), BLOG_AUTOMATION_ENABLED: 'false', GROQ_BLOG_ENABLED: 'false' },
+    env: {
+      ...process.env, PORT: String(port), BLOG_AUTOMATION_ENABLED: 'false', GROQ_BLOG_ENABLED: 'false',
+      ...(process.env.E2E_AUTH_FIXTURES === 'true' ? {
+        VITE_SUPABASE_URL: 'https://crawlio-auth-fixture.supabase.co',
+        VITE_SUPABASE_ANON_KEY: 'synthetic-auth-test-key',
+      } : {}),
+    },
   },
 });

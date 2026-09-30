@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Eye, EyeOff, Loader2, Lock, Mail, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { BrandMark } from './ui/visual-system';
@@ -8,9 +8,11 @@ import { LEGAL_VERSION } from '../lib/legal/version';
 export default function Register({
   onToggle,
   onClose,
+  onSuccess,
 }: {
   onToggle: () => void;
   onClose?: () => void;
+  onSuccess?: () => void;
 }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -20,19 +22,29 @@ export default function Register({
   const [success, setSuccess] = useState(false);
   const [legalAccepted, setLegalAccepted] = useState(false);
   const { register } = useAuth();
+  const submitting = useRef(false);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (submitting.current) return;
+    submitting.current = true;
     setLoading(true);
     setError(null);
     setSuccess(false);
     try {
-      await register(email.trim(), password, { accepted: legalAccepted, version: LEGAL_VERSION });
-      setSuccess(true);
-      window.setTimeout(() => onClose?.(), 700);
+      const outcome = await register(email.trim(), password, { accepted: legalAccepted, version: LEGAL_VERSION });
+      setPassword('');
+      setShowPassword(false);
+      if (outcome.status === 'signed_in') {
+        setSuccess(true);
+        onSuccess?.();
+      } else if (outcome.status === 'profile_pending') {
+        setError(outcome.message);
+      }
     } catch (err: any) {
       setError(err.message || 'Registration failed');
     } finally {
+      submitting.current = false;
       setLoading(false);
     }
   };

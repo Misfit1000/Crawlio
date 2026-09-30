@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Eye, EyeOff, Loader2, Lock, Mail, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { BrandMark } from './ui/visual-system';
@@ -7,27 +7,33 @@ import { FormField, Notice } from './ui/page-system';
 export default function Login({
   onToggle,
   onClose,
+  onSuccess,
 }: {
   onToggle: () => void;
   onClose?: () => void;
+  onSuccess?: () => void;
 }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { login } = useAuth();
+  const { login, error: accountError } = useAuth();
+  const submitting = useRef(false);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (submitting.current) return;
+    submitting.current = true;
     setLoading(true);
     setError(null);
     try {
       await login(email.trim(), password);
-      onClose?.();
+      (onSuccess || onClose)?.();
     } catch (err: any) {
       setError(err.message || 'Sign in failed');
     } finally {
+      submitting.current = false;
       setLoading(false);
     }
   };
@@ -88,7 +94,7 @@ export default function Login({
           </span>
         </FormField>
 
-        {error && <Notice tone="danger">{error}</Notice>}
+        {(error || accountError) && <Notice tone="danger">{error || accountError}</Notice>}
 
         <button
           type="submit"
