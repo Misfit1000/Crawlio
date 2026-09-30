@@ -13,24 +13,45 @@ const GUEST_FALLBACK: Pick<PublicPlanItem, 'allowedModes' | 'availableModes' | '
   scheduledAuditsEnabled: false,
 };
 
-export function useAuditEntitlements() {
+interface AuditEntitlementOptions {
+  loadGuestPlan?: boolean;
+  guestPlan?: PublicPlanItem | null;
+}
+
+export function useAuditEntitlements({ loadGuestPlan = true, guestPlan: suppliedGuestPlan = null }: AuditEntitlementOptions = {}) {
   const { user, loading, refreshAuditEntitlements } = useAuth();
   const [guestPlan, setGuestPlan] = useState<PublicPlanItem | null>(null);
+  const [guestPlanError, setGuestPlanError] = useState<string | null>(null);
+  const [guestPlanAttempt, setGuestPlanAttempt] = useState(0);
 
   useEffect(() => {
     if (loading && !user) return;
     if (user) {
       setGuestPlan(null);
+      setGuestPlanError(null);
       return;
     }
+    if (!loadGuestPlan || suppliedGuestPlan) return;
     const controller = new AbortController();
+    let active = true;
+    setGuestPlanError(null);
     void loadPublicPlanProjection(controller.signal)
-      .then((projection) => setGuestPlan(projection.plans.find((item) => item.sourcePlan === 'free') || null))
-      .catch(() => undefined);
-    return () => controller.abort();
-  }, [loading, user]);
+      .then((projection) => {
+        const freePlan = projection.plans.find((item) => item.sourcePlan === 'free');
+        if (!freePlan) throw new Error('Guest audit options are unavailable.');
+        if (active) setGuestPlan(freePlan);
+      })
+      .catch((error) => {
+        if (active && error?.name !== 'AbortError') setGuestPlanError('Audit options could not be loaded. Please retry.');
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [loading, user, loadGuestPlan, suppliedGuestPlan, guestPlanAttempt]);
 
-  const source = user?.auditEntitlements || guestPlan || GUEST_FALLBACK;
+  const currentGuestPlan = suppliedGuestPlan || guestPlan;
+  const source = user?.auditEntitlements || currentGuestPlan || GUEST_FALLBACK;
   const allowedModes = source.allowedModes;
   const availableModes = source.availableModes;
   const pageLimits = source.pageLimits;
@@ -39,6 +60,10 @@ export function useAuditEntitlements() {
   return {
     user,
     authLoading: loading,
+    hasCurrentEntitlements: Boolean(user || currentGuestPlan),
+    guestPlanLoading: !user && !currentGuestPlan && loadGuestPlan && !guestPlanError,
+    guestPlanError: currentGuestPlan ? null : guestPlanError,
+    retryGuestPlan: () => setGuestPlanAttempt((attempt) => attempt + 1),
     plan: user?.plan || 'free',
     allowedModes,
     availableModes,

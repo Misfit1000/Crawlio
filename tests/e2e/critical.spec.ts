@@ -83,6 +83,7 @@ test.describe('guest audit integration', () => {
   });
 
   test('double submit creates one audit and terminal report survives refresh', async ({ page }) => {
+    await mockBlogApi(page);
     let starts = 0;
     let statusCalls = 0;
     let terminal = false;
@@ -102,6 +103,7 @@ test.describe('guest audit integration', () => {
 
     await page.goto('/');
     await page.getByLabel('Website or domain').fill('example.com');
+    await expect(page.getByRole('button', { name: 'Start audit', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: 'Start audit' }).evaluate((button: HTMLButtonElement) => { button.click(); button.click(); });
     await expect(page).toHaveURL(`/audit/live/${AUDIT_ID}`);
     await expect.poll(() => starts).toBe(1);

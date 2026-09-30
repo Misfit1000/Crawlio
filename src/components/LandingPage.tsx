@@ -21,14 +21,22 @@ import { loadPublicPlanProjection } from '../lib/plans/public-plan-client';
 import { StatusBadge } from './ui/visual-system';
 import { AuditConceptScene } from './ui/AuditConceptScene';
 import { handleTabListKeyDown } from '../lib/ui/keyboard';
+import { useAuditEntitlements } from '../hooks/useAuditEntitlements';
+import { AUDIT_MODES, type AuditMode } from '../lib/audit/audit-config';
 
 interface Props {
-  onStartAudit: (url: string) => Promise<void> | void;
+  onStartAudit: (url: string, mode: AuditMode) => Promise<void> | void;
   onExploreFeatures: () => void;
   onNavigate: (destination: LandingDestination) => void;
 }
 
 export type LandingDestination = 'dashboard' | 'reports' | 'start-audit';
+
+const homepageAuditModes: Record<AuditMode, { label: string; summary: string; description: string }> = {
+  quick: { label: 'Quick', summary: 'Focused checks', description: 'Fast feedback on your most important pages.' },
+  standard: { label: 'Standard', summary: 'Broader coverage', description: 'Broader discovery with standard SEO and technical checks.' },
+  deep: { label: 'Deep', summary: 'Expanded checks', description: 'Expanded discovery, crawl relationships, and detailed page checks.' },
+};
 
 const coverageGroups = [
   {
@@ -115,8 +123,23 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
   const [activeFinding, setActiveFinding] = useState(0);
   const [planProjection, setPlanProjection] = useState<PublicPlanProjection | null>(null);
   const [planDataUnavailable, setPlanDataUnavailable] = useState(false);
+  const [mode, setMode] = useState<AuditMode>('quick');
+  const [auditOptionsRequested, setAuditOptionsRequested] = useState(false);
+  const {
+    user, authLoading, hasCurrentEntitlements, guestPlanLoading, guestPlanError, retryGuestPlan,
+    selectableModes, allowedModes, pageLimits, unavailableReasons, refreshAuditEntitlements,
+  } = useAuditEntitlements({
+    loadGuestPlan: auditOptionsRequested,
+    guestPlan: planProjection?.plans.find((plan) => plan.sourcePlan === 'free') || null,
+  });
   const auditStartGuardRef = useRef(createAuditSubmitGuard());
   const pricingRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (hasCurrentEntitlements && !selectableModes.includes(mode) && selectableModes.length) {
+      setMode(selectableModes[0]);
+    }
+  }, [hasCurrentEntitlements, mode, selectableModes.join(',')]);
 
   useEffect(() => {
     const element = pricingRef.current;
@@ -165,11 +188,22 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
       setAuditError(normalized.error || 'Enter a valid public website or domain.');
       return;
     }
+    setAuditOptionsRequested(true);
+    if (authLoading || !hasCurrentEntitlements || !selectableModes.includes(mode)) {
+      setAuditError('Choose an available audit type before starting.');
+      return;
+    }
     if (!auditStartGuardRef.current.begin()) return;
     setStarting(true);
     setAuditError(null);
     try {
-      await onStartAudit(url);
+      if (user) {
+        const latest = await refreshAuditEntitlements();
+        if (!latest || !latest.allowedModes.includes(mode) || !latest.availableModes.includes(mode) || latest.pageLimits[mode] <= 0) {
+          throw new Error('This audit type is no longer available on your plan. Choose another option.');
+        }
+      }
+      await onStartAudit(url, mode);
     } catch (error) {
       setAuditError(error instanceof Error ? error.message : 'The audit could not start. Please try again.');
     } finally {
@@ -195,14 +229,37 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
               <p className="mt-5 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">See your SEO, website health, and browser safety in one live audit. Find the pages that need attention and turn the evidence into a practical fix list.</p>
               </div>
 
-              <form id="start-audit" onSubmit={handleSubmit} noValidate className="mt-8 max-w-2xl" aria-label="Start a website audit">
+              <form id="start-audit" onSubmit={handleSubmit} onFocusCapture={() => setAuditOptionsRequested(true)} onPointerDownCapture={() => setAuditOptionsRequested(true)} noValidate className="mt-8 max-w-2xl" aria-label="Start a website audit">
                 <label htmlFor="homepage-audit-url" className="mb-2 block text-sm font-semibold">Website or domain</label>
                 <div className="rounded-xl border border-border bg-card p-2 shadow-sm focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20 sm:flex">
                   <div className="relative min-w-0 flex-1">
                     <Globe className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-                    <input {...AUDIT_TARGET_INPUT_PROPS} id="homepage-audit-url" autoComplete="url" value={url} onChange={(event) => setUrl(event.target.value)} aria-describedby={auditError ? 'homepage-audit-error' : 'homepage-audit-help'} aria-invalid={Boolean(auditError)} className="min-h-12 w-full bg-transparent pl-11 pr-3 text-base outline-none placeholder:text-[var(--subtle-foreground)]" />
+                    <input {...AUDIT_TARGET_INPUT_PROPS} id="homepage-audit-url" autoComplete="url" value={url} onChange={(event) => { setUrl(event.target.value); setAuditOptionsRequested(true); }} aria-describedby={auditError ? 'homepage-audit-error' : 'homepage-audit-help'} aria-invalid={Boolean(auditError)} className="min-h-12 w-full bg-transparent pl-11 pr-3 text-base outline-none placeholder:text-[var(--subtle-foreground)]" />
                   </div>
-                  <button type="submit" disabled={starting || !url.trim()} className="trust-button mt-2 min-h-12 w-full shrink-0 px-5 sm:mt-0 sm:w-auto">{starting ? 'Starting audit...' : 'Start audit'}{!starting && <ArrowRight className="h-4 w-4" aria-hidden="true" />}</button>
+                  <button type="submit" disabled={starting || authLoading || !url.trim() || !hasCurrentEntitlements || !selectableModes.includes(mode)} className="trust-button mt-2 min-h-12 w-full shrink-0 px-5 sm:mt-0 sm:w-auto">{starting ? 'Starting audit...' : 'Start audit'}{!starting && <ArrowRight className="h-4 w-4" aria-hidden="true" />}</button>
+                </div>
+                <fieldset className="mt-4" disabled={starting} aria-describedby="homepage-audit-mode-help">
+                  <legend className="mb-2 text-xs font-semibold text-muted-foreground">Audit type</legend>
+                  <div className="grid grid-cols-3 gap-1 rounded-lg border border-border bg-muted/40 p-1">
+                    {AUDIT_MODES.map((option) => {
+                      const available = hasCurrentEntitlements && selectableModes.includes(option);
+                      const selected = mode === option;
+                      const unavailable = hasCurrentEntitlements && !available;
+                      const detail = !hasCurrentEntitlements ? homepageAuditModes[option].summary : available ? `Up to ${pageLimits[option].toLocaleString()} pages` : allowedModes.includes(option) ? 'Unavailable' : 'Not included';
+                      return (
+                        <label key={option} className={`relative min-w-0 rounded-md focus-within:ring-2 focus-within:ring-accent/20 ${available ? 'cursor-pointer hover:bg-muted' : ''}`}>
+                          <input type="radio" name="homepage-audit-mode" value={option} aria-label={homepageAuditModes[option].label} checked={selected} disabled={!available} onChange={() => { setMode(option); setAuditError(null); }} className="sr-only" />
+                          <span className={`flex min-h-14 flex-col justify-center rounded-md border px-2 py-2 transition-colors ${selected ? 'border-accent/30 bg-card text-foreground shadow-sm' : 'border-transparent text-muted-foreground'} ${unavailable ? 'opacity-70' : ''}`}>
+                            <span className="flex items-center gap-1.5 text-sm font-semibold">{homepageAuditModes[option].label}{unavailable && <LockKeyhole className="h-3 w-3 shrink-0" aria-hidden="true" />}{selected && !unavailable && <CheckCircle2 className="ml-auto h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true" />}</span>
+                            <span className="mt-1 text-xs leading-5">{detail}</span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+                <div id="homepage-audit-mode-help" className="mt-2 min-h-10 text-xs leading-5 text-muted-foreground" aria-live="polite">
+                  {guestPlanError ? <span className="flex flex-wrap items-center gap-x-2">{guestPlanError}<button type="button" onClick={retryGuestPlan} className="font-semibold text-accent underline">Retry</button></span> : authLoading || guestPlanLoading ? 'Checking available audit types...' : hasCurrentEntitlements && !selectableModes.length ? 'No audit types are currently available. Please check your plan or try again later.' : <><span>{homepageAuditModes[mode].description}</span>{hasCurrentEntitlements && selectableModes.includes(mode) && <span className="block">Up to {pageLimits[mode].toLocaleString()} successfully analysed pages. Coverage depends on site access.</span>}{unavailableReasons[mode] && <span className="block">{unavailableReasons[mode]}</span>}</>}
                 </div>
                 <div className="mt-2 flex flex-col gap-2 text-xs leading-5 text-muted-foreground sm:flex-row sm:items-center sm:justify-between"><p id="homepage-audit-help">Try example.com, www.example.com, or a full public page URL.</p><a href="#example-report" className="inline-flex items-center gap-1 font-semibold text-accent hover:underline">View example report <ArrowRight className="h-3.5 w-3.5" /></a></div>
                 {auditError && <p id="homepage-audit-error" className="mt-2 text-sm font-medium text-red-600 dark:text-red-300" role="alert">{auditError}</p>}

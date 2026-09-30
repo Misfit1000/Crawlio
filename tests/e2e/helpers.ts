@@ -90,7 +90,22 @@ export function auditSnapshot(status: 'queued' | 'running' | 'completed' = 'comp
   };
 }
 
+export function publicPlanFixture() {
+  return {
+    version: 1,
+    updatedAt: '2026-09-30T00:00:00.000Z',
+    plans: [
+      { id: 'free', sourcePlan: 'free', dailyAudits: 3, monthlyAudits: 30, pagesPerAudit: 5, allowedModes: ['quick'], availableModes: ['quick'], pageLimits: { quick: 5, standard: 0, deep: 0 }, exportsEnabled: true, pdfEnabled: false, scheduledAuditsEnabled: false },
+      { id: 'plus', sourcePlan: 'paid', dailyAudits: 25, monthlyAudits: 500, pagesPerAudit: 50, allowedModes: ['quick', 'standard'], availableModes: ['quick', 'standard'], pageLimits: { quick: 25, standard: 50, deep: 0 }, exportsEnabled: true, pdfEnabled: true, scheduledAuditsEnabled: true },
+      { id: 'pro', sourcePlan: 'agency', dailyAudits: 100, monthlyAudits: 3000, pagesPerAudit: 75, allowedModes: ['quick', 'standard', 'deep'], availableModes: ['quick', 'standard', 'deep'], pageLimits: { quick: 25, standard: 50, deep: 75 }, exportsEnabled: true, pdfEnabled: true, scheduledAuditsEnabled: true },
+    ],
+  };
+}
+
 export async function mockBlogApi(page: Page) {
+  await page.route('**/api/tools/plans/public', (route) => route.fulfill({
+    json: { success: true, data: publicPlanFixture() },
+  }));
   await page.route('**/api/tools/blog/posts**', (route) => route.fulfill({
     status: 200,
     contentType: 'application/json',

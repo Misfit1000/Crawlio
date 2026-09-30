@@ -414,7 +414,7 @@ export default function App() {
               onLogout={handleLogout}
             >
               <LandingPage 
-                onStartAudit={(url) => startLiveAudit(url, 'quick')}
+                onStartAudit={startLiveAudit}
                 onExploreFeatures={() => {
                   openAppTab('dashboard');
                 }}
