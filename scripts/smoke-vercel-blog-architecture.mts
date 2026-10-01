@@ -111,6 +111,21 @@ async function groqOnly() {
   assert.equal(getGroqBlogConfiguration().configured, false);
   await assert.rejects(() => generateGroqCompletion({ role: 'structured', system: 'x', user: 'x' }), (error: any) => error.code === 'GROQ_DISABLED');
   Object.assign(process.env, { GROQ_BLOG_ENABLED: 'true', GROQ_API_KEY: 'test-placeholder-not-a-real-key', GROQ_BLOG_MIN_REQUEST_INTERVAL_MS: '250' });
+  process.env.GROQ_BLOG_WRITER_MODEL = GROQ_DEFAULT_WRITER_MODEL;
+  process.env.GROQ_BLOG_STRUCTURED_MODEL = GROQ_DEFAULT_STRUCTURED_MODEL;
+  const providerRequests: Array<Record<string, any>> = [];
+  const providerTest = await testGroqProvider((async (_url, init) => {
+    providerRequests.push(JSON.parse(String(init?.body)));
+    return response('{"ok":true}');
+  }) as typeof fetch);
+  assert.equal(providerTest.status, 'connected');
+  assert.equal(providerRequests.length, 2, 'both configured roles must be tested');
+  for (const request of providerRequests) {
+    assert.equal(request.model, 'openai/gpt-oss-120b');
+    assert.equal(request.max_tokens, 1_024, 'reasoning models need room before their JSON answer');
+    assert.equal(request.reasoning_effort, 'low');
+    assert.equal(request.include_reasoning, false);
+  }
   let body = '';
   const structured = await generateGroqCompletion({ role: 'structured', system: 'x', user: 'x', maxAttempts: 1, fetchImpl: (async (_url, init) => { body = String(init?.body); return response('{"ok":true}'); }) as typeof fetch });
   assert.equal(JSON.parse(structured.content).ok, true);

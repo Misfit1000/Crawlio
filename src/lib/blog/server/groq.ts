@@ -4,7 +4,7 @@ if (typeof window !== 'undefined') throw new Error('Groq blog provider code is s
 
 export const GROQ_DEFAULT_BASE_URL = 'https://api.groq.com/openai/v1';
 export const GROQ_DEFAULT_STRUCTURED_MODEL = 'openai/gpt-oss-120b';
-export const GROQ_DEFAULT_WRITER_MODEL = 'llama-3.3-70b-versatile';
+export const GROQ_DEFAULT_WRITER_MODEL = 'openai/gpt-oss-120b';
 const MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
 
@@ -240,7 +240,7 @@ export async function testGroqProvider(fetchImpl?: ProviderFetch) {
   if (!config.apiKey) return { status: 'not configured' as const, model: config.structuredModel, writerModel: config.writerModel, host: config.baseUrlHost, durationMs: null, errorCode: 'GROQ_NOT_CONFIGURED' as const };
   try {
     const result = await generateGroqStructured({ role: 'structured', system: 'Return JSON only.', user: 'Return {"ok":true}.', validate: (value): value is {ok:true} => Boolean(value && typeof value === 'object' && (value as {ok?:unknown}).ok === true), maxTokens: 1_024, temperature: 0, maxAttempts: 1, timeoutMs: 15_000, fetchImpl });
-    await generateGroqStructured({ role: 'writer', system: 'Return JSON only.', user: 'Return {"ok":true}.', validate: (value): value is {ok:true} => Boolean(value && typeof value === 'object' && (value as {ok?:unknown}).ok === true), maxTokens: 128, temperature: 0, maxAttempts: 1, timeoutMs: 15_000, fetchImpl });
+    await generateGroqStructured({ role: 'writer', system: 'Return JSON only.', user: 'Return {"ok":true}.', validate: (value): value is {ok:true} => Boolean(value && typeof value === 'object' && (value as {ok?:unknown}).ok === true), maxTokens: 1_024, temperature: 0, maxAttempts: 1, timeoutMs: 15_000, fetchImpl });
     return { status: 'connected' as const, model: result.model, writerModel: config.writerModel, host: config.baseUrlHost, durationMs: result.durationMs, errorCode: null };
   } catch (error) {
     const safe = error instanceof GroqBlogProviderError ? error : new GroqBlogProviderError('GROQ_UNAVAILABLE', 'Groq could not be reached.');

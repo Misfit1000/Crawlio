@@ -35,3 +35,7 @@ Deploy the compatible Render worker and Vercel application after these additive 
 - These are build measurements, not field LCP/INP measurements or claims of production database savings.
 
 Production canonical origin was corrected to `https://crawlio1.vercel.app`. Verify the deployed commit, worker heartbeat, current provider connection and saved generation settings after release. The future low-cost tools remain a separate proposal in `docs/LOW_COST_FEATURE_ROADMAP.md`.
+
+## Production Follow-Up
+
+The application and Render worker deployed commit `70116ca` successfully. Saved Groq generation and discovery settings were enabled while preserving editorial review and the real Autopilot approval threshold. A live dual-model check identified the retired Llama writer override; the follow-up switches the default and Vercel override to `openai/gpt-oss-120b` and gives the writer connectivity check a reasoning-compatible token budget. No test article was published.
