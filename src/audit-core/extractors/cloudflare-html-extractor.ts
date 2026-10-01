@@ -2,7 +2,9 @@ import { ParsedPageData } from '../../lib/seo/html-parser';
 import { removeStopwords } from '../../lib/keywords/stopwords';
 import { isSameDomain } from '../../lib/seo/url-utils';
 
-export interface PageEvidence extends ParsedPageData {
+declare const HTMLRewriter: any;
+
+export interface ExtractedPageEvidence extends ParsedPageData {
   url: string;
   finalUrl: string;
   statusCode: number;
@@ -63,7 +65,7 @@ export async function extractWithHtmlRewriter(
     depth: number;
     source: string;
   }
-): Promise<PageEvidence> {
+): Promise<ExtractedPageEvidence> {
   const baseUrl = input.finalUrl;
   let documentBaseUrl = baseUrl;
 
@@ -148,117 +150,9 @@ export async function extractWithHtmlRewriter(
     } catch {}
   };
 
-  const rewriter = new HTMLRewriter()
-    .on('html', {
-      element(el) {
-        lang = el.getAttribute('lang') || '';
-      }
-    })
-    .on('base[href]', {
-      element(el) {
-        const href = el.getAttribute('href');
-        if (href) {
-          try {
-            const resolvedBase = new URL(href, baseUrl);
-            if (resolvedBase.protocol === 'http:' || resolvedBase.protocol === 'https:') {
-              documentBaseUrl = resolvedBase.toString();
-            }
-          } catch {}
-        }
-      }
-    })
-    .on('title', {
-      element() { capturingTitle = true; },
-      text(t) { if (capturingTitle) title += t.text; },
-      // HTMLRewriter elements fire `element` before children, but we have to handle close manually or using element end?
-      // Unfortunately, HTMLRewriter doesn't have an easy `close` handler for elements without tracking. Wait, there's `onEndTag` in some APIs, but Cloudflare HTMLRewriter allows `element.onEndTag()` in the element handler!
-    });
-
-  // Let's refactor to use element.onEndTag
-  const captureText = (el: any, callback: (text: string) => void) => {
-    let textContent = '';
-    el.onEndTag(() => {
-      callback(textContent.trim());
-    });
-    return {
-      text(t: any) {
-        textContent += t.text;
-      }
-    };
-  };
-
-  // Re-define rewriter to properly use onEndTag
-  const rw = new HTMLRewriter()
-    .on('html', {
-      element(el) { lang = el.getAttribute('lang') || ''; }
-    })
-    .on('base[href]', {
-      element(el) {
-        const href = el.getAttribute('href');
-        if (href) {
-          try {
-            const resolvedBase = new URL(href, baseUrl);
-            if (resolvedBase.protocol === 'http:' || resolvedBase.protocol === 'https:') {
-              documentBaseUrl = resolvedBase.toString();
-            }
-          } catch {}
-        }
-      }
-    })
-    .on('title', {
-      element(el) {
-        let textContent = '';
-        el.onEndTag(() => { title = textContent.trim(); });
-        // Can't directly add text handler here in Cloudflare HTMLRewriter inside element() without modifying stream, but wait, `element` handler doesn't catch text. We must use `on('title', { text(t) {...} })` globally.
-      },
-      text(t) { title += t.text; } // Since there's usually only one title, this is fine.
-    })
-    .on('meta', {
-      element(el) {
-        const name = (el.getAttribute('name') || '').toLowerCase();
-        const property = (el.getAttribute('property') || '').toLowerCase();
-        const content = el.getAttribute('content') || '';
-
-        if (name === 'description') metaDescription = content;
-        if (name === 'robots') metaRobots = content;
-        if (name === 'viewport') viewport = content;
-        if (name === 'theme-color') themeColor = content;
-        if (name === 'twitter:card') twitterCard = content;
-        if (property === 'og:title') ogTitle = content;
-        if (property === 'og:description') ogDescription = content;
-        if (property === 'og:image') ogImageRaw = content;
-        if (property === 'og:site_name') siteName = content;
-      }
-    })
-    .on('link', {
-      element(el) {
-        const rel = (el.getAttribute('rel') || '').toLowerCase();
-        const href = el.getAttribute('href') || '';
-        if (rel.includes('canonical') && !canonicalRaw) {
-          canonicalRaw = href;
-        }
-        if ((rel.includes('icon') || rel === 'apple-touch-icon') && !faviconUrlRaw) {
-          faviconUrlRaw = href;
-        }
-        if (rel === 'stylesheet') {
-          checkInsecureResource(href);
-        }
-      }
-    })
-    .on('h1', {
-      element(el) {
-        let textContent = '';
-        el.onEndTag(() => { h1.push(textContent.trim()); });
-        // To capture text inside h1, we need to handle text chunks. 
-        // Wait, HTMLRewriter doesn't natively support stateful text accumulation per element unless we do it globally or with a wrapper.
-      }
-    });
-
-  // Since HTMLRewriter text chunks fire globally, we must track state variables.
-  let activeElement: string | null = null;
   let activeText = '';
 
-  const rewriter2 = new HTMLRewriter()
+  const rewriter = new HTMLRewriter()
     .on('html', { element(el) { lang = el.getAttribute('lang') || ''; } })
     .on('base[href]', {
       element(el) {
@@ -476,7 +370,7 @@ export async function extractWithHtmlRewriter(
     });
 
   // Consume the response stream using the rewriter
-  await rewriter2.transform(response).arrayBuffer();
+  await rewriter.transform(response).arrayBuffer();
 
   const bodyText = bodyTextChunks.join('').replace(/\s+/g, ' ').trim();
   const wordCount = bodyText.split(/\s+/).filter(w => w.length > 0).length;

@@ -1,5 +1,5 @@
 import { parseHtml } from '../../lib/seo/html-parser';
-import { PageEvidence } from './cloudflare-html-extractor';
+import { ExtractedPageEvidence } from './cloudflare-html-extractor';
 
 export async function extractWithRender(
   response: Response,
@@ -14,7 +14,7 @@ export async function extractWithRender(
     depth: number;
     source: string;
   }
-): Promise<PageEvidence> {
+): Promise<ExtractedPageEvidence> {
   const html = await response.text();
   const parsedPageData = parseHtml(html, input.finalUrl);
 
