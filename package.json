@@ -169,8 +169,8 @@
   "dependencies": {
     "@sentry/node": "^10.66.0",
     "@sentry/react": "^10.66.0",
-    "@supabase/supabase-js": "^2.110.1",
-    "@tailwindcss/vite": "^4.1.14",
+    "@supabase/supabase-js": "^2.117.2",
+    "@tailwindcss/vite": "^4.3.3",
     "@tiptap/pm": "^3.27.3",
     "@tiptap/react": "^3.27.3",
     "@tiptap/starter-kit": "^3.27.3",
@@ -180,12 +180,12 @@
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
-    "papaparse": "^5.5.4",
-    "pdfkit": "^0.19.1",
+    "papaparse": "^5.7.0",
+    "pdfkit": "^0.20.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "sanitize-html": "^2.17.6",
-    "sharp": "^0.35.3",
+    "sharp": "^0.35.5",
     "vite": "^6.2.0"
   },
   "devDependencies": {
