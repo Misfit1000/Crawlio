@@ -208,4 +208,87 @@ const reportScores = toReportScoreRecord(scoreResult);
 assert.equal(reportScores.overall, scoreResult.overall);
 console.log(`   ✅ Scoring calculated successfully: Overall = ${scoreResult.overall} (${scoreResult.grade})\n`);
 
+// 9. Canonical Audit Runner End-to-End Test
+console.log('9. Testing Canonical Audit Runner end-to-end orchestration...');
+const { runCanonicalAudit } = await import('../src/audit-core/engine');
+const { getCanonicalProfile } = await import('../src/audit-core/contracts');
+
+const mockPagesMap = new Map<string, string>([
+  [
+    'https://crawlio.test/robots.txt',
+    'User-agent: *\nAllow: /\nSitemap: https://crawlio.test/sitemap.xml',
+  ],
+  [
+    'https://crawlio.test/sitemap.xml',
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://crawlio.test/</loc></url><url><loc>https://crawlio.test/pricing</loc></url></urlset>',
+  ],
+  [
+    'https://crawlio.test/',
+    '<!DOCTYPE html><html><head><title>Home</title><meta name="description" content="Home page description."></head><body><main><h1>Welcome</h1><a href="/pricing">Pricing</a></main></body></html>',
+  ],
+  [
+    'https://crawlio.test/pricing',
+    '<!DOCTYPE html><html><head><title>Pricing</title><meta name="description" content="Pricing plans."></head><body><main><h1>Plans</h1><a href="/">Home</a></main></body></html>',
+  ],
+]);
+
+const mockNetworkAdapter = {
+  async fetchSafe(targetUrl: string) {
+    const body = mockPagesMap.get(targetUrl) || '<html><head><title>404</title></head><body>Not Found</body></html>';
+    const status = mockPagesMap.has(targetUrl) ? 200 : 404;
+    return {
+      finalUrl: targetUrl,
+      status,
+      durationMs: 40,
+      bodyBytes: body.length,
+      contentType: targetUrl.endsWith('.xml') ? 'application/xml' : targetUrl.endsWith('.txt') ? 'text/plain' : 'text/html',
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+        'strict-transport-security': 'max-age=31536000',
+      },
+      body,
+    };
+  },
+  resolveUrl(inputUrl: string, base?: string) {
+    return normalizeCrawlUrl(inputUrl, base);
+  },
+};
+
+const writtenPages: any[] = [];
+const writtenIssues: any[] = [];
+let writtenReport: any = null;
+
+const report = await runCanonicalAudit({
+  auditId: 'test-audit-123',
+  normalizedUrl: 'https://crawlio.test/',
+  workerId: 'parity-runner-1',
+  executorType: 'cloudflare',
+  profile: getCanonicalProfile('quick'),
+  network: mockNetworkAdapter,
+  extractor: extractWithRender,
+  writer: {
+    async addPage(page) {
+      const saved = { ...page, id: `p-${writtenPages.length + 1}` };
+      writtenPages.push(saved);
+      return saved;
+    },
+    async addIssue(issue) {
+      writtenIssues.push(issue);
+    },
+    async addEvent() {},
+    async writeProgress() {},
+    async setFinalReport(r) {
+      writtenReport = r;
+    },
+  },
+});
+
+assert(report !== null, 'Canonical audit runner must return a complete report');
+assert.equal(report.scores.executor, 'cloudflare');
+assert.equal(writtenPages.length, 2, 'Must have discovered and crawled 2 pages via sitemap and links');
+assert(writtenPages.some(p => p.url === 'https://crawlio.test/'));
+assert(writtenPages.some(p => p.url === 'https://crawlio.test/pricing'));
+assert(report.scores.overall !== null);
+console.log(`   ✅ End-to-end runner crawled ${writtenPages.length} pages, scored ${report.scores.overall}, stopReason: ${report.scores.coverage.stopReason}\n`);
+
 console.log('🎉 ALL MULTI-EXECUTOR PARITY CHECKS PASSED DETERMINISTICALLY!');
