@@ -7,6 +7,7 @@ import { CRAWL_SLICE_MS, CRAWL_SLICE_PAGES, retryDelayMs } from '../lib/audit/sc
 import { getAuditModeConfig } from '../lib/audit/audit-config';
 import { getAuditProfileForDocument, isSeoIssueAllowedForProfile } from '../lib/audit/audit-profiles';
 import { shouldPublishProvisionalScore } from '../lib/audit/audit-provisional-score';
+import { readAuditPresentationSummary } from '../lib/audit/audit-presentation-summary';
 import { measuredAuditCategories, storedMeasuredAuditCategories } from '../lib/audit/audit-evidence-quality';
 import { classifyAuditFailure, failureForCode, failureForHttpStatus, type AuditFailure } from '../lib/audit/audit-failures';
 import type { ResourceAuditDocument, ResourceAuditIssue, ResourceAuditPage, ResourceAuditReport } from '../lib/audit/resource-types';
@@ -203,6 +204,8 @@ export async function runScalableSlice(workerId: string, onActivity?: (auditId: 
       const report:ResourceAuditReport={scores:{...toReportScoreRecord(score),auditEngineVersion:AUDIT_ENGINE_VERSION,scoringVersion:scoreOptions(run).scoringVersion,checkRegistryVersion:CHECK_REGISTRY_VERSION,
         processingVersion:2,unavailableCount:run.unavailable_count,evidenceSample:true,checkCountUnit:'groups',coverage:{pagesDiscovered:run.discovered,pagesAttempted:run.attempted,pagesAnalysed:run.analysed,pagesFailed:run.failed,pagesBlocked:run.blocked,pageLimit:audit.pageLimit,coveragePercent:Math.round(100*run.analysed/audit.pageLimit),discoveredCoveragePercent:run.discovered ? Math.round(100*run.analysed/run.discovered) : null,quotaReached:run.analysed>=audit.pageLimit,stopReason:reason}},
         summary:`Analysed ${run.analysed} of up to ${audit.pageLimit} pages. ${run.failed} failed and ${run.blocked} were blocked. Full evidence is available in the paginated report and exports.`,
+        // Finalization fills the bounded recommendations from all retained findings in the same transaction.
+        presentationSummary:readAuditPresentationSummary(run.presentation_summary),
         pages,topIssues,exports:{json:`/api/tools/audit/export/${audit.id}/json`,issuesCsv:`/api/tools/audit/export/${audit.id}/issues.csv`,pagesCsv:`/api/tools/audit/export/${audit.id}/pages.csv`},generatedAt:new Date().toISOString()};
       await finishScalableSlice(run,report,reason);
       const completed = await auditRepository.getAudit(audit.id);

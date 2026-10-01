@@ -19,6 +19,7 @@ import {
   requireSupabaseAdminClient,
 } from './server';
 import { deploymentVersionRow } from '../platform/version';
+import { readAuditPresentationSummary } from '../audit/audit-presentation-summary';
 
 type DbRow = Record<string, any>;
 export type WorkerHeartbeatStatus = 'starting' | 'idle' | 'running' | 'stopping' | 'stopped' | 'failed';
@@ -30,6 +31,7 @@ export interface WorkerHeartbeat {
   pollIntervalMs: number;
   currentAuditId: string | null;
   version: string;
+  apiSchemaVersion?: number;
   auditEngineVersion?: string;
   scoringVersion?: string;
   checkRegistryVersion?: string;
@@ -159,6 +161,7 @@ export function toAuditDocument(row: DbRow | null | undefined): ResourceAuditDoc
   return {
     id: row.id,
     processingVersion: row.processing_version === 2 ? 2 : 1,
+    presentationSummary: readAuditPresentationSummary(row.presentation_summary),
     userId: row.user_id ?? null,
     guestKeyHash: row.guest_key_hash ?? null,
     projectId: row.project_id ?? null,
@@ -543,6 +546,7 @@ async function insertAuditIssues(
 function toAuditReport(row: DbRow | null | undefined): ResourceAuditReport | null {
   if (!row) return null;
   return {
+    presentationSummary: readAuditPresentationSummary(row.presentation_summary),
     scores: row.scores ?? {},
     summary: typeof row.summary === 'string' ? row.summary : row.summary?.text ?? '',
     topIssues: (row.top_issues ?? []) as ResourceAuditIssue[],
@@ -555,6 +559,7 @@ function toAuditReport(row: DbRow | null | undefined): ResourceAuditReport | nul
 export function reportToRow(auditId: string, report: ResourceAuditReport) {
   return {
     audit_id: auditId,
+    ...(report.presentationSummary ? { presentation_summary: report.presentationSummary } : {}),
     scores: report.scores,
     summary: { text: report.summary },
     top_issues: report.topIssues,
@@ -612,6 +617,7 @@ export const auditRepository = {
       pollIntervalMs: heartbeat.pollIntervalMs,
       currentAuditId: heartbeat.currentAuditId ?? null,
       version: heartbeat.version || 'unknown',
+      apiSchemaVersion: heartbeat.apiSchemaVersion,
       auditEngineVersion: heartbeat.auditEngineVersion,
       scoringVersion: heartbeat.scoringVersion,
       checkRegistryVersion: heartbeat.checkRegistryVersion,
@@ -624,6 +630,7 @@ export const auditRepository = {
       lastCompletedAuditAt: heartbeat.lastCompletedAuditAt,
       lastFatalWorkerError: heartbeat.lastFatalWorkerError,
       maintenanceMode: heartbeat.maintenanceMode,
+      sentryConfigured: heartbeat.sentryConfigured,
     };
 
     const { error } = await client
@@ -1379,12 +1386,12 @@ export const auditRepository = {
       if (audits.length) {
         const auditIds = audits.map((audit) => audit.id);
         const reports = input.summaryOnly
-          ? await client.from('audit_reports').select('audit_id,scores,summary,generated_at').in('audit_id', auditIds)
+          ? await client.from('audit_reports').select('audit_id,scores,summary,generated_at,presentation_summary').in('audit_id', auditIds)
           : await client.from('audit_reports').select('*').in('audit_id', auditIds);
         assertNoError(reports.error, 'Load audit history reports');
         for (const row of reports.data ?? []) {
           const report = toAuditReport(row);
-          if (report) reportByAudit.set(String(row.audit_id), input.summaryOnly ? { scores: report.scores, summary: report.summary, generatedAt: report.generatedAt } : report);
+          if (report) reportByAudit.set(String(row.audit_id), input.summaryOnly ? { scores: report.scores, summary: report.summary, generatedAt: report.generatedAt, presentationSummary: report.presentationSummary } : report);
         }
       }
       return {
@@ -1404,7 +1411,7 @@ export const auditRepository = {
     return {
       items: all.slice(offset, offset + limit).map((audit) => {
         const report = memory.reports.get(audit.id) ?? null;
-        return { audit, finalReport: report && input.summaryOnly ? { scores: report.scores, summary: report.summary, generatedAt: report.generatedAt } : report };
+        return { audit, finalReport: report && input.summaryOnly ? { scores: report.scores, summary: report.summary, generatedAt: report.generatedAt, presentationSummary: report.presentationSummary } : report };
       }),
       total: all.length,
       limit,

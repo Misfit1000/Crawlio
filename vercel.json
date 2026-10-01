@@ -1,4 +1,5 @@
 {
+  "functions": { "api/index.js": { "maxDuration": 300 } },
   "crons": [
     { "path": "/api/tools/blog/jobs/dispatch", "schedule": "15 3 * * *" },
     { "path": "/api/tools/projects/scheduler/run", "schedule": "35 3 * * *" }

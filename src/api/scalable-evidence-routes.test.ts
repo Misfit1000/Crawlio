@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import express from 'express';
 import type { AddressInfo } from 'node:net';
-import type { ResourceAuditDocument } from '../lib/audit/resource-types';
-import { buildEvidenceSearchFilter, readEvidencePage } from '../lib/supabase/scalable-audit-repository';
+import type { AuditPresentationSummary, ResourceAuditDocument } from '../lib/audit/resource-types';
+import { buildEvidenceSearchFilter, readEvidencePage, validateEvidenceAffectedUrl } from '../lib/supabase/scalable-audit-repository';
 import { evidenceTotal, parseEvidenceQuery, registerScalableEvidenceRoutes } from './scalable-evidence-routes';
 
 test('query bounds and validation', () => {
@@ -29,7 +29,17 @@ test('query bounds and validation', () => {
   for (const kind of ['pages', 'events'] as const) {
     assert.throws(() => parseEvidenceQuery({ query: 'title' }, kind));
     assert.throws(() => parseEvidenceQuery({ query: '' }, kind));
+    assert.throws(() => parseEvidenceQuery({ section: 'on-page' }, kind));
+    assert.throws(() => parseEvidenceQuery({ affectedUrl: 'https://example.com/' }, kind));
   }
+  assert.equal(parseEvidenceQuery({ section: 'security', affectedUrl: 'https://example.com/page?key=a,b' }, 'issues').section, 'security');
+  for (const section of ['', 'seo', 'onPage', 'technical,security', ['security'], { eq: 'security' }]) {
+    assert.throws(() => parseEvidenceQuery({ section }, 'issues'));
+  }
+  for (const affectedUrl of ['', '/page', 'https:example.com', 'javascript:alert(1)', 'ftp://example.com/', 'https://user:pass@example.com/', 'https://example.com/#fragment', 'https://example.com/a b', 'https://example.com/\n', `https://example.com/${'x'.repeat(2048)}`, ['https://example.com/'], { eq: 'https://example.com/' }]) {
+    assert.throws(() => parseEvidenceQuery({ affectedUrl }, 'issues'));
+  }
+  assert.equal(validateEvidenceAffectedUrl('https://example.com/path?x=",audit_id.neq.other'), 'https://example.com/path?x=",audit_id.neq.other');
 });
 
 test('search builder quotes syntax and escapes literal wildcard patterns', () => {
@@ -91,6 +101,16 @@ test('repository sends search alongside audit filters and bounded ordered cursor
     await assert.rejects(readEvidencePage('owned', 'issues', { query: 'x'.repeat(161) }));
     await assert.rejects(readEvidencePage('owned', 'pages', { query: 'Missing title' }));
     assert.equal(requests.length, beforeInvalid);
+    const filtered = await readEvidencePage('owned', 'issues', { section: 'security', affectedUrl: 'https://example.com/page?key=a,b', cursor: 'issue_080', limit: 1 });
+    assert.equal(filtered.limit, 1);
+    assert.equal(requests.at(-1)!.searchParams.get('audit_report_section'), 'eq.security');
+    assert.equal(requests.at(-1)!.searchParams.get('affected_url'), 'eq.https://example.com/page?key=a,b');
+    assert.equal(requests.at(-1)!.searchParams.get('id'), 'gt.issue_080');
+    const beforeBadFilters = requests.length;
+    await assert.rejects(readEvidencePage('owned', 'issues', { section: 'seo' }));
+    await assert.rejects(readEvidencePage('owned', 'issues', { affectedUrl: 'javascript:alert(1)' }));
+    await assert.rejects(readEvidencePage('owned', 'events', { section: 'security' }));
+    assert.equal(requests.length, beforeBadFilters);
   } finally {
     if (previousUrl === undefined) delete process.env.SUPABASE_URL; else process.env.SUPABASE_URL = previousUrl;
     if (previousKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY; else process.env.SUPABASE_SERVICE_ROLE_KEY = previousKey;
@@ -128,7 +148,7 @@ test('authorized cursor route, summary totals and error handling', async () => {
   await new Promise<void>(resolve => server.once('listening', resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/tools/audit`;
   try {
-    for (const path of ['owned/evidence/pages', 'other/evidence/pages', 'owned/evidence/issues?query=title']) {
+    for (const path of ['owned/evidence/pages', 'other/evidence/pages', 'owned/evidence/issues?query=title', 'owned/evidence/issues?section=security&affectedUrl=https%3A%2F%2Fexample.com%2F']) {
       const response = await fetch(`${base}/${path}`);
       assert.equal(response.status, 404);
       assert.equal(response.headers.get('cache-control'), 'private, no-store');
@@ -144,6 +164,7 @@ test('authorized cursor route, summary totals and error handling', async () => {
     const firstBody = await first.json();
     assert.equal(firstBody.data.total, 501);
     assert.equal(firstBody.data.totalScope, 'audit');
+    assert.equal(firstBody.data.matchingCount, 501);
     assert.equal(firstBody.data.nextCursor, 'next_50');
     const search = 'title%_\\*",(audit_id.neq.owned)';
     const second = await fetch(`${base}/owned/evidence/issues?cursor=next_50&limit=200&severity=high&category=SEO&query=${encodeURIComponent(` ${search} `)}`, { headers: { 'x-test-guest': 'owner' } });
@@ -151,7 +172,7 @@ test('authorized cursor route, summary totals and error handling', async () => {
     assert.equal(secondBody.data.nextCursor, null);
     assert.equal(secondBody.data.total, 900);
     assert.equal(secondBody.data.filteredTotal, null);
-    assert.deepEqual(calls.at(-1), { id: 'owned', kind: 'issues', input: { cursor: 'next_50', limit: 100, severity: 'high', category: 'SEO', query: search } });
+    assert.deepEqual(calls.at(-1), { id: 'owned', kind: 'issues', input: { cursor: 'next_50', limit: 100, severity: 'high', category: 'SEO', query: search, section: undefined, affectedUrl: undefined } });
     const searchOnly = await fetch(`${base}/owned/evidence/issues?query=title`, { headers });
     const searchBody = await searchOnly.json();
     assert.equal(searchBody.data.total, 900);
@@ -159,9 +180,26 @@ test('authorized cursor route, summary totals and error handling', async () => {
     assert.equal(searchBody.data.nextCursor, 'next_50');
     const emptySearch = await fetch(`${base}/owned/evidence/issues?query=%20`, { headers });
     assert.equal((await emptySearch.json()).data.filteredTotal, 900);
+    const oldSection = await fetch(`${base}/owned/evidence/issues?section=security`, { headers });
+    assert.equal((await oldSection.json()).data.matchingCount, null);
+    audit.presentationSummary = { version: 1, scope: 'complete', analysedPages: 0, attemptedPages: 0,
+      responseOutcomes: { success: 0, redirect: 0, clientError: 0, serverError: 0, unavailable: 0 },
+      delivery: { count: 0, totalResponseMs: 0, totalBytes: 0, averageResponseMs: null, averagePageBytes: null },
+      pagesWithFindings: 0, depthCounts: {}, findingsBySection: { security: 612 }, topRecommendations: [], updatedAt: new Date().toISOString() } satisfies AuditPresentationSummary;
+    const sectionOnly = await fetch(`${base}/owned/evidence/issues?section=security&cursor=next_50`, { headers });
+    const sectionBody = await sectionOnly.json();
+    assert.equal(sectionBody.data.matchingCount, 612);
+    assert.equal(sectionBody.data.filteredTotal, 612);
+    assert.equal(sectionBody.data.total, 900);
+    const noMatches = await fetch(`${base}/owned/evidence/issues?section=mobile`, { headers });
+    assert.equal((await noMatches.json()).data.matchingCount, 0);
+    for (const filter of ['section=security&severity=high', 'section=security&category=SEO', 'section=security&query=title', 'section=security&affectedUrl=https%3A%2F%2Fexample.com%2F', 'affectedUrl=https%3A%2F%2Fexample.com%2F']) {
+      const response = await fetch(`${base}/owned/evidence/issues?${filter}`, { headers });
+      assert.equal((await response.json()).data.matchingCount, null);
+    }
     const beforeInvalid = calls.length;
     const totalsBeforeInvalid = totalCalls.length;
-    for (const path of ['pages?cursor=bad%2Ccursor', 'issues?limit=0', 'unknown', 'pages?category=SEO', 'pages?query=title', 'events?query=title', 'issues?query=title&query=other', `issues?query=${'x'.repeat(161)}`, 'issues?query=title%00']) {
+    for (const path of ['pages?cursor=bad%2Ccursor', 'issues?limit=0', 'unknown', 'pages?category=SEO', 'pages?query=title', 'events?query=title', 'issues?query=title&query=other', `issues?query=${'x'.repeat(161)}`, 'issues?query=title%00', 'issues?section=seo', 'issues?section=security&section=technical', 'issues?affectedUrl=javascript%3Aalert(1)', 'pages?section=technical', 'events?affectedUrl=https%3A%2F%2Fexample.com%2F']) {
       assert.equal((await fetch(`${base}/owned/evidence/${path}`, { headers })).status, 400);
     }
     assert.equal(calls.length, beforeInvalid);

@@ -581,7 +581,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
           <summary className="cursor-pointer px-5 py-4 font-semibold">Raw audit details</summary>
           <div className="border-t border-border p-5">
             <p className="mb-3 text-xs leading-5 text-muted-foreground">Structured audit records only. Crawlio does not store complete raw HTML in this report.</p>
-            <pre className="max-h-[480px] overflow-auto rounded-lg bg-slate-950 p-4 text-xs leading-5 text-slate-100">{JSON.stringify({ audit: reportData.audit, scores: reportData.finalReport?.scores, events: reportData.latestEvents, pages: reportData.latestPages, issues: reportData.latestIssues }, null, 2)}</pre>
+            <pre className="max-h-[480px] overflow-auto rounded-lg bg-neutral-950 p-4 text-xs leading-5 text-neutral-100">{JSON.stringify({ audit: reportData.audit, scores: reportData.finalReport?.scores, events: reportData.latestEvents, pages: reportData.latestPages, issues: reportData.latestIssues }, null, 2)}</pre>
           </div>
         </details>
       )}

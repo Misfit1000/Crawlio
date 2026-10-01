@@ -1,0 +1,205 @@
+import assert from 'node:assert/strict';
+import { chromium } from '@playwright/test';
+import { createServer } from 'vite';
+import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
+import AxeBuilder from '@axe-core/playwright';
+
+const userId = '11111111-1111-4111-8111-111111111111';
+const auditId = '22222222-2222-4222-8222-222222222222';
+const retryId = '33333333-3333-4333-8333-333333333333';
+const now = new Date().toISOString();
+const profile = { id: userId, email: 'operator@example.test', display_name: 'Operator', plan: 'paid', role: 'user', subscription_status: 'active', disabled: false, audit_quota_used_daily: 2, audit_quota_used_monthly: 12 };
+const audit = { id: auditId, user_id: userId, normalized_url: 'https://example.test/a-long-domain-path-to-inspect', status: 'failed', processing_version: 2, plan: 'paid', effective_mode: 'standard', created_at: now, updated_at: now, started_at: now, completed_at: now, pages_discovered: 12, pages_crawled: 10, lease_expires_at: '9999-01-01T00:00:00Z', error: 'Target timed out' };
+const worker = { id: 'engine-1', state: 'healthy', lastSeenAt: now, databaseConnected: true, currentAuditId: null, commitIdentifier: 'abc123', apiSchemaVersion: 15, auditEngineVersion: '2', scoringVersion: '1', deepAuditEnabled: true };
+const operation = { observedAt: now, status: 'degraded', reasons: ['Review failed target request.'], components: Object.fromEntries(['api', 'database', 'worker', 'queue', 'deployment'].map(name => [name, { status: 'healthy', reason: `${name} ready` }])), metrics: { audits: 8, completed: 5, warnings: 1, failed: 1, abandoned: 1, successRate: 75, medianDurationSeconds: null }, queue: { queued: 0, running: 0, oldestQueuedSeconds: null, medianWaitSeconds: null, staleLeases: 0, byMode: {}, byPlan: {} }, workers: [worker], deployment: { applicationCommit: 'abc123', workerCommit: 'abc123', expectedSchemaVersion: 15, databaseSchemaVersion: 15, appliedMigration: '028', compatible: true, commitMismatch: false }, trend: [{ day: now.slice(0, 10), audits: 8, completed: 5, warnings: 1, failed: 1, medianDurationSeconds: null }], recentFailures: [{ id: auditId, domain: 'example.test', status: 'failed', error: 'Target timed out', createdAt: now, failureClass: 'target-site', failureCode: 'TARGET_TIMEOUT' }], recentActions: [] };
+const plan = { plan: 'paid', label: 'Paid', daily_audits: 25, monthly_audits: 500, max_pages_quick: 50, max_pages_standard: 50, max_pages_deep: 0, priority: 50, allowed_modes: ['quick', 'standard'], exports_enabled: true, pdf_enabled: true, scheduled_audits_enabled: false };
+const settings = { platform_name: 'Crawlio', support_email: 'support@example.test', value: { guestAuditEnabled: true, hardQueueLimit: 50 } };
+const entry = `import React from 'react'; import {createRoot} from 'react-dom/client'; import {BrowserRouter} from '/src/app/router.tsx'; import Dashboard from '/src/components/AdminDashboard.tsx'; import '/src/index.css'; createRoot(document.getElementById('root')).render(React.createElement(BrowserRouter,null,React.createElement('main',{style:{maxWidth:1280,margin:'0 auto',padding:16,minWidth:0}},React.createElement(Dashboard))));`;
+const fixtures = {
+  name: 'admin-ui-fixtures', enforce: 'pre',
+  resolveId(source) {
+    if (source.endsWith('/contexts/AuthContext')) return '\0fixture-auth';
+    if (source.endsWith('/api/auth-headers')) return '\0fixture-headers';
+    if (source.endsWith('/blog/BlogNotificationInbox')) return '\0fixture-inbox';
+    if (source === '/__admin_entry.jsx') return '\0fixture-entry.jsx';
+  },
+  load(id) {
+    if (id === '\0fixture-auth') return `export function useAuth(){return {user:{id:'${userId}',role:'admin'}}}`;
+    if (id === '\0fixture-headers') return 'export async function getAuthHeaders(base={}){window.__adminAuthReads=(window.__adminAuthReads||0)+1;return window.__adminTestAuthorization?{...base,Authorization:window.__adminTestAuthorization}:base}';
+    if (id === '\0fixture-inbox') return 'export default function Inbox(){return null}';
+    if (id === '\0fixture-entry.jsx') return entry;
+  },
+  configureServer(server) {
+    server.middlewares.use(async (req, res, next) => {
+      if (!req.url?.startsWith('/admin')) return next();
+      res.setHeader('Content-Type', 'text/html');
+      res.end(await server.transformIndexHtml(req.url, '<html lang="en"><head><title>Admin UI check</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="root"></div><script type="module" src="/__admin_entry.jsx"></script></body></html>'));
+    });
+  },
+};
+const server = await createServer({ configFile: false, plugins: [fixtures, react(), tailwindcss()], define: { __CRAWLIO_RELEASE__: '"admin-check"', __CRAWLIO_ENVIRONMENT__: '"test"' }, server: { host: '127.0.0.1', port: 5187 }, logLevel: 'error' });
+let browser;
+const counts = new Map();
+const writes = [];
+let failOperations = false;
+let latency = 35;
+let concurrent = 0;
+let maximumConcurrent = 0;
+try {
+  await server.listen();
+  browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', error => { errors.push(error.message); console.error('Browser error:', error.message); });
+  page.on('console', message => { if (message.type() === 'error') console.error('Browser console:', message.text()); });
+  await page.route('**/api/tools/admin/**', async route => {
+    const url = new URL(route.request().url());
+    const path = url.pathname.replace('/api/tools/admin/', '');
+    counts.set(path, (counts.get(path) || 0) + 1);
+    let data;
+    let status = 200;
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON();
+      writes.push({ path, body });
+      if (path === 'workers/wake') data = { requested: true, outcome: 'health_request_responded', state: 'verification_pending' };
+      else if (path.endsWith('/action')) data = { auditId: retryId, originalAuditId: auditId, action: body.action, outcome: 'retry_queued', status: 'queued', quotaExempt: true };
+      else if (path.endsWith('/update')) { Object.assign(profile, body.patch); data = { outcome: 'account_updated' }; }
+      else if (path === 'retention/preview') data = { fingerprint: 'a'.repeat(64), expiresAt: new Date(Date.now() + 600000).toISOString(), audits: 2, associatedRows: 10, totalEligible: 8 };
+      else if (path === 'retention/apply') data = { outcome: 'applied', auditsDeleted: 2, associatedRows: 10 };
+      else if (path === 'platform/settings') { settings.platform_name = body.patch.platformName; data = { accepted: true }; }
+      else data = { accepted: true };
+    } else if (path === 'operations') {
+      concurrent++; maximumConcurrent = Math.max(maximumConcurrent, concurrent);
+      await new Promise(resolve => setTimeout(resolve, latency)); concurrent--;
+      if (failOperations) { status = 503; data = null; } else data = operation;
+    } else if (path === 'session-check') { await new Promise(resolve => setTimeout(resolve, 200)); data = { matched: route.request().headers().authorization === 'Bearer test-session-b' }; }
+    else if (path === 'users') data = { rows: [profile], hasMore: false };
+    else if (path === 'audits') data = { rows: [audit], hasMore: false };
+    else if (path.startsWith('users/') && path.endsWith('/detail')) data = { profile, usage: { dailyUsed: 2, monthlyUsed: 12, dailyLimit: 25, monthlyLimit: 500, totalAudits: 8, queued: 0, running: 0, completed: 5, warnings: 1, failed: 2 }, latestAudit: { id: auditId, domain: 'example.test', status: 'failed', mode: 'standard', score: 0, completedAt: now } };
+    else if (path.startsWith('audits/') && path.endsWith('/detail')) data = { audit: { ...audit, id: path.split('/')[1] }, diagnostics: [], processing: { attempted: 12, analysed: 10, failed: 2, blocked: 0 }, worker: { id: 'engine-1', leaseExpiresAt: now }, retryEligible: true, failureClass: 'target-site' };
+    else if (path === 'search') data = { users: [profile], audits: [audit], schedules: [] };
+    else if (path === 'workers') data = [worker];
+    else if (path === 'actions') data = { rows: [], hasMore: false };
+    else if (path === 'plans') data = [plan];
+    else if (path === 'platform/settings') data = settings;
+    else if (path === 'resources') data = { observedAt: now, relations: [{ name: 'audits', bytes: 2048, approximateRows: null, oldestAt: null, retentionDays: null, retentionDescription: 'Retained until account deletion.' }], quotaAvailability: 'provider-dashboard-only' };
+    else data = {};
+    if (path !== 'operations') await new Promise(resolve => setTimeout(resolve, 35));
+    await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(status === 200 ? { success: true, data } : { success: false, error: 'Fixture refresh failed' }) }).catch(() => {});
+  });
+  const origin = server.resolvedUrls.local[0].replace(/\/$/, '');
+  const noOverflow = async () => assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, 'Page must not overflow horizontally');
+  const goto = async path => { await page.goto(`${origin}${path}`); await page.getByRole('heading', { name: 'Operations overview', exact: true }).or(page.getByRole('heading', { name: 'User management', exact: true })).or(page.getByRole('heading', { name: 'Audit jobs', exact: true })).or(page.getByRole('heading', { name: 'Platform settings', exact: true })).or(page.getByRole('heading', { name: 'Plan limits', exact: true })).waitFor(); };
+  await goto('/admin');
+  await page.getByText('75.0%', { exact: true }).waitFor();
+  await page.clock.install();
+  await page.getByLabel('Admin auto-refresh interval').selectOption('15');
+  const beforeInterval = counts.get('operations');
+  await page.clock.fastForward(15000);
+  await new Promise(resolve => setTimeout(resolve, 120));
+  assert.equal(counts.get('operations'), beforeInterval + 1, 'Selected interval refreshes once');
+  await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' }); document.dispatchEvent(new Event('visibilitychange')); });
+  const beforeHidden = counts.get('operations');
+  await page.clock.fastForward(60000);
+  await new Promise(resolve => setTimeout(resolve, 120));
+  assert.equal(counts.get('operations'), beforeHidden, 'Hidden tabs do not refresh');
+  await page.getByLabel('Admin auto-refresh interval').selectOption('0');
+  await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' }); document.dispatchEvent(new Event('visibilitychange')); });
+  await page.clock.fastForward(60000);
+  await new Promise(resolve => setTimeout(resolve, 120));
+  assert.equal(counts.get('operations'), beforeHidden, 'Off stays off when visibility resumes');
+  const sessionCheck = await page.evaluate(async () => {
+    const { adminGet, adminRecord } = await import('/src/components/admin/client.ts');
+    window.__adminTestAuthorization = 'Bearer test-session-a';
+    const previous = adminGet('session-check', new AbortController().signal).then(() => 'resolved', error => error.name);
+    await new Promise(resolve => setTimeout(resolve, 50));
+    window.__adminTestAuthorization = 'Bearer test-session-b';
+    const before = window.__adminAuthReads;
+    const current = await adminGet('session-check', new AbortController().signal);
+    const reads = window.__adminAuthReads - before;
+    const old = await previous;
+    const pair = await Promise.all([adminGet('session-check', new AbortController().signal), adminGet('session-check', new AbortController().signal)]);
+    const normalization = adminRecord({ id: 'record', disabled_reason: 'Approved suspension', subscription_status: 'active', user_id: 'owner' });
+    window.__adminTestAuthorization = '';
+    return { old, current: current.matched, reads, sameSession: pair.every(value => value.matched), aliases: normalization.disabledReason === 'Approved suspension' && normalization.subscriptionStatus === 'active' && normalization.userId === 'owner' };
+  });
+  assert.deepEqual(sessionCheck, { old: 'AbortError', current: true, reads: 1, sameSession: true, aliases: true });
+  assert.equal(counts.get('session-check'), 3, 'Same-session concurrent reads deduplicate; changed sessions do not');
+  await noOverflow();
+  const accessibility = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+  assert.deepEqual(accessibility.violations.map(item => ({ id: item.id, targets: item.nodes.map(node => node.target) })), [], 'Overview WCAG A/AA check');
+  await page.screenshot({ path: 'test-results/admin-operations-desktop.png', fullPage: true });
+  assert.equal(counts.get(`audits/${auditId}/detail`) || 0, 0, 'Details must load only when opened');
+  await page.getByRole('button', { name: 'example.test', exact: true }).click();
+  await page.getByRole('dialog').getByRole('heading', { name: 'Audit diagnostics' }).waitFor();
+  assert.equal(await page.getByRole('dialog').getByText('9999', { exact: false }).count(), 0, 'Never show v2 sentinel lease');
+  await page.getByText('Recommended safe actions', { exact: true }).waitFor();
+  await page.getByText('Pages discovered', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Retry as new attempt' }).click();
+  const confirm = page.getByRole('dialog', { name: 'Confirm administrative change' });
+  await confirm.getByLabel('Reason for this change').fill('Target recovered; retry approved');
+  await confirm.getByRole('button', { name: 'Confirm change' }).click();
+  await page.getByRole('link', { name: 'Inspect new linked attempt' }).waitFor();
+  await page.getByText('Server confirmed no quota charge.').waitFor();
+  assert.match(writes.at(-1).body.requestId, /^[0-9a-f-]{36}$/i);
+  assert.equal(writes.at(-1).body.action, 'retry');
+  await page.getByRole('button', { name: 'Close details' }).click();
+  await page.getByRole('button', { name: 'Request worker wake' }).click();
+  await confirm.getByLabel('Reason for this change').fill('Verify idle engine heartbeat');
+  await confirm.getByRole('button', { name: 'Confirm change' }).click();
+  await page.getByText('Outcome: health_request_responded.', { exact: false }).waitFor();
+  assert.equal(writes.at(-1).path, 'workers/wake');
+  assert.equal('url' in writes.at(-1).body, false);
+  assert.ok(writes.at(-1).body.reason);
+  failOperations = true;
+  await page.getByRole('button', { name: 'Refresh current admin section' }).click();
+  await page.getByText('Refresh failed; showing stale data').waitFor();
+  await page.getByText('75.0%', { exact: true }).waitFor();
+  failOperations = false;
+  await page.getByLabel('Admin auto-refresh interval').selectOption('0');
+  latency = 400;
+  await page.getByRole('button', { name: 'Refresh current admin section' }).click({ clickCount: 3 });
+  await page.waitForTimeout(600);
+  assert.equal(maximumConcurrent, 1, 'Refreshes must not overlap');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await noOverflow();
+  await page.screenshot({ path: 'test-results/admin-operations-mobile.png', fullPage: true });
+  await goto(`/admin/users?userId=${userId}`);
+  await page.getByRole('heading', { name: 'Account details and usage' }).waitFor();
+  await page.getByText('Overall score', { exact: true }).waitFor();
+  assert.equal(await page.getByText('Overall score', { exact: true }).evaluate(node => node.parentElement.querySelector('dd').textContent), '0');
+  await noOverflow();
+  await page.getByRole('link', { name: 'All account audits', exact: true }).click();
+  await page.getByText(`Account: ${userId}`).waitFor();
+  assert.equal(new URL(page.url()).searchParams.get('userId'), userId);
+  await page.getByRole('button', { name: 'Inspect and act' }).click();
+  await page.getByRole('heading', { name: 'Audit diagnostics' }).waitFor();
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  await noOverflow();
+  await page.screenshot({ path: 'test-results/admin-audits-mobile.png', fullPage: true });
+  await goto('/admin/settings');
+  await page.getByText('Unavailable', { exact: true }).waitFor();
+  await page.getByText('No automatic cleanup', { exact: true }).waitFor();
+  await page.getByText('Policy details', { exact: false }).click();
+  await page.getByText('Retained until account deletion.', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Preview retention', exact: true }).click();
+  await page.getByText('All eligible audits', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Apply previewed batch' }).click();
+  await confirm.getByLabel('Reason for this change').fill('Approved expired guest batch');
+  assert.equal(await confirm.getByRole('button', { name: 'Confirm change' }).isEnabled(), false);
+  await confirm.getByLabel('Type APPLY RETENTION').fill('APPLY RETENTION');
+  await confirm.getByRole('button', { name: 'Confirm change' }).click();
+  await page.getByText('Audits deleted: 2.', { exact: false }).waitFor();
+  assert.equal(writes.at(-1).body.confirmation, 'APPLY RETENTION');
+  await noOverflow();
+  await goto('/admin/plans');
+  await page.getByLabel('paid limit preset').selectOption('pause');
+  await confirm.getByRole('cell', { name: '25', exact: true }).waitFor();
+  await confirm.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await noOverflow();
+  assert.deepEqual(errors, [], 'No runtime errors');
+  console.log('PASS: session-isolated dedupe and auth reuse, quiet visible-tab/Off refresh, operations metrics, lazy real-lease details, retry linking/quota, reason/requestId, guarded wake, stale data, no overlap, URL crosslinks, zero score, drawer Escape, retention policy/confirmation, plan preview, and 390px overflow checks.');
+} finally { await browser?.close(); await server.close(); }

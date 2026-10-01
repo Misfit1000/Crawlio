@@ -111,7 +111,7 @@ export default function AccessibilityLayer() {
     <>
       <div className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</div>
       {open && (
-        <div className="fixed inset-0 z-[400] flex items-start justify-center bg-[#09142d]/55 p-4 pt-[12vh] backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setOpen(false); }}>
+        <div className="fixed inset-0 z-[400] flex items-start justify-center bg-[var(--overlay)] p-4 pt-[12vh] backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target) setOpen(false); }}>
           <section ref={dialogRef} onKeyDown={containDialogFocus} className="w-full max-w-xl overflow-hidden rounded-xl border border-border bg-card shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="quick-navigation-title">
             <div className="flex items-center gap-3 border-b border-border p-3">
               <Search className="h-5 w-5 shrink-0 text-accent" aria-hidden="true" />

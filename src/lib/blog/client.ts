@@ -6,6 +6,61 @@ import type { BlogReadinessItem } from './editor-experience';
 
 type Envelope<T> = { success: boolean; data: T; error?: string };
 
+export interface BlogProviderStatus {
+  provider: string;
+  execution: string;
+  enabled: boolean;
+  configured: boolean;
+  model: string;
+  structuredModel: string;
+  writerModel: string;
+  baseUrlHost: string;
+  serverEnabled?: boolean;
+  adminEnabled?: boolean;
+  automationEnabled?: boolean;
+  health?: string;
+  lastSuccessAt?: string | null;
+  lastErrorCode?: string;
+  lastDurationMs?: number | null;
+  liveVerificationStatus?: string;
+  fixtureAvailable?: boolean;
+}
+
+export interface BlogReadinessDiagnostic {
+  code: string;
+  message: string;
+  action: string;
+}
+
+export interface BlogAutomationRuntime {
+  dispatchConfigured: boolean;
+  automationEnabled: boolean;
+  providerEnabled: boolean;
+  providerConfigured: boolean;
+  generationAllowed: boolean;
+  automaticPublishingAllowed: boolean;
+  blockers: BlogReadinessDiagnostic[];
+  cronSchedule: string | null;
+  oneClickAllowed?: boolean;
+}
+
+export interface BlogAutomationDashboard {
+  overview: BlogAdminOverview & { runtime?: BlogAutomationRuntime };
+  jobs: BlogGenerationJob[];
+  discoveries: Array<Record<string, any>>;
+  provider: BlogProviderStatus;
+  runtime?: BlogAutomationRuntime;
+}
+
+export interface BlogProviderTestResult {
+  status: string;
+  model: string;
+  writerModel?: string;
+  host: string;
+  durationMs: number | null;
+  errorCode: string | null;
+}
+
 async function request<T>(url: string, init?: RequestInit) {
   const response = await safeJsonFetch<Envelope<T>>(url, init);
   if (response.success === false) throw new Error(response.error);
@@ -48,7 +103,7 @@ export async function runAdminBlogWorkflow(id: string, input: { action: 'hold' |
 }
 
 export async function getBlogAutomationDashboard() {
-  return request<{ overview: BlogAdminOverview; jobs: BlogGenerationJob[]; discoveries: Array<Record<string, any>>; provider: { provider: string; execution: string; enabled: boolean; configured: boolean; model: string; structuredModel: string; writerModel: string; baseUrlHost: string; health?: string; fixtureAvailable?: boolean } }>(API_ROUTES.adminBlogOverview, { headers: await getAuthHeaders() });
+  return request<BlogAutomationDashboard>(API_ROUTES.adminBlogOverview, { headers: await getAuthHeaders() });
 }
 
 export async function getBlogAutomationSettings() {
@@ -108,7 +163,7 @@ export async function queueBlogBatch(input: { headlines: string[]; audience?: st
 }
 
 export async function testAdminBlogProvider() {
-  return request<{ result: { status: string; model: string; host: string; durationMs: number | null; errorCode: string | null } }>(API_ROUTES.adminBlogProviderTest, { method: 'POST', headers: await getAuthHeaders() });
+  return request<{ result: BlogProviderTestResult }>(API_ROUTES.adminBlogProviderTest, { method: 'POST', headers: await getAuthHeaders() });
 }
 
 export async function getBlogSectionRevisions(articleId: string) {

@@ -102,7 +102,7 @@ export function AuditGrade({
       <div className="min-w-0">
         <div className="text-sm font-semibold text-muted-foreground">{label}</div>
         <div className={`font-bold tabular-nums ${compact ? 'text-lg' : 'text-2xl'}`}>
-          {score == null || !Number.isFinite(score) ? 'Not measured' : `${Math.round(score)}/100`}
+          {score == null || !Number.isFinite(score) ? 'Not measured' : <><span>{Math.round(score)}</span><span>/100</span></>}
         </div>
         <div className="mt-0.5 text-xs leading-5 text-muted-foreground">{detail || gradeRangeLabel(grade)}</div>
       </div>
@@ -404,20 +404,22 @@ export function MetricBarChart({
   items,
   title = 'Findings by priority',
   description = 'Counts update as checks complete.',
+  framed = true,
 }: {
   items: Array<{ label: string; value: number; color: string }>;
   title?: string;
   description?: string;
+  framed?: boolean;
 }) {
   const max = Math.max(1, ...items.map((item) => item.value));
   return (
-    <div className="space-y-3 rounded-xl border border-border bg-background/75 p-4">
-      <div>
-        <div className="text-sm font-semibold">{title}</div>
-        <div className="text-xs text-muted-foreground">{description}</div>
-      </div>
+    <div className={framed ? 'space-y-3 rounded-lg border border-border bg-background/75 p-4' : 'space-y-3'}>
+      {(title || description) && <div>
+        {title && <div className="text-sm font-semibold">{title}</div>}
+        {description && <div className="text-xs text-muted-foreground">{description}</div>}
+      </div>}
       {items.map((item) => (
-        <div key={item.label} className="grid grid-cols-[76px_1fr_30px] items-center gap-3 text-xs">
+        <div key={item.label} className="grid grid-cols-[minmax(76px,0.9fr)_minmax(0,1fr)_max-content] items-center gap-3 text-xs">
           <span className="font-medium text-muted-foreground">{item.label}</span>
           <span className="h-2.5 overflow-hidden rounded-full bg-muted" role="meter" aria-label={`${item.label}: ${item.value}`} aria-valuemin={0} aria-valuemax={max} aria-valuenow={item.value}>
             <span className={`block h-full rounded-full transition-all duration-700 ${item.color}`} style={{ width: `${(item.value / max) * 100}%` }} />
@@ -620,7 +622,7 @@ export function CategoryScoreBar({
   const safeValue = safeScore(value);
   const resolvedTone = tone || scoreTone(safeValue);
   return (
-    <div className={framed ? 'space-y-2 rounded-lg border border-border bg-background/70 p-3' : 'space-y-2'}>
+    <div className={`category-score-bar ${framed ? 'space-y-2 rounded-lg border border-border bg-background/70 p-3' : 'space-y-2'}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-sm font-bold">{label}</div>
@@ -764,7 +766,7 @@ export function SeverityDistribution({
     <div className="space-y-4">
       <div className="flex h-5 overflow-hidden rounded-full bg-muted shadow-inner" role="img" aria-label="Fix priority distribution">
         {parts.map((part) => (
-          <div key={part.severity} className={`${part.className} min-w-1 transition-all duration-700`} style={{ width: `${(part.value / total) * 100}%` }} />
+          <div key={part.severity} className={`${part.className} transition-all duration-700`} style={{ width: `${(part.value / total) * 100}%` }} />
         ))}
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -778,37 +780,6 @@ export function SeverityDistribution({
         ))}
       </div>
     </div>
-  );
-}
-
-export function SitePreviewCard({
-  url,
-  title,
-  description,
-  hostname,
-}: {
-  url?: string | null;
-  title?: string | null;
-  description?: string | null;
-  hostname?: string | null;
-}) {
-  const displayUrl = url || hostname || 'Waiting for URL';
-  const host = previewHost(displayUrl, hostname);
-  return (
-    <SurfaceCard className="overflow-hidden">
-      <div className="h-24 bg-gradient-to-br from-accent/20 via-sky-500/10 to-emerald-500/15" />
-      <div className="p-5">
-        <div className="-mt-11 mb-4 flex h-14 w-14 items-center justify-center rounded-xl border border-border bg-card shadow-sm">
-          <BrandInitialMark host={host} className="h-8 w-8 rounded" />
-        </div>
-        <div className="text-xs font-semibold text-accent">{host || 'Website preview'}</div>
-        <h3 className="mt-2 line-clamp-2 text-xl font-bold">{title || 'Site preview updates as pages are scanned'}</h3>
-        <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">
-          {description || 'Crawlio shows page details, scan progress, and fixes without storing raw page HTML.'}
-        </p>
-        <div className="mt-4 break-all rounded-xl border border-border bg-muted/40 p-3 text-xs text-muted-foreground">{displayUrl}</div>
-      </div>
-    </SurfaceCard>
   );
 }
 
@@ -832,7 +803,7 @@ function brandInitial(host: string) {
 
 function BrandInitialMark({ host, className = '' }: { host: string; className?: string }) {
   return (
-    <div className={`flex items-center justify-center bg-gradient-to-br from-accent/15 via-sky-500/10 to-emerald-500/15 font-bold text-accent ${className}`}>
+    <div className={`flex items-center justify-center bg-muted font-bold text-accent ${className}`}>
       {brandInitial(host)}
     </div>
   );
@@ -846,149 +817,21 @@ function PreviewLogo({ host, faviconUrl, className = '' }: { host: string; favic
   return <BrandInitialMark host={host} className={className} />;
 }
 
-export function RealisticDesktopPreviewCard({
-  url,
-  title,
-  description,
-  hostname,
-  faviconUrl,
-  openGraphImage,
-}: PreviewProps) {
-  const host = previewHost(url, hostname);
-  const displayUrl = previewUrl(url, host);
-  const brand = host.replace(/^www\./, '');
-  const pageTitle = title || `${brand} homepage`;
-  const desc = description || 'Metadata-based homepage preview generated from public page details without storing raw HTML.';
-  return (
-    <SurfaceCard className="overflow-hidden">
-      <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-4 py-3">
-        <span className="h-3 w-3 rounded-full bg-red-400" />
-        <span className="h-3 w-3 rounded-full bg-amber-400" />
-        <span className="h-3 w-3 rounded-full bg-emerald-400" />
-        <div className="ml-3 flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-border bg-background px-3 py-1 text-xs text-muted-foreground">
-          <Globe className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">{displayUrl}</span>
-        </div>
-      </div>
-      <div className="bg-gradient-to-br from-accent/10 via-background to-emerald-500/10 p-4 md:p-5">
-        <div className="overflow-hidden rounded-xl border border-border bg-background shadow-sm">
-          <div className="border-b border-border bg-card/95 px-5 py-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex min-w-0 items-center gap-3">
-                <PreviewLogo host={host} faviconUrl={faviconUrl} className="h-10 w-10 rounded-xl border border-border bg-background" />
-                <div className="min-w-0">
-                  <div className="truncate font-bold">{brand}</div>
-                  <div className="truncate text-xs text-muted-foreground">Website preview</div>
-                </div>
-              </div>
-              <div className="hidden items-center gap-4 text-xs font-semibold text-muted-foreground md:flex">
-                <span>Overview</span>
-                <span>Services</span>
-                <span>Contact</span>
-              </div>
-            </div>
-          </div>
-          <div className="grid min-h-72 gap-5 p-5 md:grid-cols-[1.05fr_0.95fr] md:p-6">
-            <div className="flex flex-col justify-center">
-              <div className="mb-3 inline-flex w-fit rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-bold text-accent">Preview from scanned page data</div>
-              <h3 className="line-clamp-3 text-3xl font-bold leading-tight">{pageTitle}</h3>
-              <p className="mt-4 line-clamp-4 text-sm leading-6 text-muted-foreground">{desc}</p>
-              <div className="mt-5 flex flex-wrap gap-2">
-                {['SEO audit', 'Technical SEO', 'Passive security'].map((item) => (
-                  <span key={item} className="rounded-full border border-border bg-card px-3 py-1 text-xs font-semibold text-muted-foreground">{item}</span>
-                ))}
-              </div>
-              <div className="mt-6 flex flex-wrap gap-3">
-                <span className="rounded-xl bg-accent px-4 py-2 text-xs font-bold text-accent-foreground">View report</span>
-                <span className="rounded-xl border border-border bg-card px-4 py-2 text-xs font-bold text-muted-foreground">Top fixes</span>
-              </div>
-            </div>
-            <div className="rounded-xl border border-border bg-card p-4">
-              <div className="overflow-hidden rounded-xl border border-border bg-background">
-                {openGraphImage ? (
-                  <img src={openGraphImage} alt="" className="h-32 w-full object-cover" loading="lazy" />
-                ) : (
-                  <div className="bg-gradient-to-br from-accent/20 via-sky-500/10 to-emerald-500/20 p-5">
-                    <div className="mb-10 flex items-center justify-between">
-                      <PreviewLogo host={host} faviconUrl={faviconUrl} className="h-12 w-12 rounded-xl border border-white/50 bg-white text-lg shadow-sm" />
-                      <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-bold text-slate-700">Metadata preview</span>
-                    </div>
-                    <div className="rounded-xl bg-white/90 p-4 text-slate-900 shadow-sm">
-                      <div className="text-xs font-bold uppercase tracking-wide text-blue-700">{brand}</div>
-                      <div className="mt-2 line-clamp-2 text-lg font-bold">{pageTitle}</div>
-                      <div className="mt-3 line-clamp-2 text-xs leading-5 text-slate-600">{desc}</div>
-                    </div>
-                  </div>
-                )}
-                <div className="grid gap-2 p-4">
-                  {['Services and proof points', 'Primary CTA visible', 'Report-ready summary'].map((item) => (
-                    <div key={item} className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold text-muted-foreground">
-                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                      {item}
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
-                {['Title', 'Description', 'Icon'].map((item) => (
-                  <div key={item} className="rounded-xl border border-border bg-background p-2">
-                    <CheckCircle2 className="mx-auto mb-1 h-4 w-4 text-emerald-600" />
-                    <div className="font-semibold">{item}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </SurfaceCard>
-  );
+// Legacy entry points share the current metadata/screenshot composition.
+export function SitePreviewCard(props: PreviewProps) {
+  return <CompactWebsitePreview {...props} />;
+}
+
+export function RealisticDesktopPreviewCard(props: PreviewProps) {
+  return <CompactWebsitePreview {...props} />;
 }
 
 export function DesktopSitePreviewCard(props: PreviewProps) {
   return <RealisticDesktopPreviewCard {...props} />;
 }
 
-export function RealisticMobilePreviewCard({
-  url,
-  title,
-  description,
-  hostname,
-  faviconUrl,
-}: PreviewProps) {
-  const host = previewHost(url, hostname);
-  const brand = host.replace(/^www\./, '');
-  const pageTitle = title || `${brand} homepage`;
-  const desc = description || 'Live page preview from scan data.';
-  return (
-    <SurfaceCard className="p-5">
-      <div className="mx-auto w-full max-w-[250px] rounded-[2rem] border-[10px] border-slate-950 bg-slate-950 p-1 shadow-sm dark:border-slate-900 dark:bg-slate-900">
-        <div className="overflow-hidden rounded-[1.35rem] bg-background">
-          <div className="relative flex items-center justify-between border-b border-border bg-card px-3 py-3">
-            <div className="absolute left-1/2 top-2 h-1.5 w-14 -translate-x-1/2 rounded-full bg-slate-900/80" />
-            <PreviewLogo host={host} faviconUrl={faviconUrl} className="mt-2 h-8 w-8 rounded-xl border border-border bg-background text-sm" />
-            <div className="mt-2 truncate text-xs font-bold">{brand}</div>
-            <div className="mt-2 h-8 w-8 rounded-xl border border-border bg-muted" />
-          </div>
-          <div className="bg-gradient-to-br from-accent/10 to-emerald-500/10 p-4">
-            <div className="mb-4 rounded-xl border border-border bg-card p-3">
-              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-accent/10 text-2xl font-bold text-accent shadow-sm">
-                {brandInitial(host)}
-              </div>
-              <h3 className="line-clamp-3 text-xl font-bold leading-tight">{pageTitle}</h3>
-              <p className="mt-2 line-clamp-4 text-xs leading-5 text-muted-foreground">{desc}</p>
-              <div className="mt-4 w-full rounded-xl bg-accent px-3 py-2 text-center text-xs font-bold text-accent-foreground">Sample CTA area</div>
-            </div>
-            <div className="grid gap-2">
-              {['Viewport checked', 'Tap target context', 'Mobile snippet ready'].map((item) => (
-                <div key={item} className="rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold text-muted-foreground">{item}</div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    </SurfaceCard>
-  );
+export function RealisticMobilePreviewCard(props: PreviewProps) {
+  return <CompactWebsitePreview {...props} />;
 }
 
 export function MobileSitePreviewCard(props: PreviewProps) {
@@ -1015,22 +858,22 @@ export function RealisticSerpPreviewCard({
         <Search className="h-5 w-5 text-accent" />
         <h3 className="text-lg font-bold">Google-style preview</h3>
       </div>
-      {serpTitle || serpDescription ? <div className="rounded-lg border border-slate-200 bg-white p-4 text-slate-900 shadow-sm dark:bg-white">
-        <div className="mb-4 flex items-center gap-2 text-xs text-slate-500">
-          <span className="text-lg font-bold text-blue-600">G</span>
+      {serpTitle || serpDescription ? <div className="rounded-lg border border-border bg-card p-4 text-foreground shadow-sm">
+        <div className="mb-4 flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="text-lg font-bold text-accent">G</span>
           <span className="font-medium">Search result preview</span>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100">
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted">
             <PreviewLogo host={host} faviconUrl={faviconUrl} className="h-5 w-5 rounded text-xs" />
           </div>
           <div className="min-w-0">
-            <div className="text-sm text-slate-900">{host.replace(/^www\./, '')}</div>
-            <div className="truncate text-xs text-slate-600">{displayUrl.replace(/^https?:\/\//, '').replace(/\//g, ' > ')}</div>
+            <div className="text-sm text-foreground">{host.replace(/^www\./, '')}</div>
+            <div className="truncate text-xs text-muted-foreground">{displayUrl.replace(/^https?:\/\//, '').replace(/\//g, ' > ')}</div>
           </div>
         </div>
-        <div className="mt-3 line-clamp-2 text-xl text-blue-700">{serpTitle || 'No page title collected'}</div>
-        <p className="mt-1 line-clamp-3 text-sm leading-6 text-slate-600">{serpDescription || 'No meta description collected.'}</p>
+        <div className="mt-3 line-clamp-2 text-xl text-accent">{serpTitle || 'No page title collected'}</div>
+        <p className="mt-1 line-clamp-3 text-sm leading-6 text-muted-foreground">{serpDescription || 'No meta description collected.'}</p>
       </div> : <div className="rounded-lg border border-dashed border-border bg-muted/25 p-6 text-center"><Search className="mx-auto h-6 w-6 text-muted-foreground" /><h4 className="mt-3 font-semibold">Search preview unavailable</h4><p className="mt-1 text-sm leading-6 text-muted-foreground">The audit engine has not collected a page title or meta description yet.</p></div>}
       {(serpTitle || serpDescription) && <div className="mt-4 grid gap-2 text-xs md:grid-cols-2">
         <span className={`rounded-full border px-3 py-2 font-semibold ${titleGood ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700' : 'border-amber-500/20 bg-amber-500/10 text-amber-700'}`}>

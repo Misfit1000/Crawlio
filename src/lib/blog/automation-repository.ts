@@ -211,9 +211,9 @@ export const blogAutomationRepository = {
   async claimVercelStage(executionId: string, requestedJobId?: string | null) {
     const client = getSupabaseAdminClient();
     if (!client) {
-      const active = [...memoryJobs.values()].some((job) => job.locked_by && new Date(job.lease_expires_at || 0).getTime() > Date.now() && job.id !== requestedJobId);
+      const active = [...memoryJobs.values()].some((job) => job.locked_by && new Date(job.lease_expires_at || 0).getTime() > Date.now());
       if (active) return null;
-      const row = [...memoryJobs.values()].find((job) => job.execution_target === 'vercel' && (!requestedJobId || job.id === requestedJobId) && !['published', 'failed', 'cancelled', 'ready_for_review', 'scheduled'].includes(job.workflow_stage) && (!job.scheduled_for || new Date(job.scheduled_for).getTime() <= Date.now()) && (!job.next_retry_at || new Date(job.next_retry_at).getTime() <= Date.now()));
+      const row = [...memoryJobs.values()].find((job) => job.execution_target === 'vercel' && (!requestedJobId || job.id === requestedJobId) && !['published', 'failed', 'cancelled', 'ready_for_review', 'scheduled'].includes(job.state) && !['published', 'failed', 'cancelled', 'ready_for_review', 'scheduled'].includes(job.workflow_stage) && (!job.scheduled_for || new Date(job.scheduled_for).getTime() <= Date.now()) && (!job.next_retry_at || new Date(job.next_retry_at).getTime() <= Date.now()));
       if (!row) return null;
       row.stage_attempt_count = Number(row.stage_attempt_count || 0) + 1;
       row.locked_by = executionId;
@@ -377,10 +377,10 @@ export const blogAutomationRepository = {
   async recordProviderHealth(input: { status: string; errorCode?: string | null; durationMs?: number | null; actorId?: string | null; testKind?: string }) {
     const config = getGroqBlogConfiguration();
     const patch = {
-      provider_last_success_at: input.status === 'connected' ? nowIso() : memorySettings.provider_last_success_at,
+      ...(input.status === 'connected' ? { provider_last_success_at: nowIso() } : {}),
       provider_last_error_code: input.errorCode || '',
       provider_last_duration_ms: input.durationMs ?? null,
-      provider_live_verification_status: input.testKind === 'live' ? input.status : memorySettings.provider_live_verification_status,
+      ...(input.testKind === 'live' ? { provider_live_verification_status: input.status } : {}),
     };
     const client = getSupabaseAdminClient();
     if (!client) { memorySettings = { ...memorySettings, ...patch }; return; }
@@ -390,6 +390,24 @@ export const blogAutomationRepository = {
     ]);
     if (settingsResult.error) throw settingsResult.error;
     if (healthResult.error) throw healthResult.error;
+  },
+
+  async automaticJobCounts(now = new Date()) {
+    const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const week = new Date(day.getTime() - ((day.getUTCDay() || 7) - 1) * 86_400_000);
+    const client = getSupabaseAdminClient();
+    if (!client) {
+      const jobs = [...memoryJobs.values()].filter((job) => ['autopilot', 'trend_autopilot'].includes(job.origin) && job.payload?.jobType !== 'discover_trends');
+      return { day: jobs.filter((job) => new Date(job.created_at) >= day).length, week: jobs.filter((job) => new Date(job.created_at) >= week).length };
+    }
+    const count = async (start: Date) => {
+      const { count, error } = await client.from('blog_generation_jobs').select('id', { head: true, count: 'exact' })
+        .in('origin', ['autopilot', 'trend_autopilot']).neq('payload->>jobType', 'discover_trends').gte('created_at', start.toISOString());
+      if (error) throw error;
+      return count || 0;
+    };
+    const [daily, weekly] = await Promise.all([count(day), count(week)]);
+    return { day: daily, week: weekly };
   },
 
   async recordAutomaticReview(approved: boolean) {

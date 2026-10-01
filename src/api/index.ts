@@ -1,7 +1,10 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { authorizeScheduler } from '../lib/api/scheduler-auth';
 import { Router } from 'express';
+import { waitUntil } from '@vercel/functions';
 import { createAdminReadRouter } from './admin/read-routes';
+import { adminRequestId, createAdminOperationsRouter, operationRpc } from './admin/operations-routes';
+import { validatePlatformControls } from '../lib/operations/admin-config';
 import { normalizeDomainInput, normalizeUserUrl } from '../lib/seo/url-utils';
 import { isCompletedAuditStatus } from '../lib/audit/audit-time';
 import { planAuditLiveDelta } from '../lib/audit/live-delta';
@@ -39,7 +42,8 @@ import { renderBlogListingHtml } from '../lib/blog/public-render';
 import { blogAutomationRepository } from '../lib/blog/automation-repository';
 import { blogJobIdempotencyKey, validateManualBatch } from '../lib/blog/automation';
 import { getGroqBlogConfiguration, getSafeGroqDiagnostics, GROQ_DEFAULT_STRUCTURED_MODEL, GROQ_DEFAULT_WRITER_MODEL, testGroqProvider } from '../lib/blog/server/groq';
-import { dispatchVercelBlogStages, getVercelBlogRuntimeInfo, recoverAndDispatchVercelBlogWork } from '../lib/blog/server/vercel-workflow';
+import { dispatchVercelBlogStages, getVercelBlogRuntimeInfo, recoverAndDispatchVercelBlogWork, safeBlogStageError } from '../lib/blog/server/vercel-workflow';
+import { blogRuntimeReadiness, runBoundedBlogDispatch } from '../lib/blog/server/dispatch-runner';
 import { normalizeBlogArticleType } from '../lib/blog/length-policy';
 import { validateCalendarMove } from '../lib/blog/freshness';
 import { BLOG_FIXTURE_MODEL, BLOG_FIXTURE_PROVIDER, getBlogFixtureConfiguration, requireBlogFixtureProvider } from '../lib/blog/fixture-provider';
@@ -63,7 +67,6 @@ import {
 import { publicVersionPayload } from '../lib/platform/version';
 import { buildPublicAuditExport, csvRow } from '../lib/report/export';
 import { BRAND } from '../lib/brand';
-import { buildOperationalHealth, maybeSendOperationalAlert } from '../lib/operations/health';
 import {
   findingWorkflowKey,
   isFindingPriorityOverride,
@@ -73,7 +76,6 @@ import {
   captureAdminSentryTestEvent,
   flushNodeMonitoring,
 } from '../lib/monitoring/sentry-node';
-import { resolveSentryBuildConfiguration } from '../lib/monitoring/sentry-build';
 import { createPublicPlanProjection } from '../lib/plans/public-plan-presentation';
 import { listProjectOverview, updateProjectSettings, upsertProject } from '../lib/projects/service';
 import {
@@ -101,6 +103,7 @@ function asyncJsonRoute(handler: any) {
 }
 
 export const apiRouter = Router();
+apiRouter.use('/admin', createAdminOperationsRouter(requireAdminRequester));
 apiRouter.use('/admin', createAdminReadRouter(requireAdminRequester));
 
 apiRouter.use('/admin', durableRateLimit({ namespace: 'admin-api', limit: 120, windowSeconds: 60 }));
@@ -143,9 +146,9 @@ function schedulerRequestAllowed(req: any, scope: 'cron' | 'dispatch' = 'cron') 
 
 function requestOrigin(req: any) {
   const configured = [
-    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '',
     process.env.APP_URL || '',
     process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '',
+    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '',
   ];
   for (const value of configured) {
     try {
@@ -164,14 +167,37 @@ function requestOrigin(req: any) {
   }
 }
 
-function requestImmediateBlogDispatch(req: any, jobId: string, chainDepth = 0) {
-  const secret = String(process.env.BLOG_DISPATCH_SECRET || '');
-  const origin = requestOrigin(req);
-  if (!origin || secret.length < 24 || process.env.NODE_ENV === 'test') return;
-  void fetch(`${origin}/api/tools/blog/jobs/dispatch`, {
-    method: 'POST', headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jobId, maxStages: 3, chainDepth }), signal: AbortSignal.timeout(8_000),
-  }).catch(() => undefined);
+const activeBlogDispatches = new Map<string, Promise<void>>();
+
+function requestImmediateBlogDispatch(req: any, jobId: string | null, chainDepth = 0, prepare?: () => Promise<void>) {
+  if (process.env.NODE_ENV === 'test') return;
+  // A handoff may reach the same warm function before its caller has finished.
+  const key = `${jobId || 'queue'}:${chainDepth}`;
+  const existing = activeBlogDispatches.get(key);
+  if (existing) { waitUntil(existing); return; }
+  const task = (async () => {
+    try {
+      if (prepare) await prepare();
+      const readiness = blogRuntimeReadiness(await blogAutomationRepository.getSettings());
+      if (!readiness.generationAllowed) return;
+      const data = await runBoundedBlogDispatch({ requestedJobId: jobId });
+      const secret = String(process.env.BLOG_DISPATCH_SECRET || '').trim();
+      const origin = requestOrigin(req);
+      const retryDelay = data.latestJob?.nextRetryAt ? Date.parse(data.latestJob.nextRetryAt) - Date.now() : 0;
+      if (data.pendingJobId && retryDelay <= 60_000 && chainDepth < 6 && secret.length >= 24 && origin) {
+        const response = await fetch(`${origin}/api/tools/blog/jobs/dispatch`, {
+          method: 'POST', redirect: 'error', headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jobId: data.pendingJobId, chainDepth: chainDepth + 1 }), signal: AbortSignal.timeout(10_000),
+        });
+        if (!response.ok) throw new ApiError('BLOG_CONTINUATION_FAILED', `Blog continuation returned HTTP ${response.status}. Open Blog Studio to resume the queued job.`, 503);
+      }
+    } catch (error) {
+      const safe = safeBlogStageError(error);
+      console.warn('Blog background dispatch stopped', { code: safe.code, message: safe.message, jobId });
+    } finally { activeBlogDispatches.delete(key); }
+  })();
+  activeBlogDispatches.set(key, task);
+  waitUntil(task);
 }
 
 function getCookieValue(req: any, name: string) {
@@ -559,65 +585,6 @@ apiRouter.get('/plans/public', asyncJsonRoute(async (req, res) => {
   res.json({ success: true, data: projection });
 }));
 
-apiRouter.get('/admin/diagnostics', asyncJsonRoute(async (req, res) => {
-  if (!(await requireAdminRequester(req, res))) return;
-  const client = requireSupabaseAdminClient();
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const [compatibility, auditsResult, workersResult, plansResult, errorsResult, diagnosticsResult, actionsResult] = await Promise.all([
-    getDeploymentCompatibility(),
-    client.from('audits').select('id,status,created_at,started_at,completed_at,lease_expires_at,warning_count,failure_counts,pages_discovered,pages_crawled,used_http_fallback').gte('created_at', since).order('created_at', { ascending: false }).limit(500),
-    client.from('platform_settings').select('key,value,updated_at').like('key', 'audit_worker:%').order('updated_at', { ascending: false }).limit(20),
-    client.from('plan_limits').select('plan,label,max_pages_quick,max_pages_standard,max_pages_deep,allowed_modes').order('priority', { ascending: true }),
-    client.from('api_error_logs').select('request_id,route,method,user_id,internal_code,internal_details,deployment_version,created_at').order('created_at', { ascending: false }).limit(50),
-    client.from('audit_diagnostics').select('id,audit_id,affected_url,failure_code,phase,attempt_count,request_duration_ms,worker_id,internal_details,created_at').order('created_at', { ascending: false }).limit(100),
-    client.from('admin_actions').select('*').order('created_at', { ascending: false }).limit(50),
-  ]);
-  const error = [auditsResult.error, workersResult.error, plansResult.error, errorsResult.error, diagnosticsResult.error, actionsResult.error].find(Boolean);
-  if (error) throw error;
-  const rows = auditsResult.data || [];
-  const durations = rows.map((row: any) => row.started_at && row.completed_at ? new Date(row.completed_at).getTime() - new Date(row.started_at).getTime() : 0).filter((value) => value > 0);
-  const waits = rows.map((row: any) => row.started_at ? new Date(row.started_at).getTime() - new Date(row.created_at).getTime() : 0).filter((value) => value >= 0);
-  const failureGroups: Record<string, number> = {};
-  rows.forEach((row: any) => Object.entries(row.failure_counts || {}).forEach(([code, count]) => { failureGroups[code] = (failureGroups[code] || 0) + Number(count || 0); }));
-  const operations = buildOperationalHealth({ audits: rows, workers: workersResult.data || [], plans: plansResult.data || [], compatibility });
-  const sentryBuild = resolveSentryBuildConfiguration(process.env, process.env.NODE_ENV || 'production');
-  const workerSentryConfigured = (workersResult.data || []).some((row: any) => row.value?.sentryConfigured === true);
-  void maybeSendOperationalAlert(operations, client).catch(() => undefined);
-  res.setHeader('Cache-Control', 'private, no-store');
-  res.json({ success: true, data: {
-    compatibility,
-    operations,
-    metrics: {
-      queued: rows.filter((row: any) => row.status === 'queued').length,
-      running: rows.filter((row: any) => row.status === 'running').length,
-      completed: rows.filter((row: any) => row.status === 'completed').length,
-      completedWithWarnings: rows.filter((row: any) => row.status === 'completed_with_warnings').length,
-      failed: rows.filter((row: any) => row.status === 'failed').length,
-      abandoned: rows.filter((row: any) => row.status === 'abandoned').length,
-      staleLeases: rows.filter((row: any) => row.status === 'running' && row.lease_expires_at && new Date(row.lease_expires_at).getTime() < Date.now()).length,
-      averageQueueWaitMs: waits.length ? Math.round(waits.reduce((sum, value) => sum + value, 0) / waits.length) : null,
-      averageAuditDurationMs: durations.length ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length) : null,
-      pageFailureRate: rows.reduce((sum: number, row: any) => sum + Object.values(row.failure_counts || {}).reduce<number>((inner, value) => inner + Number(value || 0), 0), 0) / Math.max(1, rows.reduce((sum: number, row: any) => sum + Number(row.pages_discovered || 0), 0)),
-      failuresByCode: failureGroups,
-      oldestQueuedAt: rows.filter((row: any) => row.status === 'queued').map((row: any) => row.created_at).sort()[0] || null,
-    },
-    workers: workersResult.data || [],
-    recentApiErrors: errorsResult.data || [],
-    recentAuditDiagnostics: diagnosticsResult.data || [],
-    adminActions: actionsResult.data || [],
-    usageAvailability: { databaseStorage: 'provider-dashboard-only', realtime: 'provider-dashboard-only' },
-    monitoring: {
-      browserConfigured: Boolean(process.env.VITE_SENTRY_DSN),
-      apiConfigured: Boolean(process.env.SENTRY_DSN),
-      workerConfigured: workerSentryConfigured,
-      sourceMapsConfigured: sentryBuild.sourceMapsConfigured,
-      searchConsoleConfigured: searchConsoleConfigured(),
-      projectSchedulerConfigured: String(process.env.CRON_SECRET || '').length >= 24,
-      canonicalAppUrlConfigured: /^https:\/\//.test(String(process.env.APP_URL || '')),
-      environment: sentryBuild.environment,
-    },
-  }});
-}));
 
 apiRouter.post('/admin/diagnostics/sentry-test', asyncJsonRoute(async (req, res) => {
   const requester = await requireAdminRequester(req, res);
@@ -636,86 +603,6 @@ apiRouter.post('/admin/diagnostics/sentry-test', asyncJsonRoute(async (req, res)
   res.json({ success: true, data: { initiated, service: 'crawlio-api' } });
 }));
 
-apiRouter.post('/admin/audits/:id/action', asyncJsonRoute(async (req, res) => {
-  const requester = await requireAdminRequester(req, res);
-  if (!requester) return;
-  const reason = String(req.body?.reason || '').trim();
-  if (reason.length < 4 || reason.length > 500) throw new ApiError('ADMIN_REASON_REQUIRED', 'Provide a reason between 4 and 500 characters.', 400);
-  const action = String(req.body?.action || '');
-  const audit = await auditRepository.getAudit(req.params.id);
-  if (!audit) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
-  const before = { status: audit.status, phase: audit.currentPhase, leaseExpiresAt: audit.leaseExpiresAt, queuePriority: audit.queuePriority };
-  const patches: Record<string, Partial<ResourceAuditDocument>> = {
-    cancel: { status: 'cancelled', currentPhase: 'Cancelled by administrator', cancelledAt: new Date().toISOString(), lockedBy: null, lockedAt: null, leaseExpiresAt: null },
-    retry: { status: 'queued', currentPhase: 'Retry queued', error: null, progress: 0, lockedBy: null, lockedAt: null, leaseExpiresAt: null },
-    requeue: { status: 'queued', currentPhase: 'Recovered and requeued', error: null, lockedBy: null, lockedAt: null, leaseExpiresAt: null },
-    abandon: { status: 'abandoned', currentPhase: 'Marked abandoned', completedAt: new Date().toISOString(), lockedBy: null, lockedAt: null, leaseExpiresAt: null },
-    priority: { queuePriority: Math.max(0, Math.min(1000, Math.floor(Number(req.body?.queuePriority || 0)))) },
-  };
-  const patch = patches[action];
-  if (!patch) throw new ApiError('UNSUPPORTED_ADMIN_ACTION', 'This administrator action is not supported.', 400);
-  if (action === 'retry' && !['failed', 'abandoned'].includes(audit.status)) throw new ApiError('AUDIT_NOT_RETRYABLE', 'Only failed or abandoned audits can be retried.', 409);
-  if (action === 'cancel' && !['queued', 'running'].includes(audit.status)) throw new ApiError('AUDIT_NOT_CANCELLABLE', 'Only queued or running audits can be cancelled.', 409);
-  if (action === 'abandon' && audit.status !== 'running') throw new ApiError('AUDIT_NOT_ABANDONABLE', 'Only a running audit can be marked abandoned.', 409);
-  if (action === 'requeue' && !(audit.status === 'running' && (!audit.leaseExpiresAt || new Date(audit.leaseExpiresAt).getTime() < Date.now()))) throw new ApiError('AUDIT_NOT_STALE', 'Only a running audit with an expired lease can be requeued.', 409);
-  if (action === 'priority' && (!Number.isFinite(Number(req.body?.queuePriority)) || !['queued', 'running'].includes(audit.status))) throw new ApiError('INVALID_QUEUE_PRIORITY', 'Queue priority can be changed only for an active audit.', 400);
-  await auditRepository.updateAudit(audit.id, patch);
-  const client = requireSupabaseAdminClient();
-  await client.from('admin_actions').insert({ admin_user_id: requester.userId, action: `audit_${action}`, target_type: 'audit', target_id: audit.id, metadata: { reason, before, after: patch } });
-  res.json({ success: true, data: { auditId: audit.id, action, before, after: patch } });
-}));
-
-apiRouter.post('/admin/users/:id/reset-quota', asyncJsonRoute(async (req, res) => {
-  const requester = await requireAdminRequester(req, res);
-  if (!requester) return;
-  const reason = String(req.body?.reason || '').trim();
-  if (reason.length < 4 || reason.length > 500) throw new ApiError('ADMIN_REASON_REQUIRED', 'Provide a reason between 4 and 500 characters.', 400);
-  const client = requireSupabaseAdminClient();
-  const { data: before, error: readError } = await client.from('user_profiles').select('audit_quota_used_daily,audit_quota_used_monthly').eq('id', req.params.id).maybeSingle();
-  if (readError) throw readError;
-  if (!before) throw new ApiError('USER_NOT_FOUND', 'User not found.', 404);
-  const { error } = await client.from('user_profiles').update({ audit_quota_used_daily: 0, audit_quota_used_monthly: 0, updated_at: new Date().toISOString() }).eq('id', req.params.id);
-  if (error) throw error;
-  await client.from('admin_actions').insert({ admin_user_id: requester.userId, action: 'reset_user_quota', target_type: 'user', target_id: req.params.id, metadata: { reason, before, after: { daily: 0, monthly: 0 } } });
-  res.json({ success: true, data: { userId: req.params.id, daily: 0, monthly: 0 } });
-}));
-
-apiRouter.post('/admin/users/:id/update', asyncJsonRoute(async (req, res) => {
-  const requester = await requireAdminRequester(req, res);
-  if (!requester) return;
-  const reason = String(req.body?.reason || '').trim();
-  if (reason.length < 4 || reason.length > 500) throw new ApiError('ADMIN_REASON_REQUIRED', 'Provide a reason between 4 and 500 characters.', 400);
-  const allowed: Record<string, Set<string>> = {
-    role: new Set(['user', 'support', 'admin']),
-    plan: new Set(['free', 'paid', 'agency', 'admin']),
-    subscription_status: new Set(['inactive', 'trialing', 'active', 'past_due', 'cancelled']),
-  };
-  const patch: Record<string, unknown> = {};
-  for (const [key, values] of Object.entries(allowed)) {
-    if (key in (req.body?.patch || {})) {
-      const value = String(req.body.patch[key]);
-      if (!values.has(value)) throw new ApiError('INVALID_ADMIN_UPDATE', `Invalid ${key.replace(/_/g, ' ')} value.`, 400);
-      patch[key] = value;
-    }
-  }
-  if (!Object.keys(patch).length) throw new ApiError('EMPTY_ADMIN_UPDATE', 'No supported user fields were provided.', 400);
-  const client = requireSupabaseAdminClient();
-  const { data: before, error: readError } = await client.from('user_profiles').select('role,plan,subscription_status,disabled').eq('id', req.params.id).maybeSingle();
-  if (readError) throw readError;
-  if (!before) throw new ApiError('USER_NOT_FOUND', 'User not found.', 404);
-  if (req.params.id === requester.userId && patch.role && patch.role !== before.role) {
-    throw new ApiError('SELF_ROLE_CHANGE_FORBIDDEN', 'Another administrator must change your role.', 409);
-  }
-  if (before.role === 'admin' && patch.role && patch.role !== 'admin' && !before.disabled) {
-    const { count, error: countError } = await client.from('user_profiles').select('id', { count: 'exact', head: true }).eq('role', 'admin').eq('disabled', false);
-    if (countError) throw countError;
-    if ((count ?? 0) <= 1) throw new ApiError('LAST_ADMIN_PROTECTED', 'The final active administrator cannot be demoted.', 409);
-  }
-  const { error } = await client.from('user_profiles').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', req.params.id);
-  if (error) throw error;
-  await client.from('admin_actions').insert({ admin_user_id: requester.userId, action: 'update_user_access', target_type: 'user', target_id: req.params.id, metadata: { reason, before, after: patch } });
-  res.json({ success: true, data: { userId: req.params.id, before, after: patch } });
-}));
 
 apiRouter.post('/admin/plans/:plan', asyncJsonRoute(async (req, res) => {
   const requester = await requireAdminRequester(req, res);
@@ -772,9 +659,7 @@ apiRouter.post('/admin/plans/:plan', asyncJsonRoute(async (req, res) => {
       throw new ApiError('AUDIT_MODE_LIMIT_UNSUPPORTED', `${mode[0].toUpperCase() + mode.slice(1)} supports at most ${planPageCeiling(String(req.params.plan))} pages for this plan.`, 400);
     }
   }
-  const { error } = await client.from('plan_limits').update({ ...patch, updated_at: new Date().toISOString() }).eq('plan', req.params.plan);
-  if (error) throw error;
-  await client.from('admin_actions').insert({ admin_user_id: requester.userId, action: 'update_plan_limits', target_type: 'plan', target_id: req.params.plan, metadata: { reason, before, after: patch } });
+  await operationRpc('admin_update_configuration', { p_actor: requester.userId, p_kind: 'plan', p_key: req.params.plan, p_patch: patch, p_reason: reason, p_request: adminRequestId(req) });
   res.json({ success: true, data: { plan: req.params.plan, after: patch } });
 }));
 
@@ -784,25 +669,17 @@ apiRouter.post('/admin/platform/settings', asyncJsonRoute(async (req, res) => {
   const reason = String(req.body?.reason || '').trim();
   if (reason.length < 4 || reason.length > 500) throw new ApiError('ADMIN_REASON_REQUIRED', 'Provide a reason between 4 and 500 characters.', 400);
   const client = requireSupabaseAdminClient();
-  const { data: before, error: readError } = await client.from('platform_settings').select('*').eq('id', 'settings').maybeSingle();
+  const { data: before, error: readError } = await client.from('platform_settings').select('platform_name,support_email,require_email_verification,public_registration').eq('id', 'settings').maybeSingle();
   if (readError) throw readError;
   const patch = req.body?.patch || {};
   const row = {
-    id: 'settings',
-    key: 'settings',
     platform_name: String(patch.platformName || before?.platform_name || BRAND.name).slice(0, 100),
     support_email: String(patch.supportEmail || before?.support_email || '').slice(0, 254),
     require_email_verification: Boolean(patch.requireEmailVerification ?? before?.require_email_verification),
     public_registration: Boolean(patch.publicRegistration ?? before?.public_registration ?? true),
-    value: {
-      ...(before?.value && typeof before.value === 'object' ? before.value : {}),
-      ...(patch.value && typeof patch.value === 'object' && !Array.isArray(patch.value) ? patch.value : {}),
-    },
-    updated_at: new Date().toISOString(),
+    value: validatePlatformControls(patch.value || {}),
   };
-  const { error } = await client.from('platform_settings').upsert(row, { onConflict: 'id' });
-  if (error) throw error;
-  await client.from('admin_actions').insert({ admin_user_id: requester.userId, action: 'update_platform_settings', target_type: 'platform_setting', target_id: 'settings', metadata: { reason, before: before || null, after: row } });
+  await operationRpc('admin_update_configuration', { p_actor: requester.userId, p_kind: 'platform', p_key: 'settings', p_patch: row, p_reason: reason, p_request: adminRequestId(req) });
   res.json({ success: true, data: row });
 }));
 
@@ -814,15 +691,9 @@ apiRouter.post('/admin/platform/control', asyncJsonRoute(async (req, res) => {
   const allowedKeys = new Set(['maintenanceMode', 'pauseFreeSubmissions', 'captchaRequired', 'hardQueueLimit', 'softQueueWarning', 'disabledAuditModes']);
   const key = String(req.body?.key || '');
   if (!allowedKeys.has(key)) throw new ApiError('UNSUPPORTED_PLATFORM_CONTROL', 'This platform control is not supported.', 400);
-  const client = requireSupabaseAdminClient();
-  const { data: row, error: readError } = await client.from('platform_settings').select('value').eq('id', 'settings').maybeSingle();
-  if (readError) throw readError;
-  const before = row?.value?.[key] ?? null;
   const value = req.body?.value;
-  const nextValue = { ...(row?.value || {}), [key]: value };
-  const { error } = await client.from('platform_settings').upsert({ id: 'settings', key: 'settings', value: nextValue, updated_at: new Date().toISOString() }, { onConflict: 'id' });
-  if (error) throw error;
-  await client.from('admin_actions').insert({ admin_user_id: requester.userId, action: 'update_platform_control', target_type: 'platform_setting', target_id: key, metadata: { reason, before, after: value } });
+  const nextValue = validatePlatformControls({ [key]: value });
+  await operationRpc('admin_update_configuration', { p_actor: requester.userId, p_kind: 'platform', p_key: 'settings', p_patch: { value: nextValue }, p_reason: reason, p_request: adminRequestId(req) });
   res.json({ success: true, data: { key, value } });
 }));
 
@@ -899,22 +770,23 @@ apiRouter.get('/blog/news-sitemap.xml', asyncJsonRoute(async (req, res) => {
   res.status(200).send(xml);
 }));
 
-const runBlogScheduler = asyncJsonRoute(async (req: any, res: any) => {
-  if (!schedulerRequestAllowed(req)) throw new ApiError('BLOG_SCHEDULER_UNAUTHORIZED', 'Scheduler authentication failed.', 401);
+async function prepareScheduledBlogWork() {
+  await Promise.all([blogAutomationRepository.recoverVercelJobs(10), blogRepository.publishDueScheduled(10)]);
   const settings = await blogAutomationRepository.getSettings();
-  let discoveryJob = null;
-  if (process.env.BLOG_AUTOMATION_ENABLED === 'true' && settings.enabled && Array.isArray(settings.approved_feed_urls) && settings.approved_feed_urls.length) {
-    const now = new Date();
-    const sixHourBucket = `${now.toISOString().slice(0, 10)}-${Math.floor(now.getUTCHours() / 6)}`;
-    discoveryJob = await blogAutomationRepository.createJob({
-      origin: 'autopilot',
-      payload: { jobType: 'discover_trends', feedUrls: settings.approved_feed_urls },
-      idempotencyKey: blogJobIdempotencyKey({ origin: 'autopilot', topic: 'scheduled-discovery', dateBucket: sixHourBucket }),
+  const runtime = blogRuntimeReadiness(settings);
+  if (runtime.generationAllowed && runtime.automationEnabled && settings.enabled) {
+    await blogAutomationRepository.createJob({
+      origin: 'autopilot', payload: { jobType: 'discover_trends', feedUrls: settings.approved_feed_urls },
+      idempotencyKey: blogJobIdempotencyKey({ origin: 'autopilot', topic: 'scheduled-discovery' }),
     });
   }
-  const dispatch = await recoverAndDispatchVercelBlogWork(1);
+}
+
+const runBlogScheduler = asyncJsonRoute(async (req: any, res: any) => {
+  if (!schedulerRequestAllowed(req)) throw new ApiError('BLOG_SCHEDULER_UNAUTHORIZED', 'Scheduler authentication failed.', 401);
+  requestImmediateBlogDispatch(req, null, 0, prepareScheduledBlogWork);
   res.setHeader('Cache-Control', 'private, no-store');
-  res.json({ success: true, data: { ...dispatch, discoveryJobId: discoveryJob?.id || null } });
+  res.status(202).json({ success: true, data: { accepted: true, execution: 'durable_background' } });
 });
 apiRouter.get('/blog/scheduler/run', runBlogScheduler);
 apiRouter.post('/blog/scheduler/run', runBlogScheduler);
@@ -923,14 +795,10 @@ const runBlogDispatcher = asyncJsonRoute(async (req: any, res: any) => {
   if (!schedulerRequestAllowed(req, req.method === 'GET' ? 'cron' : 'dispatch')) throw new ApiError('BLOG_DISPATCH_UNAUTHORIZED', 'Dispatcher authentication failed.', 401);
   const requestedJobId = String(req.body?.jobId || req.query?.jobId || '').trim() || null;
   if (requestedJobId && !/^[0-9a-f-]{36}$/i.test(requestedJobId)) throw new ApiError('BLOG_JOB_ID_INVALID', 'The requested blog job ID is invalid.', 400);
-  const data = await dispatchVercelBlogStages({ requestedJobId, maxStages: Math.max(1, Math.min(3, Number(req.body?.maxStages || req.query?.maxStages || 1))) });
-  const chainDepth = Math.max(0, Math.min(7, Number(req.body?.chainDepth || 0)));
-  const latestJob = data.results.at(-1)?.job;
-  if (latestJob && !['ready_for_review', 'scheduled', 'published', 'failed', 'cancelled'].includes(latestJob.workflowStage) && chainDepth < 7) {
-    requestImmediateBlogDispatch(req, latestJob.id, chainDepth + 1);
-  }
+  const chainDepth = Math.max(0, Math.min(6, Number(req.body?.chainDepth || 0) || 0));
+  requestImmediateBlogDispatch(req, requestedJobId, chainDepth, req.method === 'GET' ? prepareScheduledBlogWork : undefined);
   res.setHeader('Cache-Control', 'private, no-store');
-  res.json({ success: true, data });
+  res.status(202).json({ success: true, data: { accepted: true, jobId: requestedJobId, execution: 'durable_background' } });
 });
 apiRouter.get('/blog/jobs/dispatch', runBlogDispatcher);
 apiRouter.post('/blog/jobs/dispatch', runBlogDispatcher);
@@ -1079,7 +947,7 @@ apiRouter.get('/admin/blog/overview', asyncJsonRoute(async (req, res) => {
   res.setHeader('Cache-Control', 'private, no-store');
   const providerConfiguration = getGroqBlogConfiguration();
   const fixtureConfiguration = getBlogFixtureConfiguration();
-  res.json({ success: true, data: { overview, jobs, discoveries, provider: { provider: 'Groq', execution: 'Vercel server workflow', enabled: Boolean(settings.provider_enabled && providerConfiguration.enabled), configured: providerConfiguration.configured, model: providerConfiguration.structuredModel, structuredModel: providerConfiguration.structuredModel, writerModel: providerConfiguration.writerModel, baseUrlHost: providerConfiguration.baseUrlHost, health: settings.provider_last_error_code ? 'attention required' : settings.provider_last_success_at ? 'connected' : providerConfiguration.configured ? 'not tested' : providerConfiguration.enabled ? 'not configured' : 'disabled', lastSuccessAt: settings.provider_last_success_at || null, lastErrorCode: settings.provider_last_error_code || '', lastDurationMs: settings.provider_last_duration_ms ?? null, liveVerificationStatus: settings.provider_live_verification_status || 'not_run', fixtureAvailable: fixtureConfiguration.enabled } } });
+  res.json({ success: true, data: { overview, jobs, discoveries, runtime: blogRuntimeReadiness(settings), provider: { provider: 'Groq', execution: 'Vercel server workflow', enabled: Boolean(settings.provider_enabled && providerConfiguration.enabled), configured: providerConfiguration.configured, serverEnabled: providerConfiguration.enabled, adminEnabled: settings.provider_enabled === true, automationEnabled: String(process.env.BLOG_AUTOMATION_ENABLED).trim().toLowerCase() === 'true', model: providerConfiguration.structuredModel, structuredModel: providerConfiguration.structuredModel, writerModel: providerConfiguration.writerModel, baseUrlHost: providerConfiguration.baseUrlHost, health: settings.provider_last_error_code ? 'attention required' : settings.provider_last_success_at ? 'connected' : providerConfiguration.configured ? 'not tested' : providerConfiguration.enabled ? 'not configured' : 'disabled', lastSuccessAt: settings.provider_last_success_at || null, lastErrorCode: settings.provider_last_error_code || '', lastDurationMs: settings.provider_last_duration_ms ?? null, liveVerificationStatus: settings.provider_live_verification_status || 'not_run', fixtureAvailable: fixtureConfiguration.enabled } } });
 }));
 
 apiRouter.get('/admin/blog/provider/diagnostics', asyncJsonRoute(async (req, res) => {
@@ -1275,13 +1143,11 @@ apiRouter.post('/admin/blog/jobs', asyncJsonRoute(async (req, res) => {
   const mode = String(req.body?.mode || 'manual');
   if (!['manual', 'custom_headline', 'discover', 'one_click', 'one_click_source', 'fixture'].includes(mode)) throw new ApiError('BLOG_JOB_MODE_INVALID', 'Choose a supported blog job type.', 400);
   if (mode === 'fixture') requireBlogFixtureProvider();
-  if (mode === 'one_click' || mode === 'one_click_source') {
-    const [providerConfiguration, settings] = await Promise.all([Promise.resolve(getGroqBlogConfiguration()), blogAutomationRepository.getSettings()]);
-    if (!providerConfiguration.enabled || !providerConfiguration.configured || settings.provider_enabled !== true) {
-      throw new ApiError('BLOG_PROVIDER_NOT_READY', 'One-click publishing requires a connected Groq provider enabled in Blog Studio.', 503);
-    }
-    if (settings.pause_all_publication === true || settings.emergency_pause === true || settings.maintenance_mode === true) {
-      throw new ApiError('BLOG_PUBLICATION_PAUSED', 'Blog publication is currently paused in advanced controls.', 409);
+  if (mode !== 'fixture') {
+    const runtime = blogRuntimeReadiness(await blogAutomationRepository.getSettings());
+    if (!runtime.generationAllowed) {
+      const blocker = runtime.blockers[0];
+      throw new ApiError(blocker.code, `${blocker.message} ${blocker.action}`, 409);
     }
   }
   const origin = mode === 'custom_headline'

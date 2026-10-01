@@ -108,7 +108,7 @@ export const blogRepository = {
       .order('published_at', { ascending: false })
       .range(safeOffset, safeOffset + safeLimit - 1);
     if (search) request = request.textSearch('search_vector', search, { config: 'english', type: 'websearch' });
-    if (safeTopic === 'SEO guides') request = request.or('topic_cluster.is.null,topic_cluster.eq.');
+    if (safeTopic === 'SEO guides') request = request.or('topic_cluster.is.null,topic_cluster.eq.,topic_cluster.eq.SEO guides');
     else if (safeTopic) request = request.eq('topic_cluster', safeTopic);
     const { data, error, count } = await request;
     if (error) throw error;

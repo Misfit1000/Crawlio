@@ -1,11 +1,12 @@
-import { AlertTriangle, CheckCircle2, FileSearch, Layers, ShieldAlert } from 'lucide-react';
+import { memo, useMemo } from 'react';
+import { CheckCircle2, ShieldAlert } from 'lucide-react';
 import type { ResourceAuditDocument, ResourceAuditIssue } from '../../lib/audit/resource-types';
 import type { AuditScoreState } from '../../lib/audit/audit-live-score';
 import { isTerminalAuditStatus } from '../../lib/audit/audit-time';
 import { issueSignature, type ChecklistStatus } from '../../lib/audit/client-insights';
 import { findingImpact } from '../../lib/audit/report-insights';
 import { auditCoverage } from '../../lib/audit/audit-evidence-quality';
-import { AuditScoreOverview, CategoryScoreBar, ProgressBar, SeverityDistribution, StatusBadge, SurfaceCard } from '../ui/visual-system';
+import { AuditGrade, CategoryScoreBar, ProgressBar, SeverityDistribution, StatusBadge } from '../ui/visual-system';
 
 export interface AuditCategoryScore {
   label: string;
@@ -14,15 +15,9 @@ export interface AuditCategoryScore {
   tone?: 'accent' | 'green' | 'yellow' | 'red';
 }
 
-export function AuditExecutiveSummary({
-  audit,
-  score,
-  scoreState = 'unavailable',
-  scoreLabel = 'Overall score',
-  scoreDetail,
-  categoryScores = [],
-  progress,
-  unavailableChecks = null,
+export const AuditExecutiveSummary = memo(function AuditExecutiveSummary({
+  audit, score, scoreState = 'unavailable', scoreLabel = 'Overall score', scoreDetail,
+  categoryScores = [], progress, unavailableChecks = null,
 }: {
   audit: ResourceAuditDocument;
   score: number | null;
@@ -35,63 +30,28 @@ export function AuditExecutiveSummary({
 }) {
   const coverage = auditCoverage(audit);
   const terminal = isTerminalAuditStatus(audit.status);
-  const warningCount = audit.warningCount || 0;
-  const limitationCount = unavailableChecks ?? warningCount;
-  const limitationLabel = unavailableChecks == null ? 'Audit warnings' : 'Unavailable checks';
-
-  return (
-    <SurfaceCard className="overflow-hidden" aria-label="Audit summary">
-      {progress != null && (
-        <div className="border-b border-border bg-[var(--surface-inset)] px-4 py-3 sm:px-5">
-          <ProgressBar label={audit.currentPhase || 'Audit progress'} value={progress} tone={audit.status === 'failed' ? 'red' : 'accent'} />
-        </div>
-      )}
-      <div className="grid lg:grid-cols-[minmax(300px,0.9fr)_minmax(0,1.05fr)_minmax(280px,0.85fr)]">
-        <div className="flex flex-col justify-center border-b border-border p-5 lg:border-b-0 lg:border-r lg:p-6">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <StatusBadge tone={scoreState === 'final' ? 'success' : scoreState === 'provisional' ? 'accent' : 'neutral'}>
-              {scoreState === 'final' ? 'Final score' : scoreState === 'provisional' ? 'Preliminary' : terminal ? 'Unavailable' : 'Not available yet'}
-            </StatusBadge>
-            {score != null && <span className="text-xs font-medium text-muted-foreground">Measured evidence only</span>}
-          </div>
-          {score == null ? (
-            <div className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 px-5 text-center"><FileSearch className="h-7 w-7 text-muted-foreground" /><div className="mt-3 font-semibold">{terminal ? 'Score unavailable' : 'Score pending'}</div><div className="mt-1 max-w-56 text-xs leading-5 text-muted-foreground">{terminal ? 'This audit ended without a saved score. Collected findings remain available below.' : 'Available after enough evidence is analysed'}</div></div>
-          ) : <AuditScoreOverview score={score} label={scoreLabel} detail={scoreDetail} categoryScores={categoryScores} />}
-        </div>
-
-        <div className="border-b border-border p-5 lg:border-b-0 lg:border-r lg:p-6">
-          <div className="flex items-center justify-between gap-4"><div><h2 className="text-lg font-semibold">Fix priority</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Measured findings grouped by urgency.</p></div><StatusBadge tone={audit.criticalCount ? 'danger' : audit.highCount ? 'warning' : 'success'}>{audit.issuesFound} findings</StatusBadge></div>
-          <div className="mt-5"><SeverityDistribution critical={audit.criticalCount} high={audit.highCount} medium={audit.mediumCount} low={audit.lowCount} /></div>
-        </div>
-
-        <div className="p-5 lg:p-6">
-          <div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">Crawl coverage</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Discovered URLs, not total site size.</p></div><Layers className="h-5 w-5 text-accent" /></div>
-          <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4 text-sm">
-            <div><dt className="text-xs text-muted-foreground">Pages analysed</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{coverage.analysed}<span className="ml-1 text-xs font-normal text-muted-foreground">/ {coverage.discovered} found</span></dd></div>
-            <div><dt className="text-xs text-muted-foreground">Plan allowance</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{coverage.allowance.toLocaleString()}<span className="ml-1 text-xs font-normal text-muted-foreground">pages</span></dd></div>
-            <div><dt className="text-xs text-muted-foreground">Check groups run</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{audit.checksCompleted.toLocaleString()}</dd></div>
-            <div><dt className="text-xs text-muted-foreground">{limitationLabel}</dt><dd className={`mt-1 text-xl font-semibold tabular-nums ${limitationCount ? 'text-amber-600 dark:text-amber-300' : ''}`}>{limitationCount}</dd></div>
-          </dl>
-          <div className="mt-5 space-y-3">
-            {coverage.discoveredPercent != null && <ProgressBar label="Discovered pages analysed" value={coverage.discoveredPercent} tone="green" />}
-            <ProgressBar label="Plan allowance used" value={coverage.allowancePercent} tone="accent" />
-          </div>
-        </div>
-      </div>
-
-      {categoryScores.length > 0 && (
-        <div className="border-t border-border p-5 lg:p-6">
-          <div className="mb-4 flex items-center justify-between gap-3"><h2 className="text-sm font-semibold">Measured score factors</h2><span className="text-xs text-muted-foreground">Higher is healthier</span></div>
-          <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
-          {categoryScores.map((item) => (
-            <CategoryScoreBar key={item.label} label={item.label} value={item.value} detail={item.detail} framed={false} />
-          ))}
-          </div>
-        </div>
-      )}
-    </SurfaceCard>
-  );
-}
+  const limitationCount = unavailableChecks ?? audit.warningCount ?? 0;
+  return <section className="audit-compact-summary" aria-label="Audit summary">
+    <div className="min-w-0 py-4">
+      <div className="mb-3"><StatusBadge tone={scoreState === 'final' ? 'success' : scoreState === 'provisional' ? 'accent' : 'neutral'}>{scoreState === 'final' ? 'Final score' : scoreState === 'provisional' ? 'Preliminary' : terminal ? 'Unavailable' : 'Score pending'}</StatusBadge></div>
+      <AuditGrade score={score} label={scoreLabel} detail={scoreDetail} compact />
+      {progress != null && !terminal && <div className="mt-4"><ProgressBar label={audit.currentPhase || 'Audit progress'} value={progress} /></div>}
+    </div>
+    <div className="min-w-0 py-4">
+      <h2 className="mb-3 text-sm font-semibold">Finding priority <span className="ml-1 text-xs font-normal text-muted-foreground">{audit.issuesFound.toLocaleString()} total</span></h2>
+      <SeverityDistribution critical={audit.criticalCount} high={audit.highCount} medium={audit.mediumCount} low={audit.lowCount} />
+    </div>
+    <div className="min-w-0 py-4">
+      <h2 className="mb-3 text-sm font-semibold">Coverage</h2>
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-3">
+        {[[coverage.analysed.toLocaleString(), 'Pages analysed'], [coverage.discovered.toLocaleString(), 'URLs discovered'], [audit.checksCompleted.toLocaleString(), 'Check groups'], [limitationCount.toLocaleString(), unavailableChecks == null ? 'Warnings' : 'Unavailable checks']].map(([value, label]) => <div key={label}><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{value}</dd></div>)}
+      </dl>
+      <p className="mt-3 text-xs text-muted-foreground">{coverage.allowance.toLocaleString()} page allowance. Discovered URLs are not total site size.</p>
+      {coverage.discoveredPercent != null && <div className="mt-3"><ProgressBar label="Discovered pages analysed" value={coverage.discoveredPercent} tone="green" /></div>}
+    </div>
+    {categoryScores.length > 0 && <div className="min-w-0 py-4"><h2 className="mb-3 text-sm font-semibold">Measured score factors</h2><div className="grid gap-2.5">{categoryScores.map(item => <CategoryScoreBar key={item.label} label={item.label} value={item.value} framed={false} />)}</div></div>}
+  </section>;
+});
 
 const SEVERITY_WEIGHT = { critical: 5, high: 4, medium: 3, low: 2, info: 1 };
 
@@ -112,7 +72,7 @@ export function PriorityRecommendations({
   statuses?: Record<string, ChecklistStatus>;
   onViewFindings?: () => void;
 }) {
-  const priorityIssues = [...issues]
+  const priorityIssues = useMemo(() => [...issues]
     .sort((left, right) => {
       const severity = SEVERITY_WEIGHT[right.severity] - SEVERITY_WEIGHT[left.severity];
       if (severity) return severity;
@@ -120,7 +80,7 @@ export function PriorityRecommendations({
       if (reach) return reach;
       return Number(Boolean(right.evidence)) - Number(Boolean(left.evidence));
     })
-    .slice(0, 4);
+    .slice(0, 4), [issues]);
 
   return (
     <section aria-labelledby="priority-recommendations-title" className="border-y border-border py-5">

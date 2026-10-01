@@ -29,9 +29,39 @@ export type AuditSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
 export type UserPlan = 'free' | 'paid' | 'agency' | 'admin';
 export type ProcessingTier = 'free' | 'paid' | 'agency' | 'admin';
 
+export interface AuditPresentationSummary {
+  version: 1;
+  scope: 'complete';
+  analysedPages: number;
+  // Retained terminal page evidence, excluding network retries and duplicate URL aliases.
+  attemptedPages: number;
+  responseOutcomes: { success: number; redirect: number; clientError: number; serverError: number; unavailable: number };
+  delivery: {
+    // Failure placeholders do not contribute zero-valued delivery measurements.
+    count: number;
+    totalResponseMs: number;
+    totalBytes: number;
+    averageResponseMs: number | null;
+    averagePageBytes: number | null;
+  };
+  pagesWithFindings: number;
+  depthCounts: Record<string, number>;
+  findingsBySection: Record<string, number>;
+  topRecommendations: Array<{
+    key: string;
+    title: string;
+    category: string;
+    severity: AuditSeverity;
+    affectedPages: number;
+    recommendation: string;
+  }>;
+  updatedAt: string;
+}
+
 export interface ResourceAuditDocument {
   id: string;
   processingVersion?: 1 | 2;
+  presentationSummary?: AuditPresentationSummary;
   userId: string | null;
   guestKeyHash: string | null;
   projectId: string | null;
@@ -151,6 +181,7 @@ export interface ResourceAuditIssue {
 }
 
 export interface ResourceAuditReport {
+  presentationSummary?: AuditPresentationSummary;
   scores: Record<string, unknown>;
   summary: string;
   topIssues: ResourceAuditIssue[];
@@ -180,7 +211,7 @@ export interface ResourceAuditLivePatch {
   finalReport?: ResourceAuditReport | null;
 }
 
-export type AuditReportSummary = Pick<ResourceAuditReport, 'scores' | 'summary' | 'generatedAt'>;
+export type AuditReportSummary = Pick<ResourceAuditReport, 'scores' | 'summary' | 'generatedAt' | 'presentationSummary'>;
 
 export interface AuditHistoryItem<TReport = ResourceAuditReport> {
   audit: ResourceAuditDocument;

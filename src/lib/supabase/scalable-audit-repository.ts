@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto';
 import { requireSupabaseAdminClient } from './server';
 import { toAuditDocument, toAuditPage, toAuditIssue, reportToRow } from './audit-repository';
 import type { AuditScoreAggregate, AuditScoreCategory } from '../audit/audit-scoring';
-import type { ResourceAuditDocument, ResourceAuditReport, AuditSeverity } from '../audit/resource-types';
+import type { ResourceAuditDocument, ResourceAuditReport, AuditSeverity, AuditPresentationSummary } from '../audit/resource-types';
 import { EVIDENCE_MAX_PAGE_SIZE, EVIDENCE_PAGE_SIZE } from '../audit/scalable-policy';
+import { isAuditPresentationSection } from '../audit/audit-presentation-summary';
 
 export interface CrawlRun {
   audit_id: string;
@@ -29,6 +30,7 @@ export interface CrawlRun {
   last_score_pages: number;
   last_score_at: string | null;
   metadata: Record<string, unknown>;
+  presentation_summary?: AuditPresentationSummary | null;
 }
 
 export interface FrontierItem {
@@ -134,16 +136,30 @@ export function buildEvidenceSearchFilter(query?: string): string | undefined {
   return ['title', 'description', 'affected_url'].map(column => `${column}.${filter.operator}.${value}`).join(',');
 }
 
-export async function readEvidencePage(auditId: string, kind: EvidenceKind, input: { cursor?: string; limit?: number; severity?: string; category?: string; query?: string } = {}) {
+export function validateEvidenceAffectedUrl(value?: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (!value || value.length > 2048 || !/^https?:\/\//i.test(value) || /[\u0000-\u0020\u007f]/.test(value)) throw new Error('Invalid affectedUrl');
+  let url: URL;
+  try { url = new URL(value); } catch { throw new Error('Invalid affectedUrl'); }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash) throw new Error('Invalid affectedUrl');
+  return value;
+}
+
+export async function readEvidencePage(auditId: string, kind: EvidenceKind, input: { cursor?: string; limit?: number; severity?: string; category?: string; query?: string; section?: string; affectedUrl?: string } = {}) {
   const limit = Math.min(EVIDENCE_MAX_PAGE_SIZE, Math.max(1, Math.floor(input.limit || EVIDENCE_PAGE_SIZE)));
   if (input.cursor && !/^[a-zA-Z0-9_-]{1,100}$/.test(input.cursor)) throw new Error('Invalid evidence cursor');
-  if (kind !== 'issues' && input.query !== undefined) throw new Error('Filters require issues');
+  if (kind !== 'issues' && [input.query, input.severity, input.category, input.section, input.affectedUrl].some(value => value !== undefined)) throw new Error('Filters require issues');
+  if (input.section !== undefined && !isAuditPresentationSection(input.section)) throw new Error('Invalid section');
+  const affectedUrl = validateEvidenceAffectedUrl(input.affectedUrl);
   const searchFilter = kind === 'issues' ? buildEvidenceSearchFilter(input.query) : undefined;
   const table = kind === 'pages' ? 'audit_pages' : kind === 'issues' ? 'audit_issues' : 'audit_events';
   let query = requireSupabaseAdminClient().from(table).select('*').eq('audit_id', auditId).order('id').limit(limit + 1);
   if (input.cursor) query = query.gt('id', input.cursor);
   if (kind === 'issues' && input.severity) query = query.eq('severity', input.severity);
   if (kind === 'issues' && input.category) query = query.eq('category', input.category.slice(0, 100));
+  // This immutable computed field is filtered by PostgreSQL before LIMIT and cursor pagination.
+  if (kind === 'issues' && input.section) query = query.eq('audit_report_section', input.section);
+  if (kind === 'issues' && affectedUrl) query = query.eq('affected_url', affectedUrl);
   if (searchFilter) query = query.or(searchFilter);
   const { data, error } = await query;
   if (error) throw error;

@@ -2,6 +2,7 @@ import { BRAND } from '../brand';
 import { getBlogTopicName, getBlogTopicSlug } from './publication';
 import type { BlogPost, BlogTopic } from './types';
 import { BLOG_PUBLIC_THEME_CSS } from './public-style';
+import { blogArticleUrl } from './seo';
 
 function escapeHtml(value: unknown) {
   return String(value || '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character] || character));
@@ -76,7 +77,7 @@ export function renderBlogListingHtml(input: {
       itemListElement: posts.map((post, index) => ({
         '@type': 'ListItem',
         position: ((page - 1) * pageSize) + index + 1,
-        url: `${origin}/blog/${post.slug}`,
+        url: blogArticleUrl(origin, post.slug),
         name: post.title,
       })),
     },

@@ -1,17 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { blogAutomationRepository } from '../automation-repository';
-import { publicationBlockers } from '../automation';
+import { blogJobIdempotencyKey, publicationBlockers } from '../automation';
 import { resolvedBlogFeedUrls } from '../default-sources';
 import { discoverApprovedFeedItems, selectBestBlogTrend } from '../discovery';
 import { BLOG_FIXTURE_PROVIDER, generateBlogFixture, regenerateFixtureSection } from '../fixture-provider';
 import { cleanupOrphanedBlogImageVariants, importBlogImage } from '../images';
 import { resolveBlogLengthRange } from '../length-policy';
-import { evaluateBlogQuality } from '../quality';
+import { evaluateBlogOriginality, evaluateBlogQuality } from '../quality';
+import { selectAutomaticBlogOpportunities, selectAutomaticPublicationTime } from '../freshness';
 import { completeManualArticleLinks } from '../editor-safe-fixes';
 import { blogEditorRepository } from '../editor-repository';
 import { notifyIndexNow } from '../indexnow';
 import { renderBlogArticleHtml } from '../render';
-import { buildCompetitorGapBrief, researchCompetitorReferences, researchSourceUrls } from '../research';
+import { buildCompetitorGapBrief, researchCompetitorReferences, researchSourceEvidence, type BlogSourceEvidence } from '../research';
 import { blogRepository } from '../repository';
 import { canonicalSiteOrigin } from '../sitemap';
 import { blogTextFromHtml } from '../sanitize';
@@ -72,6 +73,10 @@ function articleTopic(job: BlogGenerationJob, outputs: Record<string, unknown>) 
   return job.customHeadline || job.topic || String(trend?.sourceTitle || trend?.source_title || '');
 }
 
+function evidenceFromJob(job: BlogGenerationJob): BlogSourceEvidence[] {
+  return Array.isArray(job.stageOutputs.sourceEvidence) ? job.stageOutputs.sourceEvidence as BlogSourceEvidence[] : [];
+}
+
 export function completeGeneratedArticleLinks(contentHtml: string, sources: BlogSource[]) {
   return completeManualArticleLinks(contentHtml, sources);
 }
@@ -85,17 +90,48 @@ async function runStructured<T>(job: BlogGenerationJob, stage: BlogWorkflowStage
     validate,
     temperature: stage === 'section_drafting' ? 0.55 : 0.2,
     maxTokens: stage === 'section_drafting' ? 7_000 : 2_400,
+    maxAttempts: 1,
   });
 }
 
 async function processDiscovery(job: BlogGenerationJob) {
   const settings = await blogAutomationRepository.getSettings();
-  const feedUrls = Array.isArray(job.payload.feedUrls) ? job.payload.feedUrls.map(String).slice(0, 20) : [];
+  const feedUrls = resolvedBlogFeedUrls(Array.isArray(job.payload.feedUrls) ? job.payload.feedUrls : settings.approved_feed_urls);
   if (!feedUrls.length) return { discovered: 0, selected: 0 };
   const posts = await blogRepository.listAdmin(300);
   const opportunities = await discoverApprovedFeedItems({ feedUrls, existingTitles: posts.map((post) => post.title) });
   for (const opportunity of opportunities) await blogAutomationRepository.upsertDiscovery({ ...opportunity, status: opportunity.existingCoverage ? 'covered' : opportunity.freshnessStatus === 'high' ? 'high_priority' : 'monitor', priorityLabel: opportunity.existingCoverage ? 'Already covered' : 'Editorial review' });
-  return { discovered: opportunities.length, selected: 0, automationEnabled: settings.enabled === true };
+  const config = getGroqBlogConfiguration();
+  if (!config.enabled || !config.configured || !settings.provider_enabled || !settings.enabled || String(process.env.BLOG_AUTOMATION_ENABLED).trim().toLowerCase() !== 'true'
+    || settings.pause_all_publication || settings.emergency_pause || settings.maintenance_mode) {
+    return { discovered: opportunities.length, selected: 0, automationEnabled: settings.enabled === true };
+  }
+  const counts = await blogAutomationRepository.automaticJobCounts();
+  const available = Math.max(0, Math.min(2, Number(settings.daily_automatic_limit || 0) - counts.day, Number(settings.weekly_automatic_limit || 0) - counts.week));
+  const selected = available ? selectAutomaticBlogOpportunities(opportunities, new Date(), available) : [];
+  const articleJobs: string[] = [];
+  const publicationTimes = posts.map((post) => post.scheduledAt || post.publishedAt || '').filter(Boolean);
+  for (const opportunity of selected) {
+    const scheduling = selectAutomaticPublicationTime({
+      opportunity, existingPublicationTimes: publicationTimes,
+      settings: {
+        automaticTiming: settings.automatic_timing === true, timezone: String(settings.timezone || 'UTC'),
+        preferredStartHour: Number(settings.preferred_start_hour), preferredEndHour: Number(settings.preferred_end_hour),
+        minimumSpacingMinutes: Number(settings.minimum_spacing_minutes), delayAfterDiscoveryMinutes: Number(settings.delay_after_discovery_minutes),
+        maximumPostsPerDay: Number(settings.maximum_posts_per_day), blackoutWeekdays: settings.blackout_weekdays,
+        blackoutDates: settings.blackout_dates, fixedPublicationMinute: settings.fixed_publication_minute,
+      },
+    });
+    const article = await blogAutomationRepository.createJob({
+      origin: 'autopilot', requestedBy: job.requestedBy, topic: opportunity.sourceTitle,
+      payload: { jobType: 'one_click_source', sourceUrls: [opportunity.sourceUrl], articleType: 'news_analysis', selectedTrend: opportunity,
+        automaticSchedule: scheduling, publishWhenReady: false },
+      idempotencyKey: blogJobIdempotencyKey({ origin: 'autopilot', topic: opportunity.sourceUrl, dateBucket: 'verified-source-v1' }),
+    });
+    articleJobs.push(article.id);
+    if (scheduling.scheduledAt) publicationTimes.push(scheduling.scheduledAt);
+  }
+  return { discovered: opportunities.length, selected: articleJobs.length, articleJobIds: articleJobs, automationEnabled: true };
 }
 
 async function performStage(job: BlogGenerationJob): Promise<{ output: Record<string, unknown>; next?: BlogWorkflowStage; state?: BlogJobState; message: string }> {
@@ -123,17 +159,17 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
       }
       const selectedTrend = selectBestBlogTrend(opportunities);
       if (!selectedTrend) throw new Error('No recent, relevant SEO update passed the freshness and source-quality checks. Try again when an official source publishes a suitable update.');
-      const sources = await researchSourceUrls([selectedTrend.sourceUrl]);
+      const { sources, evidence: sourceEvidence } = await researchSourceEvidence([selectedTrend.sourceUrl]);
       const selectedRow = stored.find((item) => item.source_url === selectedTrend.sourceUrl);
       if (selectedRow?.id) await blogAutomationRepository.updateDiscovery(selectedRow.id, { status: 'selected' });
-      return { output: { sources, competitors: [], selectedTrend }, message: `Selected a timely update from ${selectedTrend.publisher}` };
+      return { output: { sources, sourceEvidence, competitors: [], selectedTrend }, message: `Selected a timely update from ${selectedTrend.publisher}` };
     }
     if (jobType === 'one_click_source') {
       const supplied = Array.isArray(job.payload.sourceUrls) ? job.payload.sourceUrls.map(String).slice(0, 1) : [];
       if (supplied.length !== 1) throw new Error('One public source URL is required.');
       const posts = await blogRepository.listAdmin(300);
       if (posts.some((post) => post.sources.some((source) => source.url === supplied[0]))) throw new Error('This source is already covered by an existing article.');
-      const sources = await researchSourceUrls(supplied);
+      const { sources, evidence: sourceEvidence } = await researchSourceEvidence(supplied);
       const source = sources[0];
       if (!source) throw new Error('The supplied source could not be verified.');
       if (posts.some((post) => post.sources.some((existingSource) => existingSource.url === source.url) || post.title.toLowerCase() === source.title.toLowerCase())) {
@@ -141,15 +177,16 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
       }
       const selectedTrend = {
         sourceUrl: source.url, sourceTitle: source.title, publisher: source.publisher,
-        publishedAt: source.publishedAt || new Date().toISOString(), freshnessStatus: 'unverified', topicCluster: 'SEO updates',
+        publishedAt: source.publishedAt, freshnessStatus: 'unverified', topicCluster: 'SEO updates',
+        ...(isObject(job.payload.selectedTrend) ? job.payload.selectedTrend : {}),
       };
-      return { output: { sources, competitors: [], selectedTrend }, message: `Verified the source from ${source.publisher}` };
+      return { output: { sources, sourceEvidence, competitors: [], selectedTrend }, message: `Read the source from ${source.publisher}` };
     }
     const supplied = Array.isArray(job.payload.sourceUrls) ? job.payload.sourceUrls.map(String).slice(0, 12) : [];
-    const sources = supplied.length ? await researchSourceUrls(supplied) : sourcesFromJob(job);
+    const researched = await researchSourceEvidence(supplied.length ? supplied : sourcesFromJob(job).map((source) => source.url));
     const competitorUrls = Array.isArray(job.payload.competitorUrls) ? job.payload.competitorUrls.map(String).slice(0, 5) : [];
     const competitors = competitorUrls.length ? await researchCompetitorReferences(competitorUrls) : [];
-    return { output: { sources, competitors }, message: `Collected ${sources.length} verified source records` };
+    return { output: { sources: researched.sources, sourceEvidence: researched.evidence, competitors }, message: `Collected ${researched.sources.length} source records and excerpts` };
   }
   if (stage === 'source_validation') {
     const sources = sourcesFromJob(job);
@@ -160,7 +197,7 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
     return { output: { topicEvaluation: result.data, providerUsage: result.usage, structuredModel: result.model }, message: 'Topic and audience evaluated' };
   }
   if (stage === 'research_organisation') {
-    const result = await runStructured(job, stage, `Return {"mainQuestion":"","originalAngle":"","supportedClaims":[],"readerProblems":[]} from this evidence: ${safeEvidence({ topic: job.topic, sources: sourcesFromJob(job), topicEvaluation: outputs.topicEvaluation })}.`, (value): value is any => hasStrings(value, ['mainQuestion', 'originalAngle']) && Array.isArray((value as any).supportedClaims) && Array.isArray((value as any).readerProblems));
+    const result = await runStructured(job, stage, `Return {"mainQuestion":"","originalAngle":"","supportedClaims":[],"readerProblems":[]} from this evidence: ${safeEvidence({ topic: articleTopic(job, outputs), sources: sourcesFromJob(job), excerpts: evidenceFromJob(job), topicEvaluation: outputs.topicEvaluation })}.`, (value): value is any => hasStrings(value, ['mainQuestion', 'originalAngle']) && Array.isArray((value as any).supportedClaims) && Array.isArray((value as any).readerProblems));
     return { output: { research: result.data, providerUsage: result.usage, structuredModel: result.model }, message: 'Research notes organised' };
   }
   if (stage === 'content_gap_analysis') {
@@ -193,7 +230,7 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
       return { output: { draft: fixture, fixtureLabel: fixture.fixtureLabel }, message: 'Fixture draft assembled' };
     }
     const length = resolveBlogLengthRange({ articleType: job.payload.articleType, mode: String(job.payload.lengthMode || 'automatic'), customMinimum: Number(job.payload.customMinimum), customMaximum: Number(job.payload.customMaximum) });
-    const result = await runStructured(job, stage, `Draft the article and return {"title":"","excerpt":"","tagline":"","summary":"","contentHtml":"","focusKeyword":"","tags":[]}. Write ${length.minimum}-${length.maximum} useful words without filler. Do not include an H1 in contentHtml. Use semantic p,h2,h3,ul,ol,li,strong,em,blockquote,pre,code,a elements. Link every supplied source URL with descriptive anchor text. Include useful internal links to /blog and /#start-audit. Clearly distinguish verified facts from practical interpretation. Brief: ${safeEvidence(outputs.brief)}. Outline: ${safeEvidence(outputs.outline)}. Trend: ${safeEvidence(outputs.selectedTrend)}. Sources: ${safeEvidence(sourcesFromJob(job))}.`, (value): value is any => hasStrings(value, ['title', 'excerpt', 'tagline', 'summary', 'contentHtml', 'focusKeyword'])
+    const result = await runStructured(job, stage, `Draft the article and return {"title":"","excerpt":"","tagline":"","summary":"","contentHtml":"","focusKeyword":"","tags":[]}. Write ${length.minimum}-${length.maximum} useful words without filler. Do not include an H1 in contentHtml. Use semantic p,h2,h3,ul,ol,li,strong,em,blockquote,pre,code,a elements. Link every supplied source URL with descriptive anchor text. Include useful internal links to /blog and /#start-audit. Base factual claims on the source excerpts; write independent explanations and practical next steps. Never copy source paragraphs or invent a publication date. Clearly distinguish verified facts from practical interpretation. Brief: ${safeEvidence(outputs.brief)}. Outline: ${safeEvidence(outputs.outline)}. Trend: ${safeEvidence(outputs.selectedTrend)}. Sources and excerpts: ${safeEvidence({ sources: sourcesFromJob(job), excerpts: evidenceFromJob(job) })}.`, (value): value is any => hasStrings(value, ['title', 'excerpt', 'tagline', 'summary', 'contentHtml', 'focusKeyword'])
       && Array.isArray((value as any).tags)
       && blogTextFromHtml(String((value as any).contentHtml)).split(/\s+/).filter(Boolean).length >= length.minimum);
     return { output: { draft: result.data, providerUsage: result.usage, writerModel: result.model }, message: 'Article sections drafted' };
@@ -211,14 +248,20 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
     return { output: { metadata: result.data }, message: 'Search metadata generated' };
   }
   if (stage === 'claim_validation') {
-    const result = await runStructured(job, stage, `Return {"claimsSupported":true,"warnings":[],"publicationRecommendation":""}. Verify only against supplied source records. Draft: ${safeEvidence(outputs.assembled)}. Sources: ${safeEvidence(sourcesFromJob(job))}.`, (value): value is any => isObject(value) && typeof value.claimsSupported === 'boolean' && Array.isArray(value.warnings) && typeof value.publicationRecommendation === 'string');
+    const result = await runStructured(job, stage, `Return {"claimsSupported":true,"warnings":[],"publicationRecommendation":""}. Check factual claims against the supplied source excerpts, not titles or URLs alone. Practical advice must be clearly distinguished from source facts. If excerpts are missing or insufficient, set claimsSupported=false and explain what needs review. Draft: ${safeEvidence(outputs.assembled)}. Evidence: ${safeEvidence({ sources: sourcesFromJob(job), excerpts: evidenceFromJob(job) })}.`, (value): value is any => isObject(value) && typeof value.claimsSupported === 'boolean' && Array.isArray(value.warnings) && typeof value.publicationRecommendation === 'string');
+    if (job.provider !== BLOG_FIXTURE_PROVIDER && !evidenceFromJob(job).some((evidence) => evidence.text.length >= 500)) {
+      result.data.claimsSupported = false;
+      result.data.warnings.push('The source did not provide enough readable evidence for automatic publication.');
+    }
     return { output: { claimValidation: result.data }, message: result.data.claimsSupported ? 'Claims checked against sources' : 'Claim review required' };
   }
   if (stage === 'originality_validation') {
     const text = String((outputs.assembled as any)?.contentText || '');
     const paragraphs = text.split(/\n{2,}/).map((item) => item.trim()).filter(Boolean);
     const duplicateParagraphs = paragraphs.length - new Set(paragraphs.map((item) => item.toLowerCase())).size;
-    return { output: { originality: { passed: duplicateParagraphs === 0, duplicateParagraphs } }, message: duplicateParagraphs ? 'Originality review requires attention' : 'Original structure checks passed' };
+    const overlap = evaluateBlogOriginality(String((outputs.assembled as any)?.contentHtml || ''), evidenceFromJob(job).map((evidence) => evidence.text));
+    const passed = duplicateParagraphs === 0 && overlap.passed;
+    return { output: { originality: { ...overlap, passed, duplicateParagraphs } }, message: passed ? 'Source overlap and structure checks passed' : 'Originality review requires attention' };
   }
   if (stage === 'link_validation') {
     const html = String((outputs.assembled as any)?.contentHtml || '');
@@ -248,14 +291,14 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
       contentHtml: String(draft.contentHtml), focusKeyword: String(draft.focusKeyword), tags: Array.isArray(draft.tags) ? draft.tags.map(String) : [],
       seoTitle: String(metadata.seoTitle || draft.title), metaDescription: String(metadata.metaDescription || draft.excerpt), status: fixture ? 'draft' : 'needs_review',
       origin: fixture ? 'admin_manual' : job.origin, articleType: String(job.payload.articleType || 'evergreen_guide'), topicCluster: String(job.payload.topicCluster || (outputs.selectedTrend as any)?.topicCluster || draft.focusKeyword),
-      freshnessStatus: job.origin === 'trend_autopilot'
-        ? ((outputs.selectedTrend as any)?.freshnessStatus || 'unverified')
-        : 'evergreen',
-      sources, sourceStatus: sources.length ? 'passed' : 'needs_review',
+      freshnessStatus: (outputs.selectedTrend as any)?.freshnessStatus || (job.origin === 'trend_autopilot' ? 'unverified' : 'evergreen'),
+      sources, sourceStatus: sources.length && evidenceFromJob(job).some((evidence) => evidence.text.length >= 500) ? 'passed' : 'needs_review',
+      sourcePublishedAt: (outputs.selectedTrend as any)?.publishedAt || null,
+      sourceUpdatedAt: (outputs.selectedTrend as any)?.updatedAt || null,
       originalityStatus: (outputs.originality as any)?.passed === false ? 'blocked' : 'passed', imageStatus: (outputs.image as any)?.status || 'not_required',
       prerenderStatus: 'pending', generationJobId: job.id, batchId: job.batchId, publicationReason: fixture ? 'Fixture test content. Private and noindex.' : 'Vercel staged workflow; human review required.', fixtureTest: fixture,
     };
-    const quality = evaluateBlogQuality(input, { requireSources: Boolean(job.payload.publishWhenReady) || sources.length > 0 });
+    const quality = evaluateBlogQuality(input, { requireSources: Boolean(job.payload.publishWhenReady) || sources.length > 0, sourceTexts: evidenceFromJob(job).map((evidence) => evidence.text) });
     input.qualityStatus = quality.status;
     input.qualityResults = quality;
     const blockers = publicationBlockers({ qualityReport: quality, originalityStatus: input.originalityStatus || 'pending', sourceStatus: input.sourceStatus || 'pending', imageStatus: input.imageStatus || 'not_required', prerenderStatus: 'passed' });
@@ -275,7 +318,24 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
     if ((html.match(/<h1>/g) || []).length !== 1 || !html.includes('application/ld+json')) throw new Error('Initial article HTML validation failed.');
     post = (await blogRepository.update(post.id, { prerender_status: 'passed', robots_directive: fixture ? 'noindex,nofollow' : post.robotsDirective })) || post;
     const claimValidationPassed = (outputs.claimValidation as any)?.claimsSupported === true;
-    const publishNow = job.payload.publishWhenReady === true && blockers.length === 0 && claimValidationPassed && !fixture;
+    if (!claimValidationPassed) blockers.push('Factual claims need review against readable source evidence');
+    const settings = await blogAutomationRepository.getSettings();
+    const paused = Boolean(settings.pause_all_publication || settings.emergency_pause || settings.maintenance_mode);
+    const automaticUnlocked = settings.enabled === true && settings.strict_autopilot_enabled === true
+      && Number(settings.automatic_articles_approved || 0) >= Number(settings.required_reviewed_articles_before_autopublish || 30)
+      && String(process.env.BLOG_AUTOMATION_ENABLED).trim().toLowerCase() === 'true';
+    const automaticSchedule = job.origin === 'autopilot' && isObject(job.payload.automaticSchedule) ? job.payload.automaticSchedule : null;
+    const holdUrgent = input.freshnessStatus === 'high' && (settings.urgent_news_hold || settings.require_review_for_urgent);
+    const scheduleNow = Boolean(automaticSchedule?.scheduledAt && automaticUnlocked && !holdUrgent && !paused && !fixture && blockers.length === 0);
+    const publishNow = job.origin !== 'autopilot' && job.payload.publishWhenReady === true && blockers.length === 0 && !paused && !fixture;
+    if (paused) blockers.push('Publication is paused by an administrator');
+    if (scheduleNow) {
+      const scheduledRow = prepareBlogPost({ ...post, status: 'scheduled', scheduledAt: String(automaticSchedule!.scheduledAt),
+        recommendedPublicationAt: String(automaticSchedule!.scheduledAt), publicationRule: String(automaticSchedule!.rule || ''),
+        publicationReason: 'Scheduled automation passed evidence, quality, and configured editorial policy.',
+        prerenderStatus: 'passed' }, { publishing: true });
+      post = (await blogRepository.update(post.id, { ...scheduledRow, updated_by: job.requestedBy })) || post;
+    }
     if (publishNow) {
       const publishedRow = prepareBlogPost({
         ...post,
@@ -288,18 +348,18 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
         publicationReason: 'Administrator requested guarded one-click publication; all automated evidence and quality gates passed.',
       }, { publishing: true });
       post = (await blogRepository.update(post.id, { ...publishedRow, reviewer_id: job.requestedBy, updated_by: job.requestedBy })) || post;
-      await blogAutomationRepository.recordAutomaticReview(true);
     }
     await blogRepository.syncEditorialRecords(post, job.requestedBy, '');
-    await blogAutomationRepository.updateJob(job.id, { articleId: post.id, result: { articleId: post.id, blockers, qualityStatus: quality.status, published: publishNow }, inputTokens: Number((outputs.providerUsage as any)?.inputTokens || 0), outputTokens: Number((outputs.providerUsage as any)?.outputTokens || 0), completedAt: new Date().toISOString() });
+    await blogAutomationRepository.updateJob(job.id, { articleId: post.id, result: { articleId: post.id, blockers, qualityStatus: quality.status, published: publishNow, scheduled: scheduleNow }, inputTokens: Number((outputs.providerUsage as any)?.inputTokens || 0), outputTokens: Number((outputs.providerUsage as any)?.outputTokens || 0), completedAt: new Date().toISOString() });
     await blogEditorRepository.createNotification({
       adminUserId: job.requestedBy,
       type: publishNow ? 'blog_published' : 'blog_needs_attention',
-      title: publishNow ? 'AI article published' : 'AI article needs attention',
-      message: publishNow ? `${post.title} is now live.` : `${post.title} was saved privately because ${blockers.length || 1} publication check${blockers.length === 1 ? '' : 's'} need attention.`,
+      title: publishNow ? 'AI article published' : scheduleNow ? 'AI article scheduled' : blockers.length ? 'AI article needs attention' : 'AI draft ready for review',
+      message: publishNow ? `${post.title} is now live.` : scheduleNow ? `${post.title} passed publication checks and is scheduled for ${post.scheduledAt}.` : blockers.length ? `${post.title} was saved privately because ${blockers.length} publication check${blockers.length === 1 ? '' : 's'} need attention.` : `${post.title} was saved privately for your editorial review.`,
       articleId: post.id, jobId: job.id, linkPath: `/admin/blog?articleId=${encodeURIComponent(post.id)}`,
     }).catch(() => undefined);
-    if (publishNow) void notifyIndexNow([`/blog/${post.slug}`, '/blog', '/sitemap.xml', '/rss.xml']).catch(() => undefined);
+    if (publishNow) await notifyIndexNow([`/blog/${post.slug}`, '/blog', '/sitemap.xml', '/rss.xml']).catch(() => undefined);
+    if (scheduleNow) return { output: { articleId: post.id, blockers: [] }, next: 'scheduled', state: 'scheduled', message: 'Article passed every gate and is scheduled in the configured publication window' };
     return publishNow
       ? { output: { articleId: post.id, blockers: [] }, next: 'published', state: 'published', message: 'Article passed every gate and was published' }
       : { output: { articleId: post.id, blockers }, next: 'ready_for_review', state: 'ready_for_review', message: blockers.length ? 'Draft saved for review because publication checks need attention' : 'Draft is ready for editorial review' };
@@ -317,7 +377,7 @@ function sanitizeStageErrorMessage(value: unknown) {
 }
 
 export function safeBlogStageError(error: unknown) {
-  if (error instanceof GroqBlogProviderError) return { code: error.code, message: error.message, retryable: error.retryable };
+  if (error instanceof GroqBlogProviderError) return { code: error.code, message: error.message, retryable: error.retryable, retryAfterMs: error.retryAfterMs };
   if (error && typeof error === 'object') {
     const record = error as Record<string, unknown>;
     const providerCode = /^[A-Z0-9_]{2,20}$/i.test(String(record.code || '')) ? String(record.code) : '';
@@ -347,7 +407,8 @@ export async function processNextVercelBlogStage(input: { requestedJobId?: strin
   } catch (error) {
     const safe = safeBlogStageError(error);
     const terminal = !safe.retryable || job.stageAttemptCount >= 3 || job.attemptCount >= job.maxAttempts;
-    const retryAt = new Date(Date.now() + Math.min(15 * 60_000, 30_000 * Math.max(1, job.stageAttemptCount))).toISOString();
+    const providerDelay = 'retryAfterMs' in safe ? Number(safe.retryAfterMs) || 0 : 0;
+    const retryAt = new Date(Date.now() + Math.min(15 * 60_000, Math.max(providerDelay, 30_000 * Math.max(1, job.stageAttemptCount)))).toISOString();
     const deferred = await blogAutomationRepository.deferVercelStage({ jobId: job.id, executionId, expectedStage: job.workflowStage, errorCode: safe.code, message: safe.message, retryAt, terminal });
     if (terminal) {
       await blogEditorRepository.createNotification({

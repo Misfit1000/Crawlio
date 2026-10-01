@@ -3,6 +3,8 @@ import React from 'react';
 import { useLocation,useNavigate } from '../app/router';
 import { useAuth } from '../contexts/AuthContext';
 import { AdminActionProvider } from './admin/AdminActionDialog';
+import { AdminRefreshProvider } from './admin/AdminRefresh';
+import AdminSearch from './admin/AdminSearch';
 import BlogNotificationInbox from './blog/BlogNotificationInbox';
 import { Notice,PageHeader,Panel as UiPanel } from './ui/page-system';
 
@@ -32,7 +34,7 @@ const tabs: Array<{ id: AdminTab; label: string; icon: any; path: string }> = [
 ];
 
 const sectionDescriptions: Record<AdminTab, string> = {
-  overview: 'Recent platform activity, audit outcomes, and audit-engine status in one place.',
+  overview: 'Observe platform health, diagnose failures, take guarded action, and verify outcomes.',
   users: 'Find accounts, review access, and apply guarded account actions.',
   audits: 'Inspect audit evidence and lifecycle state before taking action.',
   queue: 'Review waiting and active work without interrupting healthy jobs.',
@@ -70,7 +72,7 @@ export default function AdminDashboard() {
   };
 
   return (
-    <AdminActionProvider><div className="admin-workspace space-y-6">
+    <AdminActionProvider key={user.id}><div className="admin-workspace min-w-0 max-w-full space-y-6">
       <PageHeader eyebrow="Admin control center" icon={Activity} title={activeTab === 'overview' ? 'Operations overview' : activeLabel} description={sectionDescriptions[activeTab]} metadata={<><span className="suite-chip"><ShieldAlert className="h-3.5 w-3.5" /> Server-verified admin</span><BlogNotificationInbox /></>} />
 
       <UiPanel className="flex max-w-full gap-1 overflow-x-auto p-1.5 lg:hidden" as="nav">
@@ -81,7 +83,7 @@ export default function AdminDashboard() {
               key={tab.id}
               onClick={() => switchTab(tab.id)}
               aria-current={activeTab === tab.id ? 'page' : undefined}
-              className={`flex min-h-10 shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
+              className={`flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
                 activeTab === tab.id ? 'bg-accent text-accent-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
               }`}
             >
@@ -92,6 +94,8 @@ export default function AdminDashboard() {
         })}
       </UiPanel>
 
+      {activeTab !== 'blog' && <div className="max-w-2xl"><AdminSearch /></div>}
+      <AdminRefreshProvider controls={activeTab !== 'blog'}>
       <React.Suspense fallback={<div role='status' className='p-8 text-muted-foreground'>Loading section...</div>}>
       {activeTab === 'overview' && <AdminOverview />}
       {activeTab === 'users' && <AdminUsers adminUserId={user.id} />}
@@ -106,6 +110,6 @@ export default function AdminDashboard() {
           <BlogAdmin />
         </React.Suspense>
       )}
-    </React.Suspense></div></AdminActionProvider>
+    </React.Suspense></AdminRefreshProvider></div></AdminActionProvider>
   );
 }

@@ -1,75 +1,63 @@
-import { BarChart3,CheckCircle2,Clock3,RefreshCw,ShieldAlert,Users,Wifi,XCircle } from 'lucide-react';
-import { useMemo } from 'react';
-import { isCompletedAuditStatus } from '../../lib/audit/audit-time';
-import {
-getAdminActions,
-getAdminAudits,
-getAdminWorkers,
-getAllUsers
-} from '../../services/supabaseDataService';
+import { Activity, AlertTriangle, BarChart3, CheckCircle2, Clock3, Gauge, ShieldAlert } from 'lucide-react';
+import { useAdminFilter } from './useAdminFilter';
+import { Link } from '../../app/router';
+import type { OperationsData, OperationsRange } from '../../lib/admin/types';
 import { Notice } from '../ui/page-system';
+import { adminGet } from './client';
 import { useAdminData } from './useAdminData';
+import { Empty, Loading, Metric, Panel } from './shared';
+import { DataNotice, duration, HealthBadge, healthTone, QuietNotice, timestamp } from './operations-shared';
+import { WorkerStatus, WorkerWake } from './AdminWorkers';
+import { AuditDetailDrawer } from './AdminDetails';
+import { useState } from 'react';
+import AdminActions from './AdminActions';
 
-
-import { Empty,Loading,Metric,Panel,SimpleTable,WorkerRow } from './shared';
 export default function AdminOverview() {
-  const users = useAdminData(() => getAllUsers(), []);
-  const audits = useAdminData(() => getAdminAudits(100), []);
-  const workers = useAdminData(() => getAdminWorkers(), []);
-  const actions = useAdminData(() => getAdminActions(10), []);
-
-  const stats = useMemo(() => {
-    const userRows = users.data || [];
-    const auditRows = audits.data || [];
-    return {
-      totalUsers: userRows.length,
-      freeUsers: userRows.filter((item: any) => item.plan === 'free').length,
-      paidUsers: userRows.filter((item: any) => item.plan === 'paid').length,
-      agencyUsers: userRows.filter((item: any) => item.plan === 'agency').length,
-      queued: auditRows.filter((item: any) => item.status === 'queued').length,
-      running: auditRows.filter((item: any) => item.status === 'running').length,
-      failed: auditRows.filter((item: any) => item.status === 'failed').length,
-      completed: auditRows.filter((item: any) => isCompletedAuditStatus(item.status)).length,
-      successRate: auditRows.length ? Math.round((auditRows.filter((item: any) => isCompletedAuditStatus(item.status)).length / auditRows.length) * 100) : 0,
-    };
-  }, [users.data, audits.data]);
-
-  if (users.loading || audits.loading || workers.loading) return <Loading />;
-  const error = users.error || audits.error || workers.error || actions.error;
-
-  return (
-    <div className="space-y-6">
-      {error && <Notice tone="danger" title="Some admin data could not be loaded">{error}</Notice>}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric icon={Users} label="Recent accounts" value={users.error ? 'Unavailable' : stats.totalUsers} detail={`Latest 100 accounts: ${stats.paidUsers + stats.agencyUsers} paid or agency`} />
-        <Metric icon={Clock3} label="Recent active audits" value={audits.error ? 'Unavailable' : stats.queued + stats.running} detail={`Latest 100 audits: ${stats.queued} waiting, ${stats.running} checking`} tone="warning" />
-        <Metric icon={CheckCircle2} label="Completed audits" value={audits.error ? 'Unavailable' : stats.completed} detail={audits.error ? 'Refresh audit data to see completion' : `${stats.successRate}% of recent audits`} tone="success" />
-        <Metric icon={XCircle} label="Failed audits" value={audits.error ? 'Unavailable' : stats.failed} detail={audits.error ? 'Audit data could not be retrieved' : stats.failed ? 'Review and retry failed jobs' : 'No failed audits in this view'} tone={stats.failed ? 'danger' : 'success'} />
-      </div>
-      <div className="grid gap-4 xl:grid-cols-[0.92fr_1.08fr]">
-        <Panel title="Audit distribution" description="Lifecycle states among the latest 100 audits, not platform-wide totals." icon={BarChart3}>
-          <div className="space-y-4">
-            {[
-              ['Completed', stats.completed, 'bg-emerald-500'],
-              ['Waiting', stats.queued, 'bg-blue-500'],
-              ['Checking', stats.running, 'bg-violet-500'],
-              ['Failed', stats.failed, 'bg-red-500'],
-            ].map(([label, value, color]) => {
-              const total = Math.max(1, stats.completed + stats.queued + stats.running + stats.failed);
-              return <div key={String(label)}><div className="mb-1.5 flex items-center justify-between text-sm"><span className="text-muted-foreground">{label}</span><span className="font-semibold">{value}</span></div><div className="h-2 overflow-hidden rounded-full bg-muted"><div className={`h-full rounded-full transition-all duration-700 ${color}`} style={{ width: `${Math.max(Number(value) ? 4 : 0, (Number(value) / total) * 100)}%` }} /></div></div>;
-            })}
-          </div>
-          <div className="mt-5 grid grid-cols-3 gap-2 border-t border-border pt-4 text-center text-xs"><div><div className="text-lg font-semibold">{stats.freeUsers}</div><div className="text-muted-foreground">Free</div></div><div><div className="text-lg font-semibold">{stats.paidUsers}</div><div className="text-muted-foreground">Paid</div></div><div><div className="text-lg font-semibold">{stats.agencyUsers}</div><div className="text-muted-foreground">Agency</div></div></div>
-        </Panel>
-        <Panel title="Audit engine heartbeat" description="Current Render worker registrations and freshness." icon={Wifi} action={<button type="button" onClick={workers.refresh} className="quiet-button min-h-9 px-3 py-1.5 text-xs"><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>}>
-          {(workers.data || []).length ? (workers.data || []).map((worker: any) => <WorkerRow key={worker.id} worker={worker} />) : <Empty text="No audit engine heartbeat found." />}
-        </Panel>
-      </div>
-      <div>
-        <Panel title="Latest admin actions" description="Recent privileged changes for operational traceability." icon={ShieldAlert} action={<button type="button" onClick={actions.refresh} className="quiet-button min-h-9 px-3 py-1.5 text-xs"><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>}>
-          {(actions.data || []).length ? <SimpleTable rows={actions.data || []} columns={['action', 'targetType', 'targetId', 'createdAt']} /> : <Empty text="No admin actions logged yet." />}
-        </Panel>
-      </div>
+  const [rangeValue, setRange] = useAdminFilter('range', '7d');
+  const range: OperationsRange = ['24h', '7d', '30d'].includes(rangeValue) ? rangeValue as OperationsRange : '7d';
+  const operations = useAdminData(signal => adminGet<OperationsData>(`operations?range=${range}`, signal), [range]);
+  const [auditId, setAuditId] = useState<string | null>(null);
+  const data = operations.data;
+  if (operations.loading && !data) return <Loading />;
+  return <div className="min-w-0 space-y-6">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex min-h-11 items-center gap-2 text-sm font-semibold"><Activity className="h-4 w-4" /> Observe{data && <HealthBadge status={data.status} />}</div>
+      <div role="group" aria-label="Operations time range" className="flex flex-wrap gap-1">{(['24h', '7d', '30d'] as const).map(value => <button type="button" key={value} aria-pressed={range === value} onClick={() => setRange(value)} className={`min-h-11 min-w-14 rounded-md px-3 text-sm font-semibold ${range === value ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground'}`}>{value === '24h' ? '24 hours' : value === '7d' ? '7 days' : '30 days'}</button>)}</div>
     </div>
-  );
+    <DataNotice {...operations} />
+    {!data ? <Notice tone="danger">Operations data is unavailable. Use the refresh control to try again.</Notice> : <>
+      <QuietNotice tone={healthTone(data.status)} title={`Platform: ${data.status}`}><ul className="space-y-1">{data.reasons.length ? data.reasons.map((reason, index) => <li key={index}>{reason}</li>) : <li>No actionable condition reported.</li>}</ul><p className="mt-2 text-xs">Observed: {timestamp(data.observedAt)}</p></QuietNotice>
+      <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric icon={BarChart3} label="Audit volume" value={data.metrics.audits} detail={`${data.metrics.completed} clean / ${data.metrics.warnings} with warnings`} />
+        <Metric icon={CheckCircle2} label="Success rate" value={data.metrics.successRate == null ? 'Unavailable' : `${data.metrics.successRate.toFixed(1)}%`} detail={`Server-calculated for ${range}`} tone={data.metrics.successRate == null ? 'accent' : data.metrics.successRate < 90 ? 'warning' : 'success'} />
+        <Metric icon={Clock3} label="Median duration" value={duration(data.metrics.medianDurationSeconds)} detail="Completed audit duration" />
+        <Metric icon={AlertTriangle} label="Failed / abandoned" value={data.metrics.failed + data.metrics.abandoned} detail={`${data.metrics.failed} failed / ${data.metrics.abandoned} abandoned`} tone={data.metrics.failed + data.metrics.abandoned ? 'danger' : 'success'} />
+      </div>
+      <Panel title="Component health" description="Diagnose" icon={Gauge}>
+        <dl className="grid min-w-0 gap-x-5 sm:grid-cols-2 xl:grid-cols-5">{Object.entries(data.components).map(([name, component]) => <div className="min-w-0 border-b border-border py-3" key={name}><dt className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm font-semibold capitalize">{name}<HealthBadge status={component.status} /></dt><dd className="break-words text-sm text-muted-foreground">{component.reason || 'No reason reported.'}</dd></div>)}</dl>
+      </Panel>
+      <div className="grid min-w-0 gap-5 xl:grid-cols-2">
+        <Panel title="Queue pressure" icon={Clock3} action={<Link to="/admin/queue" className="quiet-button min-h-11">Inspect queue</Link>}>
+          <dl className="grid gap-4 sm:grid-cols-2">{[['Queued', data.queue.queued], ['Running', data.queue.running], ['Oldest queued', duration(data.queue.oldestQueuedSeconds)], ['Median wait', duration(data.queue.medianWaitSeconds)], ['Stale leases', data.queue.staleLeases]].map(([label, value]) => <div key={label}><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 text-xl font-semibold">{value}</dd></div>)}</dl>
+          <div className="mt-5 grid gap-5 border-t border-border pt-4 sm:grid-cols-2">{[['By mode', data.queue.byMode], ['By plan', data.queue.byPlan]].map(([label, breakdown]) => <div key={String(label)}><h3 className="text-sm font-semibold">{String(label)}</h3>{Object.entries(breakdown).length ? <dl className="mt-2 space-y-2">{Object.entries(breakdown).map(([key, value]) => <div key={key} className="flex justify-between gap-3 text-sm"><dt className="capitalize text-muted-foreground">{key}</dt><dd>{value}</dd></div>)}</dl> : <p className="mt-2 text-sm text-muted-foreground">No queued work.</p>}</div>)}</div>
+        </Panel>
+        <Panel title="Deployment evidence" icon={ShieldAlert}>
+          <div className="mb-4 flex flex-wrap gap-2"><HealthBadge status={data.deployment.compatible == null ? 'unknown' : data.deployment.compatible ? 'compatible' : 'incompatible'} /><HealthBadge status={data.deployment.commitMismatch == null ? 'unknown' : data.deployment.commitMismatch ? 'commit mismatch' : 'commits match'} /></div>
+          <dl className="space-y-3 text-sm">{[['Application commit', data.deployment.applicationCommit], ['Worker commit', data.deployment.workerCommit], ['Expected schema', data.deployment.expectedSchemaVersion], ['Database schema', data.deployment.databaseSchemaVersion], ['Applied migration', data.deployment.appliedMigration]].map(([label, value]) => <div key={String(label)} className="min-w-0"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 break-all font-mono">{value ?? 'Not reported'}</dd></div>)}</dl>
+        </Panel>
+      </div>
+      <Panel title="Audit trend" description={`Daily outcomes in the selected ${range} window.`} icon={BarChart3}>
+        {data.trend.length ? <div className="max-w-full overflow-x-auto"><table className="suite-table w-full min-w-[620px]"><caption className="sr-only">Audit volume and outcomes by day</caption><thead><tr>{['Day', 'Audits', 'Completed', 'Warnings', 'Failed', 'Median duration'].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead><tbody>{data.trend.map(day => <tr key={day.day}><th scope="row">{day.day}</th><td>{day.audits}</td><td>{day.completed}</td><td>{day.warnings}</td><td>{day.failed}</td><td>{duration(day.medianDurationSeconds)}</td></tr>)}</tbody></table></div> : <Empty text="No audits in this window." />}
+      </Panel>
+      <Panel title="Recent failures" description="Diagnose failure evidence before retrying or recovering a job." icon={AlertTriangle}>
+        {data.recentFailures.length ? <ul className="divide-y divide-border">{data.recentFailures.map(failure => <li key={failure.id} className="flex min-w-0 flex-col gap-3 py-4 sm:flex-row sm:justify-between"><div className="min-w-0"><button type="button" className="min-h-11 break-all text-left text-sm font-semibold text-accent hover:underline" onClick={() => setAuditId(failure.id)}>{failure.domain || failure.id}</button><p className="break-words text-sm text-muted-foreground">{failure.error || 'No error message reported.'}</p><p className="mt-2 break-words text-xs text-muted-foreground">{failure.failureClass || 'Unclassified'} / {failure.failureCode || 'No code'} / {timestamp(failure.createdAt)}</p></div><div><HealthBadge status={failure.status} /></div></li>)}</ul> : <Empty text="No recent failures in this window." />}
+      </Panel>
+      <Panel title="Operational controls" description="Act" icon={Activity}>
+        <div className="flex flex-wrap gap-3"><WorkerWake refresh={operations.refresh} /><Link to="/admin/queue" className="quiet-button min-h-11">Recover stale work</Link><Link to="/admin/users" className="quiet-button min-h-11">Account controls</Link><Link to="/admin/settings" className="quiet-button min-h-11">Resources and retention</Link></div>
+        <div className="mt-5">{data.workers.length ? data.workers.map(worker => <WorkerStatus worker={worker} key={worker.id} />) : <Empty text="No registered worker evidence." />}</div>
+      </Panel>
+      <AdminActions recent={data.recentActions} />
+    </>}
+    {auditId && <AuditDetailDrawer id={auditId} onClose={() => setAuditId(null)} onChanged={operations.refresh} />}
+  </div>;
 }

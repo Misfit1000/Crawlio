@@ -15,13 +15,15 @@ export class GroqBlogProviderError extends Error {
   code: Extract<BlogProviderErrorCode, `GROQ_${string}`>;
   retryable: boolean;
   status: number | null;
+  retryAfterMs: number;
 
-  constructor(code: GroqBlogProviderError['code'], message: string, options: { retryable?: boolean; status?: number | null } = {}) {
+  constructor(code: GroqBlogProviderError['code'], message: string, options: { retryable?: boolean; status?: number | null; retryAfterMs?: number } = {}) {
     super(message);
     this.name = 'GroqBlogProviderError';
     this.code = code;
     this.retryable = Boolean(options.retryable);
     this.status = options.status ?? null;
+    this.retryAfterMs = options.retryAfterMs ?? 0;
   }
 }
 
@@ -31,12 +33,12 @@ function boundedInteger(value: unknown, fallback: number, minimum: number, maxim
 }
 
 export function getGroqBlogConfiguration(env: NodeJS.ProcessEnv = process.env) {
-  const enabled = String(env.GROQ_BLOG_ENABLED || 'false').toLowerCase() === 'true';
+  const enabled = String(env.GROQ_BLOG_ENABLED || 'false').trim().toLowerCase() === 'true';
   const rawBaseUrl = String(env.GROQ_API_BASE_URL || GROQ_DEFAULT_BASE_URL).trim();
   let baseUrl = GROQ_DEFAULT_BASE_URL;
   try {
     const parsed = new URL(rawBaseUrl);
-    if (parsed.protocol !== 'https:' || parsed.username || parsed.password) throw new Error('Invalid provider URL');
+    if (parsed.protocol !== 'https:' || parsed.hostname !== 'api.groq.com' || parsed.port || parsed.pathname.replace(/\/$/, '') !== '/openai/v1' || parsed.username || parsed.password) throw new Error('Invalid provider URL');
     parsed.search = '';
     parsed.hash = '';
     baseUrl = parsed.toString().replace(/\/$/, '');
@@ -50,8 +52,8 @@ export function getGroqBlogConfiguration(env: NodeJS.ProcessEnv = process.env) {
   return {
     provider: 'groq' as const,
     enabled,
-    configured: Boolean(env.GROQ_API_KEY),
-    apiKey: String(env.GROQ_API_KEY || ''),
+    configured: Boolean(String(env.GROQ_API_KEY || '').trim()),
+    apiKey: String(env.GROQ_API_KEY || '').trim(),
     baseUrl,
     baseUrlHost: new URL(baseUrl).host,
     structuredModel: safeModel(env.GROQ_BLOG_STRUCTURED_MODEL, GROQ_DEFAULT_STRUCTURED_MODEL),
@@ -71,7 +73,7 @@ export function getSafeGroqDiagnostics(env: NodeJS.ProcessEnv = process.env) {
     baseUrlHost: config.baseUrlHost,
     structuredModel: config.structuredModel,
     writerModel: config.writerModel,
-    automationEnabled: String(env.BLOG_AUTOMATION_ENABLED || 'false').toLowerCase() === 'true',
+    automationEnabled: String(env.BLOG_AUTOMATION_ENABLED || 'false').trim().toLowerCase() === 'true',
   };
 }
 
@@ -86,18 +88,40 @@ function mapStatus(status: number) {
 
 function wait(milliseconds: number, signal?: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(resolve, milliseconds);
-    signal?.addEventListener('abort', () => {
+    const abort = () => {
       clearTimeout(timer);
       reject(new GroqBlogProviderError('GROQ_CANCELLED', 'The Groq request was cancelled.'));
-    }, { once: true });
+    };
+    const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, milliseconds);
+    if (signal?.aborted) { abort(); return; }
+    signal?.addEventListener('abort', abort, { once: true });
   });
 }
 
 function retryDelay(response: Response, attempt: number, minimum: number) {
   const value = response.headers.get('retry-after');
-  const retryAfterMs = value && /^\d+$/.test(value) ? Number(value) * 1_000 : 0;
-  return Math.min(15_000, Math.max(minimum, retryAfterMs, 500 * 2 ** attempt));
+  const retryAfterMs = value && /^\d+(?:\.\d+)?$/.test(value) ? Number(value) * 1_000 : value ? Math.max(0, Date.parse(value) - Date.now()) || 0 : 0;
+  return Math.min(15 * 60_000, Math.max(minimum, retryAfterMs, 500 * 2 ** attempt));
+}
+
+async function boundedResponseText(response: Response) {
+  const reader = response.body?.getReader();
+  if (!reader) return '';
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const next = await reader.read();
+      if (next.done) break;
+      size += next.value.byteLength;
+      if (size > MAX_OUTPUT_BYTES) {
+        await reader.cancel();
+        throw new GroqBlogProviderError('GROQ_OUTPUT_TOO_LARGE', 'Groq output exceeded the safe response limit.');
+      }
+      chunks.push(next.value);
+    }
+    return Buffer.concat(chunks).toString('utf8');
+  } finally { reader.releaseLock(); }
 }
 
 export async function generateGroqCompletion(input: {
@@ -134,20 +158,23 @@ export async function generateGroqCompletion(input: {
           temperature: Math.max(0, Math.min(1, input.temperature ?? 0.25)),
           max_tokens: boundedInteger(input.maxTokens, 2_000, 32, 8_000),
           stream: false,
+          ...(model === 'openai/gpt-oss-120b' || model === 'openai/gpt-oss-20b' ? { reasoning_effort: 'low', include_reasoning: false } : {}),
           ...(input.json === false ? {} : { response_format: { type: 'json_object' } }),
         }),
         signal: controller.signal,
+        redirect: 'error',
       });
       if (!response.ok) {
         const mapped = mapStatus(response.status);
+        mapped.retryAfterMs = retryDelay(response, attempt, config.minimumRequestIntervalMs);
         if (mapped.retryable && RETRYABLE_STATUS.has(response.status) && attempt + 1 < attempts) {
-          await wait(retryDelay(response, attempt, config.minimumRequestIntervalMs), input.signal);
+          if (mapped.retryAfterMs > 15_000) throw mapped;
+          await wait(mapped.retryAfterMs, input.signal);
           continue;
         }
         throw mapped;
       }
-      const raw = await response.text();
-      if (Buffer.byteLength(raw, 'utf8') > MAX_OUTPUT_BYTES) throw new GroqBlogProviderError('GROQ_OUTPUT_TOO_LARGE', 'Groq output exceeded the safe response limit.');
+      const raw = await boundedResponseText(response);
       let body: any;
       try { body = JSON.parse(raw); } catch { throw new GroqBlogProviderError('GROQ_INVALID_RESPONSE', 'Groq returned malformed JSON.'); }
       const content = body?.choices?.[0]?.message?.content;
@@ -212,7 +239,8 @@ export async function testGroqProvider(fetchImpl?: ProviderFetch) {
   if (!config.enabled) return { status: 'disabled' as const, model: config.structuredModel, writerModel: config.writerModel, host: config.baseUrlHost, durationMs: null, errorCode: 'GROQ_DISABLED' as const };
   if (!config.apiKey) return { status: 'not configured' as const, model: config.structuredModel, writerModel: config.writerModel, host: config.baseUrlHost, durationMs: null, errorCode: 'GROQ_NOT_CONFIGURED' as const };
   try {
-    const result = await generateGroqCompletion({ role: 'structured', system: 'Return JSON only.', user: 'Return {"ok":true}.', maxTokens: 256, temperature: 0, maxAttempts: 1, timeoutMs: 15_000, fetchImpl });
+    const result = await generateGroqStructured({ role: 'structured', system: 'Return JSON only.', user: 'Return {"ok":true}.', validate: (value): value is {ok:true} => Boolean(value && typeof value === 'object' && (value as {ok?:unknown}).ok === true), maxTokens: 1_024, temperature: 0, maxAttempts: 1, timeoutMs: 15_000, fetchImpl });
+    await generateGroqStructured({ role: 'writer', system: 'Return JSON only.', user: 'Return {"ok":true}.', validate: (value): value is {ok:true} => Boolean(value && typeof value === 'object' && (value as {ok?:unknown}).ok === true), maxTokens: 128, temperature: 0, maxAttempts: 1, timeoutMs: 15_000, fetchImpl });
     return { status: 'connected' as const, model: result.model, writerModel: config.writerModel, host: config.baseUrlHost, durationMs: result.durationMs, errorCode: null };
   } catch (error) {
     const safe = error instanceof GroqBlogProviderError ? error : new GroqBlogProviderError('GROQ_UNAVAILABLE', 'Groq could not be reached.');

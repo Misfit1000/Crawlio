@@ -1,5 +1,6 @@
 import { buildBlogSeoFields } from './seo';
-import { blogTextFromHtml, sanitizeBlogHtml } from './sanitize';
+import { sanitizeBlogHtml } from './sanitize';
+import { blogTextFromHtml } from './html-text';
 import { normalizeBlogSlug } from './slug';
 import type { BlogPostInput, BlogPostStatus } from './types';
 import { evaluateBlogQuality } from './quality';
@@ -93,9 +94,9 @@ export function prepareBlogPost(input: BlogPostInput, options: { publishing?: bo
   const contentText = blogTextFromHtml(contentHtml);
   const status = (['draft', 'review', 'needs_review', 'scheduled', 'published', 'failed', 'archived'].includes(String(input.status)) ? input.status : 'draft') as BlogPostStatus;
   const seo = buildBlogSeoFields({ title, excerpt: input.excerpt, contentText, focusKeyword: input.focusKeyword });
-  const excerpt = String(input.excerpt || seo.excerpt).replace(/\s+/g, ' ').trim().slice(0, 360);
-  const seoTitle = String(input.seoTitle || seo.seoTitle).replace(/\s+/g, ' ').trim().slice(0, 70);
-  const metaDescription = String(input.metaDescription || seo.metaDescription).replace(/\s+/g, ' ').trim().slice(0, 180);
+  const excerpt = cleanField(input.excerpt, 360) || seo.excerpt;
+  const seoTitle = cleanField(input.seoTitle, 70) || seo.seoTitle;
+  const metaDescription = cleanField(input.metaDescription, 180) || seo.metaDescription;
   const focusKeyword = String(input.focusKeyword || seo.focusKeyword).replace(/\s+/g, ' ').trim().slice(0, 100);
   const slug = normalizeBlogSlug(input.slug || title);
   const publishing = options.publishing || status === 'published' || status === 'scheduled';

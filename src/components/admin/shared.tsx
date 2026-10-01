@@ -1,184 +1,54 @@
-import { AlertTriangle,Loader2 } from 'lucide-react';
-import React,{ useState } from 'react';
+import { AlertTriangle, Loader2 } from 'lucide-react';
+import React from 'react';
+import { Link } from '../../app/router';
 import { isCompletedAuditStatus } from '../../lib/audit/audit-time';
-import {
-updateAuditAdminAction
-} from '../../services/supabaseDataService';
-import { Notice } from '../ui/page-system';
-import { useAdminActionReason } from './AdminActionDialog';
-import { DetailDrawer, DetailFields } from './DetailDrawer';
-
-
-const DUPLICATE_AUDIT_WARNING_MS = 10 * 60 * 1000;
-function auditOwnerKey(row: any) {
-  return row.userId ? `user:${row.userId}` : row.guestKeyHash ? `guest:${row.guestKeyHash}` : null;
-}
+import { AuditDetailDrawer } from './AdminDetails';
+import { useAdminFilter } from './useAdminFilter';
 
 function duplicateAuditWarning(row: any, rows: any[]) {
-  const rowTime = new Date(row.createdAt).getTime();
-  if (!row.normalizedUrl || Number.isNaN(rowTime)) return null;
-  const owner = auditOwnerKey(row);
-  if (!owner) return null;
-  const matches = rows.filter((candidate) => {
-    const candidateTime = new Date(candidate.createdAt).getTime();
-    return candidate.id !== row.id
-      && candidate.normalizedUrl === row.normalizedUrl
-      && auditOwnerKey(candidate) === owner
-      && !Number.isNaN(candidateTime)
-      && Math.abs(candidateTime - rowTime) <= DUPLICATE_AUDIT_WARNING_MS;
-  });
-  return matches.length
-    ? `${matches.length + 1} audits for same URL and owner within 10 minutes`
-    : null;
+  const time = new Date(row.createdAt).getTime();
+  const owner = row.userId || row.guestKeyHash;
+  if (!row.normalizedUrl || !owner || !Number.isFinite(time)) return null;
+  return rows.some(candidate => candidate.id !== row.id && candidate.normalizedUrl === row.normalizedUrl && (candidate.userId || candidate.guestKeyHash) === owner && Math.abs(new Date(candidate.createdAt).getTime() - time) <= 600000) ? 'Possible duplicate within 10 minutes (this page)' : null;
 }
-
-export function AuditTable({ rows, adminUserId, refresh }: { rows: any[]; adminUserId: string; refresh: () => void }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selected = rows.find(row => row.id === selectedId);
-  const requestAdminReason = useAdminActionReason();
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const updateAudit = async (id: string, patch: any) => {
-    const reason = await requestAdminReason(patch.status === 'cancelled' ? 'cancelling this audit job' : patch.status === 'queued' ? 'requeuing this audit job' : 'changing this audit priority');
-    if (!reason) return;
-    setUpdatingId(id);
-    setError(null);
-    try {
-      await updateAuditAdminAction(id, patch, adminUserId, reason);
-      refresh();
-    } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : 'Audit update failed.');
-    } finally {
-      setUpdatingId(null);
-    }
-  };
-  return (
-    <div>
-      {error && <Notice tone="danger" className="mb-4">{error}</Notice>}
-      <div className="max-w-full overflow-x-auto rounded-lg border border-border">
-      <table className="suite-table min-w-[980px]">
-        <thead>
-          <tr><th>URL and phase</th><th>Status</th><th>Plan</th><th>Mode</th><th>Priority</th><th>Lease</th><th>Actions</th></tr>
-        </thead>
-        <tbody>
-          {rows.map((item) => (
-            <tr key={item.id}>
-              <td className="max-w-sm break-all">
-                <button type="button" onClick={() => setSelectedId(item.id)} className="text-left font-semibold text-accent hover:underline">{item.normalizedUrl}</button>
-                {duplicateAuditWarning(item, rows) && (
-                  <div className="mt-1 text-xs text-yellow-600 flex items-center gap-1">
-                    <AlertTriangle className="h-3 w-3 shrink-0" />
-                    {duplicateAuditWarning(item, rows)}
-                  </div>
-                )}
-                <div className="text-xs text-muted-foreground">{item.error || item.currentPhase}</div>
-              </td>
-              <td><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(item.status)}`}>{item.status}</span></td>
-              <td className="capitalize">{item.plan || 'free'}</td>
-              <td>{item.effectiveMode || item.requestedMode || 'quick'}</td>
-              <td><input type="number" aria-label={`Priority for ${item.normalizedUrl}`} defaultValue={item.queuePriority ?? 10} disabled={updatingId === item.id} className="w-20 rounded-lg border border-border bg-background px-2 py-1.5" onBlur={(event) => {
-                const value = event.currentTarget.valueAsNumber;
-                if (Number.isFinite(value) && value !== (item.queuePriority ?? 10)) void updateAudit(item.id, { queuePriority: value });
-                event.currentTarget.value = String(item.queuePriority ?? 10);
-              }} /></td>
-              <td className="text-xs"><div className="max-w-[150px] truncate">{item.lockedBy || 'Not locked'}</div><div className="mt-1 text-muted-foreground">{item.leaseExpiresAt ? new Date(item.leaseExpiresAt).toLocaleString() : 'No lease'}</div></td>
-              <td><div className="flex flex-wrap gap-2">
-                {updatingId === item.id && <Loader2 className="h-4 w-4 animate-spin text-accent" />}
-                {['queued', 'running'].includes(item.status) && <button disabled={updatingId === item.id} onClick={() => updateAudit(item.id, { status: 'cancelled', currentPhase: 'Cancelled by admin', lockedBy: null, lockedAt: null, leaseExpiresAt: null })} className="quiet-button min-h-8 px-2.5 py-1 text-xs text-red-600">Cancel</button>}
-                {item.status === 'failed' && <button disabled={updatingId === item.id} onClick={() => updateAudit(item.id, { status: 'queued', currentPhase: 'Retry queued', error: null, lockedBy: null, lockedAt: null, leaseExpiresAt: null })} className="quiet-button min-h-8 px-2.5 py-1 text-xs">Retry</button>}
-                {item.leaseExpiresAt && new Date(item.leaseExpiresAt).getTime() < Date.now() && <button disabled={updatingId === item.id} onClick={() => updateAudit(item.id, { status: 'queued', currentPhase: 'Recovered by admin', lockedBy: null, lockedAt: null, leaseExpiresAt: null })} className="quiet-button min-h-8 px-2.5 py-1 text-xs">Recover</button>}
-              </div>
-              </td>
-            </tr>
-          ))}
-          {!rows.length && <tr><td colSpan={7}><Empty text="No audits found." /></td></tr>}
-        </tbody>
-      </table>
-      </div>
-      {selected && <DetailDrawer title="Audit details" onClose={() => setSelectedId(null)}><DetailFields fields={[
-        ['Website', selected.normalizedUrl], ['Audit ID', selected.id], ['Status', selected.status],
-        ['Current activity', selected.currentPhase], ['Plan', selected.plan], ['Audit type', selected.effectiveMode || selected.requestedMode],
-        ['Queue priority', selected.queuePriority], ['Created', selected.createdAt], ['Last updated', selected.updatedAt], ['Reported error', selected.error],
-      ]} /></DetailDrawer>}
-    </div>
-  );
+export function AuditTable({ rows, refresh }: { rows: any[]; adminUserId: string; refresh: () => void | Promise<void> }) {
+  const [selectedId, setSelectedId] = useAdminFilter('auditId');
+  const identity = (item: any) => <><button type="button" onClick={() => setSelectedId(item.id)} className="min-h-11 break-all text-left text-sm font-semibold text-accent hover:underline">{item.normalizedUrl || item.domain || item.id}</button>{duplicateAuditWarning(item, rows) && <div className="mt-1 flex items-center gap-1 text-xs text-amber-700 dark:text-amber-300"><AlertTriangle className="h-3 w-3 shrink-0" />{duplicateAuditWarning(item, rows)}</div>}<div className="break-words text-xs text-muted-foreground">{item.error || item.currentPhase}</div>{item.userId && <Link to={`/admin/users?userId=${encodeURIComponent(item.userId)}`} className="mt-1 inline-flex min-h-11 items-center text-xs text-accent hover:underline">Account details</Link>}</>;
+  return <div className="min-w-0">
+    <div className="space-y-3 md:hidden">{rows.map(item => <article key={item.id} className="min-w-0 rounded-lg border border-border p-3">{identity(item)}<dl className="mt-3 grid grid-cols-2 gap-3 text-xs">{[['Status', item.status], ['Plan', item.plan || 'free'], ['Mode', item.effectiveMode || item.requestedMode || 'quick'], ['Priority', item.queuePriority ?? 'Not reported'], ['Worker', item.lockedBy || 'Not locked'], ['Lease', item.leaseExpiresAt ? new Date(item.leaseExpiresAt).toLocaleString() : 'No lease']].map(([label, value]) => <div key={label}><dt className="text-muted-foreground">{label}</dt><dd className="mt-1 break-all">{value}</dd></div>)}</dl><button type="button" onClick={() => setSelectedId(item.id)} className="quiet-button mt-3 min-h-11">Inspect and act</button></article>)}</div>
+    <div className="hidden max-w-full overflow-x-auto rounded-lg border border-border md:block"><table className="suite-table min-w-[900px]"><caption className="sr-only">Audit jobs, server ordered. Open a job to inspect diagnostics and take guarded actions.</caption><thead><tr>{['URL and phase', 'Status', 'Plan', 'Mode', 'Priority', 'Lease', 'Actions'].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead><tbody>{rows.map(item => <tr key={item.id}><td className="max-w-xs">{identity(item)}</td><td><span className={`inline-flex rounded px-2 py-1 text-xs font-semibold ${statusClass(item.status)}`}>{item.status}</span></td><td>{item.plan || 'free'}</td><td>{item.effectiveMode || item.requestedMode || 'quick'}</td><td>{item.queuePriority ?? 'Not reported'}</td><td className="max-w-40 break-all text-xs">{item.lockedBy || 'Not locked'}<div className="mt-1 text-muted-foreground">{item.leaseExpiresAt ? new Date(item.leaseExpiresAt).toLocaleString() : 'No lease'}</div></td><td><button type="button" className="quiet-button min-h-11 whitespace-nowrap text-xs" onClick={() => setSelectedId(item.id)}>Inspect and act</button></td></tr>)}</tbody></table></div>
+    {!rows.length && <Empty text="No audits match these filters." />}
+    {selectedId && <AuditDetailDrawer key={selectedId} id={selectedId} onClose={() => setSelectedId('')} onChanged={refresh} />}
+  </div>;
 }
-
-
 export function WorkerRow({ worker }: { worker: any }) {
-  const value = worker.value || {};
+  const value = worker.value || worker;
   const lastSeen = value.lastSeenAt || worker.updatedAt;
-  const stale = lastSeen ? Date.now() - new Date(lastSeen).getTime() > 90_000 : true;
-  return (
-    <div className="mb-3 rounded-xl border border-border bg-background/60 p-4">
-      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="flex items-center gap-2 font-semibold"><span className={`h-2.5 w-2.5 rounded-full ${stale ? 'bg-amber-500' : 'bg-emerald-500'}`} />{value.workerId || worker.id}</div>
-          <div className="mt-1 text-sm text-muted-foreground">Runtime: {value.runtime || 'unknown'} / Active audit: {value.currentAuditId || 'none'}</div>
-        </div>
-        <div className={`text-sm font-semibold ${stale ? 'text-yellow-600' : 'text-green-600'}`}>{stale ? 'Stale or sleeping' : 'Healthy'}</div>
-      </div>
-      <div className="mt-3 grid gap-2 border-t border-border pt-3 text-xs text-muted-foreground sm:grid-cols-2"><span>Last contact: {lastSeen ? new Date(lastSeen).toLocaleString() : 'Never'}</span><span>Modes: {(value.supportedModes || []).join(', ') || 'Unknown'}</span></div>
-    </div>
-  );
+  const stale = lastSeen ? Date.now() - new Date(lastSeen).getTime() > 90000 : true;
+  return <div className="mb-3 min-w-0 rounded-lg border border-border p-4"><div className="flex flex-wrap justify-between gap-2"><div className="min-w-0 break-all font-semibold">{value.workerId || worker.id}</div><div className={`text-sm ${stale ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}`}>{stale ? 'Stale or sleeping' : 'Heartbeat recent'}</div></div><div className="mt-2 break-all text-sm text-muted-foreground">Runtime: {value.runtime || 'unknown'} / Active audit: {value.currentAuditId || 'none'}</div><div className="mt-3 grid gap-2 border-t border-border pt-3 text-xs text-muted-foreground sm:grid-cols-2"><span>Last contact: {lastSeen ? new Date(lastSeen).toLocaleString() : 'Never'}</span><span>Modes: {(value.supportedModes || []).join(', ') || 'Unknown'}</span></div></div>;
 }
-
-
 export function Metric({ icon: Icon, label, value, detail, tone = 'accent' }: { icon: any; label: string; value: React.ReactNode; detail: string; tone?: 'accent' | 'success' | 'warning' | 'danger' }) {
   const tones = { accent: 'bg-blue-500/10 text-blue-600', success: 'bg-emerald-500/10 text-emerald-600', warning: 'bg-amber-500/10 text-amber-600', danger: 'bg-red-500/10 text-red-600' };
-  return <div className="admin-stat"><div className="flex items-start justify-between gap-3"><div><div className="text-sm text-muted-foreground">{label}</div><div className="mt-2 text-3xl font-semibold">{value}</div></div><span className={`flex h-10 w-10 items-center justify-center rounded-lg ${tones[tone]}`}><Icon className="h-5 w-5" /></span></div><div className="mt-3 text-xs text-muted-foreground">{detail}</div></div>;
+  return <div className="admin-stat min-w-0"><div className="flex min-w-0 items-start justify-between gap-3"><div className="min-w-0"><div className="break-words text-sm text-muted-foreground">{label}</div><div className="mt-2 break-words text-2xl font-semibold">{value}</div></div><span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${tones[tone]}`}><Icon className="h-5 w-5" /></span></div><div className="mt-3 break-words text-xs text-muted-foreground">{detail}</div></div>;
 }
-
-
 export function Panel({ title, description, icon: Icon, action, children }: { title: string; description?: string; icon?: any; action?: React.ReactNode; children: React.ReactNode }) {
-  return <section className="suite-panel p-4 sm:p-5"><div className="mb-5 flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-start sm:justify-between"><div className="flex min-w-0 gap-3">{Icon && <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent"><Icon className="h-5 w-5" /></span>}<div><h2 className="text-lg font-semibold">{title}</h2>{description && <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>}</div></div>{action && <div className="shrink-0">{action}</div>}</div>{children}</section>;
+  return <section className="suite-panel min-w-0 max-w-full p-4 sm:p-5"><div className="mb-5 flex min-w-0 flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-start sm:justify-between"><div className="flex min-w-0 gap-3">{Icon && <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent"><Icon className="h-5 w-5" /></span>}<div className="min-w-0"><h2 className="break-words text-lg font-semibold">{title}</h2>{description && <p className="mt-1 break-words text-sm leading-6 text-muted-foreground">{description}</p>}</div></div>{action && <div className="min-w-0">{action}</div>}</div>{children}</section>;
 }
-
-
-export function Empty({ text }: { text: string }) {
-  return <div className="p-6 text-center text-muted-foreground">{text}</div>;
+export function Empty({ text }: { text: string }) { return <div className="p-6 text-center text-muted-foreground">{text}</div>; }
+export function Loading() { return <div role="status" aria-label="Loading admin data" className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-accent" /><span className="sr-only">Loading...</span></div>; }
+export function Select({ value, options, onChange, disabled = false, label }: { value: string; options: string[]; onChange: (value: string) => void; disabled?: boolean; label?: string }) {
+  return <select aria-label={label} value={value} disabled={disabled} onChange={event => onChange(event.target.value)} className="block min-h-11 max-w-full rounded-md border border-border bg-background px-2.5 py-2 text-sm capitalize text-foreground disabled:opacity-50">{options.map(option => <option key={option} value={option}>{option}</option>)}</select>;
 }
-
-
-export function Loading() {
-  return <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-accent" /></div>;
-}
-
-
-export function Select({ value, options, onChange, disabled = false }: { value: string; options: string[]; onChange: (value: string) => void; disabled?: boolean }) {
-  return <select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} className="rounded-lg border border-border bg-background px-2.5 py-1.5 capitalize disabled:opacity-50">{options.map((option) => <option key={option} value={option}>{option}</option>)}</select>;
-}
-
-
-export function Field({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return <label className="block text-sm"><span className="font-semibold">{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} className="suite-input mt-2" /></label>;
-}
-
-
+export function Field({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <label className="block min-w-0 text-sm"><span className="font-semibold">{label}</span><input value={value} onChange={event => onChange(event.target.value)} className="suite-input mt-2 min-h-11" /></label>; }
 export function NumberInput({ value, onBlur, disabled = false, min = 0, max, label }: { value: number; onBlur: (value: number) => void; disabled?: boolean; min?: number; max?: number; label?: string }) {
-  return <input type="number" min={min} max={max} aria-label={label} defaultValue={value} disabled={disabled} onBlur={(event) => {
-    const next = event.currentTarget.valueAsNumber;
-    if (Number.isFinite(next) && next >= min && (max == null || next <= max) && next !== value) onBlur(next);
-    else event.currentTarget.value = String(value);
-  }} className="w-24 rounded-lg border border-border bg-background px-2.5 py-1.5 disabled:opacity-50" />;
+  return <input key={value} type="number" min={min} max={max} step={1} aria-label={label} defaultValue={value} disabled={disabled} onBlur={event => { const next = event.currentTarget.valueAsNumber; if (Number.isInteger(next) && next >= min && (max == null || next <= max) && next !== value) onBlur(next); event.currentTarget.value = String(value); }} className="min-h-11 w-24 rounded-md border border-border bg-background px-2.5 py-2 disabled:opacity-50" />;
 }
-
-
 export function SimpleTable({ rows, columns }: { rows: any[]; columns: string[] }) {
-  return (
-    <div className="max-w-full overflow-x-auto rounded-lg border border-border">
-      <table className="suite-table min-w-[680px]">
-        <thead><tr>{columns.map((column) => <th key={column}>{column.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`)}</th>)}</tr></thead>
-        <tbody>{rows.map((row, index) => <tr key={row.id || index}>{columns.map((column) => <td key={column}>{column === 'createdAt' && row[column] ? new Date(row[column]).toLocaleString() : String(row[column] ?? '')}</td>)}</tr>)}</tbody>
-      </table>
-    </div>
-  );
+  return <div className="max-w-full overflow-x-auto rounded-lg border border-border"><table className="suite-table min-w-[680px]"><caption className="sr-only">{columns.join(', ')} records</caption><thead><tr>{columns.map(column => <th scope="col" key={column}>{column.replace(/[A-Z]/g, letter => ` ${letter.toLowerCase()}`)}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={row.id || index}>{columns.map(column => <td className="max-w-xs break-words" key={column}>{column === 'createdAt' && row[column] ? new Date(row[column]).toLocaleString() : typeof row[column] === 'object' ? JSON.stringify(row[column]) : String(row[column] ?? '')}</td>)}</tr>)}</tbody></table></div>;
 }
-
-
 export function statusClass(status: string) {
+  if (status === 'completed_with_warnings') return 'bg-amber-500/10 text-amber-700 dark:text-amber-300';
   if (isCompletedAuditStatus(status)) return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
-  if (status === 'failed' || status === 'cancelled') return 'bg-red-500/10 text-red-700 dark:text-red-300';
-  if (status === 'running') return 'bg-violet-500/10 text-violet-700 dark:text-violet-300';
+  if (['failed', 'cancelled', 'abandoned'].includes(status)) return 'bg-red-500/10 text-red-700 dark:text-red-300';
   return 'bg-blue-500/10 text-blue-700 dark:text-blue-300';
 }

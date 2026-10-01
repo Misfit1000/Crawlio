@@ -93,9 +93,9 @@ export function DesktopHomepagePreview({ props, kind, mediaUrl }: { props: Compa
 export function MobileHomepagePreview({ props, kind, mediaUrl }: { props: CompactPreviewProps; kind: AuditPreviewKind; mediaUrl: string | null }) {
   const host = previewHost(props.url, props.hostname);
   return (
-    <div className="w-[132px] rounded-[1.35rem] border-[6px] border-slate-950 bg-slate-950 p-0.5 shadow-sm dark:border-slate-900" aria-label={`${previewLabel(kind)} mobile composition`}>
+    <div className="w-[132px] rounded-[1.35rem] border-[6px] border-neutral-950 bg-neutral-950 p-0.5 shadow-sm dark:border-neutral-800" aria-label={`${previewLabel(kind)} mobile composition`}>
       <div className="h-[238px] overflow-hidden rounded-[0.95rem] bg-background">
-        <div className="mx-auto mt-1 h-1 w-10 rounded-full bg-slate-700" />
+        <div className="mx-auto mt-1 h-1 w-10 rounded-full bg-neutral-700" />
         {kind === 'screenshot' && mediaUrl ? <img src={mediaUrl} alt={`Actual mobile crop from the screenshot for ${host}`} className="mt-1 h-[230px] w-full object-cover object-top" loading="lazy" referrerPolicy="no-referrer" /> : <div className="p-2.5"><div className="flex items-center gap-1.5 border-b border-border pb-2"><PreviewLogo host={host} faviconUrl={props.faviconUrl} className="h-6 w-6 rounded-md border border-border" /><span className="min-w-0 flex-1 truncate text-[9px] font-semibold">{props.siteName || host || 'Website'}</span></div>{kind === 'open_graph' && mediaUrl && <img src={mediaUrl} alt="" className="mt-2 h-16 w-full rounded-md object-cover" loading="lazy" referrerPolicy="no-referrer" />}<div className="mt-3 h-0.5 w-6 rounded-full bg-accent" /><div className="mt-2 line-clamp-3 text-[11px] font-semibold leading-4">{displayTitle(props)}</div><p className="mt-2 line-clamp-4 text-[8px] leading-3 text-muted-foreground">{displayDescription(props)}</p><div className="mt-3"><PreviewStateBadge kind={kind} /></div></div>}
       </div>
     </div>

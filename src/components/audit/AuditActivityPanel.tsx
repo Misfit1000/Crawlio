@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Activity, ChevronDown, CircleDot, GripHorizontal, MoreHorizontal, RotateCcw, X } from 'lucide-react';
 import type { ResourceAuditEvent } from '../../lib/audit/resource-types';
@@ -87,9 +87,10 @@ export default function AuditActivityPanel({
     || (latest ? readableEventTitle(latest) : 'Waiting for audit activity');
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(ACTIVITY_LAYOUT_KEY, serializableActivityLayout(layout));
-    } catch {}
+    const timer = window.setTimeout(() => {
+      try { window.localStorage.setItem(ACTIVITY_LAYOUT_KEY, serializableActivityLayout(layout)); } catch {}
+    }, 250);
+    return () => window.clearTimeout(timer);
   }, [layout]);
 
   useEffect(() => {
@@ -314,3 +315,14 @@ export default function AuditActivityPanel({
     document.body,
   );
 }
+
+export const AuditActivityFeed = memo(function AuditActivityFeed({ events }: { events: ResourceAuditEvent[] }) {
+  const [filter, setFilter] = useState<EventFilter>('all');
+  const visibleEvents = useMemo(() => events.filter(event => eventMatches(event, filter)).slice(-100).reverse(), [events, filter]);
+  return <section aria-labelledby="stored-activity-heading" className="min-w-0">
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3"><h2 id="stored-activity-heading" className="text-lg font-semibold">Audit activity</h2><div role="tablist" aria-label="Filter audit activity" className="flex gap-1">{(['all', 'pages', 'warnings'] as EventFilter[]).map(value => <button key={value} type="button" role="tab" aria-selected={filter === value} tabIndex={filter === value ? 0 : -1} onKeyDown={handleTabListKeyDown} onClick={() => setFilter(value)} className={`min-h-9 rounded-md px-3 text-xs font-semibold capitalize ${filter === value ? 'bg-muted text-foreground' : 'text-muted-foreground'}`}>{value}</button>)}</div></div>
+    <p className="py-3 text-xs text-muted-foreground">Latest {visibleEvents.length} matching loaded events. Newest first.</p>
+    <div className="divide-y divide-border">{visibleEvents.map(event => <article key={event.id} className="grid grid-cols-[12px_minmax(0,1fr)] gap-3 py-3"><span className={`mt-1.5 h-2 w-2 rounded-full ${eventDot(event)}`} aria-hidden="true" /><div className="min-w-0"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">{readableEventTitle(event)}</h3><time dateTime={event.timestamp} className="text-xs text-muted-foreground">{new Date(event.timestamp).toLocaleString()}</time></div><p className="mt-1 break-words text-sm text-muted-foreground">{customerSafeDiagnosticText(event.message) || 'Audit update recorded.'}</p>{(event.affectedUrl || event.currentUrl) && <p className="mt-1 break-all text-xs text-muted-foreground">{event.affectedUrl || event.currentUrl}</p>}</div></article>)}</div>
+    {!visibleEvents.length && <p className="py-8 text-center text-sm text-muted-foreground">No stored activity matches this filter yet.</p>}
+  </section>;
+});
