@@ -18,7 +18,12 @@ import {
   isSupabaseAdminEnabled,
   requireSupabaseAdminClient,
 } from './server';
-import { deploymentVersionRow } from '../platform/version';
+import {
+  AUDIT_ENGINE_VERSION,
+  CHECK_REGISTRY_VERSION,
+  SCORING_VERSION,
+  deploymentVersionRow,
+} from '../platform/version';
 
 type DbRow = Record<string, any>;
 export type WorkerHeartbeatStatus = 'starting' | 'idle' | 'running' | 'stopping' | 'stopped' | 'failed';
@@ -210,6 +215,13 @@ export function toAuditDocument(row: DbRow | null | undefined): ResourceAuditDoc
     checkpointPagesCrawled: row.checkpoint_pages_crawled ?? 0,
     checkpointUpdatedAt: row.checkpoint_updated_at ?? null,
     checkpointState: row.checkpoint_state ?? null,
+    executorType: row.executor_type ?? null,
+    executorInstanceId: row.executor_instance_id ?? null,
+    executorPreference: row.executor_preference ?? 'auto',
+    auditEngineVersion: row.audit_engine_version ?? null,
+    checkRegistryVersion: row.check_registry_version ?? null,
+    scoringVersion: row.scoring_version ?? null,
+    evidenceVersion: row.evidence_version ?? null,
   };
 }
 
@@ -228,6 +240,13 @@ function auditToRow(audit: ResourceAuditDocument) {
     plan: audit.plan ?? 'free',
     requested_mode: audit.requestedMode ?? audit.mode,
     effective_mode: audit.effectiveMode ?? audit.mode,
+    executor_type: audit.executorType ?? null,
+    executor_instance_id: audit.executorInstanceId ?? null,
+    executor_preference: audit.executorPreference ?? 'auto',
+    audit_engine_version: audit.auditEngineVersion ?? null,
+    check_registry_version: audit.checkRegistryVersion ?? null,
+    scoring_version: audit.scoringVersion ?? null,
+    evidence_version: audit.evidenceVersion ?? null,
     queue_priority: audit.queuePriority ?? 10,
     processing_tier: audit.processingTier ?? audit.plan ?? 'free',
     quota_counted: audit.quotaCounted ?? false,
@@ -1530,6 +1549,11 @@ export const auditRepository = {
         recovery_attempts: candidate.status === 'running' ? Number(candidate.recovery_attempts || 0) + 1 : Number(candidate.recovery_attempts || 0),
         last_recovered_at: candidate.status === 'running' ? timestamp : candidate.last_recovered_at ?? null,
         updated_at: timestamp,
+        executor_type: candidate.executor_type ?? (workerRuntime.includes('cloudflare') ? 'cloudflare' : 'render'),
+        executor_instance_id: workerId,
+        audit_engine_version: AUDIT_ENGINE_VERSION,
+        check_registry_version: CHECK_REGISTRY_VERSION,
+        scoring_version: SCORING_VERSION,
       };
 
       const attempts: Array<(query: any) => any> = [];

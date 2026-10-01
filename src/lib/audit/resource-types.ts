@@ -83,6 +83,13 @@ export interface ResourceAuditDocument {
   checkpointPagesCrawled?: number;
   checkpointUpdatedAt?: string | null;
   checkpointState?: Record<string, unknown> | null;
+  executorType?: 'render' | 'cloudflare' | null;
+  executorInstanceId?: string | null;
+  executorPreference?: 'auto' | 'render' | 'cloudflare';
+  auditEngineVersion?: string | null;
+  checkRegistryVersion?: string | null;
+  scoringVersion?: string | null;
+  evidenceVersion?: string | null;
 }
 
 export interface ResourceAuditEvent {

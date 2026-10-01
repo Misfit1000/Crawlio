@@ -289,6 +289,6 @@ assert.equal(writtenPages.length, 2, 'Must have discovered and crawled 2 pages v
 assert(writtenPages.some(p => p.url === 'https://crawlio.test/'));
 assert(writtenPages.some(p => p.url === 'https://crawlio.test/pricing'));
 assert(report.scores.overall !== null);
-console.log(`   ✅ End-to-end runner crawled ${writtenPages.length} pages, scored ${report.scores.overall}, stopReason: ${report.scores.coverage.stopReason}\n`);
+console.log(`   ✅ End-to-end runner crawled ${writtenPages.length} pages, scored ${report.scores.overall}, stopReason: ${(report.scores.coverage as any)?.stopReason}\n`);
 
 console.log('🎉 ALL MULTI-EXECUTOR PARITY CHECKS PASSED DETERMINISTICALLY!');
