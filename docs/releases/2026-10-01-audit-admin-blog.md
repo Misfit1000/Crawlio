@@ -46,4 +46,6 @@ Commit `49966a6` deployed to both services and the live Groq check passed. A rea
 
 Follow-up validation: 16 focused blog checkpoint, cooldown, retry and SQL permission tests passed; TypeScript and the production API build passed. Invalid structured output retries through the durable queue instead of enlarging the prompt in an immediate repair request. The initial static API size remains 1,328,712 bytes. External provider calls in the tests were mocked; completion of the real private draft remains a separate production check.
 
+Production verification found that the Operations retry path reset a job without dispatching it. Retry and stale recovery now request protected background processing; queued jobs also expose a reasoned Resume action that preserves stage outputs and provider cooldowns.
+
 The public homepage was verified with a pure black body background, no horizontal overflow at1280 pixels, the correct canonical host and administrator audit selectors at their configured1,000-page allowance. Unattended publication remains locked by the existing real approval threshold. No field performance benchmark or guarantee of Google indexing is claimed.

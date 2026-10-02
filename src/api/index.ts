@@ -43,7 +43,7 @@ import { blogAutomationRepository } from '../lib/blog/automation-repository';
 import { blogJobIdempotencyKey, validateManualBatch } from '../lib/blog/automation';
 import { getGroqBlogConfiguration, getSafeGroqDiagnostics, GROQ_DEFAULT_STRUCTURED_MODEL, GROQ_DEFAULT_WRITER_MODEL, testGroqProvider } from '../lib/blog/server/groq';
 import { dispatchVercelBlogStages, getVercelBlogRuntimeInfo, recoverAndDispatchVercelBlogWork, safeBlogStageError } from '../lib/blog/server/vercel-workflow';
-import { blogJobResumeDelay, blogRuntimeReadiness, runBoundedBlogDispatch } from '../lib/blog/server/dispatch-runner';
+import { blogJobIsActive, blogJobResumeDelay, blogRuntimeReadiness, runBoundedBlogDispatch } from '../lib/blog/server/dispatch-runner';
 import { normalizeBlogArticleType } from '../lib/blog/length-policy';
 import { validateCalendarMove } from '../lib/blog/freshness';
 import { BLOG_FIXTURE_MODEL, BLOG_FIXTURE_PROVIDER, getBlogFixtureConfiguration, requireBlogFixtureProvider } from '../lib/blog/fixture-provider';
@@ -1112,6 +1112,10 @@ apiRouter.post('/admin/blog/operations/action', asyncJsonRoute(async (req, res) 
   if (reason.length < 4) throw new ApiError('BLOG_OPERATION_REASON_REQUIRED', 'Provide a reason for this operation.', 400);
   let result: unknown;
   if (action === 'retry_job') result = await blogAutomationRepository.retryJob(targetId);
+  else if (action === 'resume_job') {
+    const job = await blogAutomationRepository.getJob(targetId);
+    if (job?.executionTarget === 'vercel' && job.state === 'queued' && blogJobIsActive(job)) result = job;
+  }
   else if (action === 'cancel_job') result = await blogAutomationRepository.cancelJob(targetId, reason);
   else if (action === 'recover_stale_job') result = await blogAutomationRepository.recoverJob(targetId);
   else if (action === 'pause_automation') result = await blogAutomationRepository.updateSettings({ enabled: false }, requester.userId);
@@ -1134,6 +1138,7 @@ apiRouter.post('/admin/blog/operations/action', asyncJsonRoute(async (req, res) 
   } else throw new ApiError('BLOG_OPERATION_INVALID', 'Choose a supported protected operation.', 400);
   if (!result) throw new ApiError('BLOG_OPERATION_NOT_APPLICABLE', 'The operation is not applicable to the selected item.', 409);
   await logBlogAction(requester.userId, `blog_operation_${action}`, targetId || 'blog', { reason });
+  if (['retry_job', 'resume_job', 'recover_stale_job'].includes(action)) requestImmediateBlogDispatch(req, targetId);
   res.json({ success: true, data: { result } });
 }));
 

@@ -317,7 +317,7 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
       const section = plan.sections[index];
       const minimum = Math.floor(plan.minimum / plan.sections.length) + Number(index < plan.minimum % plan.sections.length);
       const maximum = Math.floor(plan.maximum / plan.sections.length) + Number(index < plan.maximum % plan.sections.length);
-      const target = Math.ceil(plan.minimum / plan.sections.length);
+      const target = Math.round((minimum + maximum) / 2);
       const maxTokens = Math.min(4_000, Math.max(2_400, Math.ceil(maximum * 2.4) + 500));
       const result = await runStructured(job, stage, `Draft only section ${index + 1} of ${plan.sections.length} and return {"contentHtml":""}. Target ${target} useful words; write ${minimum}-${maximum} words including the heading, without filler. Include one H2 for this section, no H1, and semantic p,h3,ul,ol,li,strong,em,blockquote,pre,code,a elements. Do not draft other sections or repeat the article introduction. Link cited supplied source URLs with descriptive anchor text; never invent sources. Include internal links to /blog or /#start-audit only when relevant. Base factual claims on the excerpts, not titles. Clearly distinguish practical interpretation from verified facts. Never copy source paragraphs or invent statistics or publication dates. Brief: ${safeEvidence(compactBrief(outputs.brief))}. Current section: ${safeEvidence(section)}. Source excerpts: ${safeEvidence(compactSectionEvidence(job, section))}.`, (value): value is any => {
         if (!hasStrings(value, ['contentHtml']) || /<h1\b/i.test((value as any).contentHtml)) return false;

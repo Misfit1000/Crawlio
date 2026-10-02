@@ -786,6 +786,23 @@ export default function BlogProviderFreeWorkspace() {
                     </td>
                     <td className="p-3">
                       <div className="flex gap-2">
+                        {job.state === "queued" && (
+                          <button
+                            type="button"
+                            disabled={Boolean(busy)}
+                            onClick={() =>
+                              runProtectedOperation(
+                                `resume-${job.id}`,
+                                "resume_job",
+                                "Background processing requested; provider cooldowns still apply.",
+                                job.id,
+                              )
+                            }
+                            className="quiet-button"
+                          >
+                            Resume
+                          </button>
+                        )}
                         {job.state === "failed" && (
                           <button
                             type="button"
