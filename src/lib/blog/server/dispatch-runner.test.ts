@@ -34,6 +34,37 @@ test('deadline checkpoints preserve the pending job and long provider backoff do
   assert.equal(result.pendingJobId, 'job');
 });
 
+test('persisted provider pacing has a 120-second total wait cap and never waits more than 60 seconds at once', async () => {
+  let clock = 0, calls = 0;
+  const waits: number[] = [];
+  const cooldownJob = () => job('section_drafting', 'drafting', { stageOutputs: { nextProviderRequestAt: new Date(clock + 30_000).toISOString() } });
+  const result = await runBoundedBlogDispatch({ requestedJobId: 'job' }, { now: () => clock,
+    wait: async ms => { assert.ok(ms <= 60_000); waits.push(ms); clock += ms; },
+    process: async () => { calls++; return { processed: true, job: cooldownJob() }; }, getJob: async () => cooldownJob() });
+  assert.equal(calls, 4);
+  assert.equal(waits.reduce((total, ms) => total + ms, 0), 120_000);
+  assert.equal(result.pendingJobId, 'job');
+  const handoff = await runBoundedBlogDispatch({ requestedJobId: 'job' }, { now: () => clock,
+    wait: async () => { throw new Error('long cooldown must hand off'); }, process: async () => { throw new Error('must not claim during cooldown'); },
+    getJob: async () => job('claim_validation', 'validating', { stageOutputs: { nextProviderRequestAt: new Date(clock + 90_000).toISOString() } }) });
+  assert.equal(handoff.processedStages, 0);
+  assert.equal(handoff.pendingJobId, 'job');
+});
+
+test('busy dispatch does at most three busy reads and idle dispatch exits immediately', async () => {
+  let clock = 0, reads = 0, calls = 0;
+  const result = await runBoundedBlogDispatch({ requestedJobId: 'job' }, { now: () => clock, wait: async ms => { clock += ms; },
+    process: async () => { calls++; return { processed: false, job: null }; }, getJob: async () => { reads++; return job('section_drafting'); } });
+  assert.equal(reads, 4); // One initial cooldown read plus three busy reads.
+  assert.equal(calls, 4);
+  assert.equal(result.pendingJobId, 'job');
+  calls = 0;
+  const idle = await runBoundedBlogDispatch({}, { now: () => clock, wait: async () => { throw new Error('idle dispatch must not wait'); },
+    process: async () => { calls++; return { processed: false, job: null }; }, getJob: async () => { throw new Error('idle dispatch must not poll'); } });
+  assert.equal(calls, 1);
+  assert.equal(idle.pendingJobId, null);
+});
+
 test('readiness distinguishes manual generation from strict scheduled publication without exposing credentials', () => {
   const original = { ...process.env };
   try {

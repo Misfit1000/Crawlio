@@ -28,6 +28,11 @@ export function blogRuntimeReadiness(settings: Record<string, unknown>) {
 
 type StageResult = Awaited<ReturnType<typeof processNextVercelBlogStage>>;
 
+export function blogJobResumeDelay(job: BlogGenerationJob | null, now = Date.now()) {
+  const dates = [job?.nextRetryAt, job?.stageOutputs?.nextProviderRequestAt];
+  return Math.max(0, ...dates.map(value => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? Date.parse(value) - now : 0));
+}
+
 // Durable stages are committed independently; leave enough time for the longest
 // stage plus a protected handoff before Vercel's 300-second deadline.
 export async function runBoundedBlogDispatch(input: { requestedJobId?: string | null; budgetMs?: number } = {}, dependencies: {
@@ -38,18 +43,27 @@ export async function runBoundedBlogDispatch(input: { requestedJobId?: string | 
 } = { now: Date.now, wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)), process: processNextVercelBlogStage, getJob: (id) => blogAutomationRepository.getJob(id) }) {
   const deadline = dependencies.now() + Math.max(1, Math.min(180_000, input.budgetMs ?? 180_000));
   let jobId = input.requestedJobId || null;
-  let latestJob: BlogGenerationJob | null = null;
+  let latestJob: BlogGenerationJob | null = jobId ? await dependencies.getJob(jobId) || null : null;
   let processedStages = 0;
   let busyWaits = 0;
+  let waitedMs = 0;
   for (let step = 0; step < 64 && dependencies.now() < deadline; step += 1) {
+    if (latestJob && !blogJobIsActive(latestJob)) break;
+    const refillDelay = blogJobResumeDelay(latestJob, dependencies.now());
+    if (refillDelay > 0) {
+      if (refillDelay > 60_000 || waitedMs + refillDelay > 120_000 || dependencies.now() + refillDelay >= deadline) break;
+      await dependencies.wait(refillDelay);
+      waitedMs += refillDelay;
+    }
     const result = await dependencies.process({ requestedJobId: jobId });
     if (!result.processed) {
-      if (!jobId) break;
+      if (!jobId || ++busyWaits > 3) break;
       latestJob = await dependencies.getJob(jobId);
       if (!blogJobIsActive(latestJob)) break;
-      const retryDelay = latestJob?.nextRetryAt ? Date.parse(latestJob.nextRetryAt) - dependencies.now() : 5_000;
-      if (retryDelay > 60_000 || ++busyWaits > 12 || dependencies.now() + Math.max(2_000, retryDelay) >= deadline) break;
-      await dependencies.wait(Math.max(2_000, retryDelay));
+      const retryDelay = Math.max(2_000, blogJobResumeDelay(latestJob, dependencies.now()) || 5_000);
+      if (retryDelay > 60_000 || waitedMs + retryDelay > 120_000 || dependencies.now() + retryDelay >= deadline) break;
+      await dependencies.wait(retryDelay);
+      waitedMs += retryDelay;
       continue;
     }
     busyWaits = 0;
@@ -58,14 +72,13 @@ export async function runBoundedBlogDispatch(input: { requestedJobId?: string | 
     if (!blogJobIsActive(latestJob)) {
       if (input.requestedJobId) break;
       jobId = null;
+      latestJob = null;
     } else {
       jobId = latestJob!.id;
-      if (latestJob!.nextRetryAt) {
-        const delay = Math.max(0, Date.parse(latestJob!.nextRetryAt) - dependencies.now());
-        if (delay > 60_000 || dependencies.now() + delay >= deadline) break;
-        await dependencies.wait(delay);
-      } else {
+      if (blogJobResumeDelay(latestJob, dependencies.now()) === 0) {
+        if (waitedMs + 2_000 > 120_000 || dependencies.now() + 2_000 >= deadline) break;
         await dependencies.wait(2_000);
+        waitedMs += 2_000;
       }
     }
   }

@@ -29,6 +29,47 @@ test('health states use recorded evidence, not an inferred sleeping state', () =
   assert.throws(() => validatePlatformControls({ dispatchSecret: 'hidden' }));
 });
 
+test('database compatibility uses the additive minimum without changing recorded versions or worker checks', () => {
+  const now = Date.now();
+  const expected = { commitIdentifier: 'abcdef12345', apiSchemaVersion: 15, auditEngineVersion: '2026.09', scoringVersion: '2.2', checkRegistryVersion: '3.1' };
+  const worker = { id: 'worker', value: { status: 'idle', databaseConnected: true, lastSeenAt: new Date(now).toISOString(),
+    commitIdentifier: expected.commitIdentifier, apiSchemaVersion: 15, auditEngineVersion: expected.auditEngineVersion,
+    scoringVersion: expected.scoringVersion, checkRegistryVersion: expected.checkRegistryVersion } };
+  const raw = { database: { api_schema_version: 13, commit_identifier: 'migration-028' }, workers: [worker],
+    queue: { queued: 0, running: 0, oldestQueuedSeconds: null, staleLeases: 0 }, metrics: {} };
+  const compatible = presentAdminOperations(raw, expected, now);
+  assert.equal(compatible.status, 'healthy');
+  assert.equal(compatible.components.database.status, 'healthy');
+  assert.match(compatible.components.database.reason, /recorded schema 13 meets the compatible minimum 13/);
+  assert.equal(compatible.components.deployment.status, 'healthy');
+  assert.equal(compatible.deployment.compatible, true);
+  assert.equal(compatible.deployment.databaseSchemaVersion, 13);
+  assert.equal(compatible.deployment.expectedSchemaVersion, 15);
+  assert.equal(compatible.deployment.appliedMigration, 'migration-028');
+  const older = presentAdminOperations({ ...raw, database: { ...raw.database, api_schema_version: 12 } }, expected, now);
+  assert.equal(older.status, 'critical');
+  assert.equal(older.components.database.status, 'critical');
+  assert.match(older.components.database.reason, /schema 12 is below the compatible minimum 13/);
+  assert.equal(older.components.deployment.reason, older.components.database.reason);
+  assert.equal(older.deployment.databaseSchemaVersion, 12);
+  assert.equal(older.deployment.compatible, false);
+  for (const database of [undefined, null, {}, { api_schema_version: null }]) {
+    const missing = presentAdminOperations({ ...raw, database }, expected, now);
+    assert.equal(missing.status, 'unknown');
+    assert.equal(missing.components.database.status, 'unknown');
+    assert.match(missing.components.database.reason, /metadata is missing/);
+    assert.equal(missing.components.deployment.status, 'unknown');
+    assert.equal(missing.deployment.databaseSchemaVersion, null);
+  }
+  for (const mismatch of [{ apiSchemaVersion: 13 }, { auditEngineVersion: 'other' }, { scoringVersion: 'other' }, { checkRegistryVersion: 'other' }]) {
+    const result = presentAdminOperations({ ...raw, workers: [{ ...worker, value: { ...worker.value, ...mismatch } }] }, expected, now);
+    assert.equal(result.status, 'critical');
+    assert.equal(result.components.database.status, 'healthy');
+    assert.equal(result.components.deployment.reason, 'Worker API contract is incompatible.');
+    assert.equal(result.deployment.compatible, false);
+  }
+});
+
 test('migration 028 validates actions, real leases, retries, atomic logs and retention', async () => {
   const db = new PGlite();
   const migration = (name: string) => readFile(new URL(`../../../supabase/migrations/${name}`, import.meta.url), 'utf8');

@@ -1,4 +1,5 @@
 import { customerSafeDiagnosticText } from '../audit/audit-failures';
+import { MINIMUM_AUDIT_DATABASE_SCHEMA_VERSION } from '../platform/version';
 import type { OperationalStatus } from './health';
 
 export function classifyOperationalFailure(code?: string | null) {
@@ -53,7 +54,11 @@ export function presentAdminOperations(raw: Record<string, any>, expected: Recor
     || (!!worker.scoringVersion && worker.scoringVersion !== expected.scoringVersion)
     || (!!worker.checkRegistryVersion && expected.checkRegistryVersion && worker.checkRegistryVersion !== expected.checkRegistryVersion));
   const databaseSchemaVersion = raw.database?.api_schema_version ?? null;
-  const databaseReady = databaseSchemaVersion != null && databaseSchemaVersion >= 15;
+  const databaseReady = databaseSchemaVersion != null && databaseSchemaVersion >= MINIMUM_AUDIT_DATABASE_SCHEMA_VERSION;
+  const databaseIncompatible = databaseSchemaVersion != null && !databaseReady;
+  const databaseReason = databaseSchemaVersion == null ? 'Database schema version metadata is missing.'
+    : databaseIncompatible ? `Recorded database schema ${databaseSchemaVersion} is below the compatible minimum ${MINIMUM_AUDIT_DATABASE_SCHEMA_VERSION}.`
+    : `Database operations RPC responded; recorded schema ${databaseSchemaVersion} meets the compatible minimum ${MINIMUM_AUDIT_DATABASE_SCHEMA_VERSION}.`;
   const commitMismatch = !!(worker?.commitIdentifier && expected.commitIdentifier !== 'local'
     && !expected.commitIdentifier.startsWith(worker.commitIdentifier) && !worker.commitIdentifier.startsWith(expected.commitIdentifier));
   const queue = raw.queue;
@@ -61,13 +66,13 @@ export function presentAdminOperations(raw: Record<string, any>, expected: Recor
     : queue.oldestQueuedSeconds > 300 || queue.staleLeases > 0 ? 'degraded' : 'healthy';
   const workerStatus: OperationalStatus = liveWorkers.length ? 'healthy' : workers.length ? (queue.queued || queue.running ? 'critical' : 'degraded') : 'unknown';
   const versionEvidence = !!worker && worker.apiSchemaVersion != null && !!worker.auditEngineVersion && !!worker.scoringVersion;
-  const deploymentStatus: OperationalStatus = contractMismatch || (databaseSchemaVersion != null && !databaseReady) ? 'critical' : commitMismatch ? 'degraded' : versionEvidence && databaseReady ? 'healthy' : 'unknown';
+  const deploymentStatus: OperationalStatus = contractMismatch || databaseIncompatible ? 'critical' : commitMismatch ? 'degraded' : versionEvidence && databaseReady ? 'healthy' : 'unknown';
   const components = {
     api: { status: 'healthy' as OperationalStatus, reason: 'The authorized API request completed.' },
-    database: { status: databaseReady ? 'healthy' as OperationalStatus : 'unknown' as OperationalStatus, reason: databaseReady ? 'Database operations RPC responded.' : 'Database contract version is unavailable.' },
+    database: { status: databaseReady ? 'healthy' as OperationalStatus : databaseIncompatible ? 'critical' as OperationalStatus : 'unknown' as OperationalStatus, reason: databaseReason },
     worker: { status: workerStatus, reason: liveWorkers.length ? 'Fresh audit-engine heartbeat received.' : 'No fresh healthy heartbeat; sleeping is not established.' },
     queue: { status: queueStatus, reason: queue.staleLeases ? `${queue.staleLeases} expired processing lease(s).` : queue.oldestQueuedSeconds > 300 ? 'Queue waiting time needs attention.' : 'Queue within existing waiting-time thresholds.' },
-    deployment: { status: deploymentStatus, reason: contractMismatch ? 'Worker API contract is incompatible.' : commitMismatch ? 'Commits differ; check whether a deployment is in progress.' : databaseReady && worker ? 'Observed database and worker contracts are compatible.' : 'Waiting for complete version evidence.' },
+    deployment: { status: deploymentStatus, reason: contractMismatch ? 'Worker API contract is incompatible.' : databaseIncompatible ? databaseReason : commitMismatch ? 'Commits differ; check whether a deployment is in progress.' : databaseReady && versionEvidence ? 'Observed database and worker contracts are compatible.' : 'Waiting for complete version evidence.' },
   };
   const statuses = Object.values(components).map(component => component.status);
   const status: OperationalStatus = statuses.includes('critical') ? 'critical' : statuses.includes('degraded') ? 'degraded' : statuses.includes('unknown') ? 'unknown' : 'healthy';

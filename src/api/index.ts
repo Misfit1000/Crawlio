@@ -43,7 +43,7 @@ import { blogAutomationRepository } from '../lib/blog/automation-repository';
 import { blogJobIdempotencyKey, validateManualBatch } from '../lib/blog/automation';
 import { getGroqBlogConfiguration, getSafeGroqDiagnostics, GROQ_DEFAULT_STRUCTURED_MODEL, GROQ_DEFAULT_WRITER_MODEL, testGroqProvider } from '../lib/blog/server/groq';
 import { dispatchVercelBlogStages, getVercelBlogRuntimeInfo, recoverAndDispatchVercelBlogWork, safeBlogStageError } from '../lib/blog/server/vercel-workflow';
-import { blogRuntimeReadiness, runBoundedBlogDispatch } from '../lib/blog/server/dispatch-runner';
+import { blogJobResumeDelay, blogRuntimeReadiness, runBoundedBlogDispatch } from '../lib/blog/server/dispatch-runner';
 import { normalizeBlogArticleType } from '../lib/blog/length-policy';
 import { validateCalendarMove } from '../lib/blog/freshness';
 import { BLOG_FIXTURE_MODEL, BLOG_FIXTURE_PROVIDER, getBlogFixtureConfiguration, requireBlogFixtureProvider } from '../lib/blog/fixture-provider';
@@ -183,8 +183,8 @@ function requestImmediateBlogDispatch(req: any, jobId: string | null, chainDepth
       const data = await runBoundedBlogDispatch({ requestedJobId: jobId });
       const secret = String(process.env.BLOG_DISPATCH_SECRET || '').trim();
       const origin = requestOrigin(req);
-      const retryDelay = data.latestJob?.nextRetryAt ? Date.parse(data.latestJob.nextRetryAt) - Date.now() : 0;
-      if (data.pendingJobId && retryDelay <= 60_000 && chainDepth < 6 && secret.length >= 24 && origin) {
+      const retryDelay = blogJobResumeDelay(data.latestJob);
+      if (data.pendingJobId && retryDelay <= 60_000 && chainDepth < 8 && secret.length >= 24 && origin) {
         const response = await fetch(`${origin}/api/tools/blog/jobs/dispatch`, {
           method: 'POST', redirect: 'error', headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ jobId: data.pendingJobId, chainDepth: chainDepth + 1 }), signal: AbortSignal.timeout(10_000),
@@ -795,7 +795,7 @@ const runBlogDispatcher = asyncJsonRoute(async (req: any, res: any) => {
   if (!schedulerRequestAllowed(req, req.method === 'GET' ? 'cron' : 'dispatch')) throw new ApiError('BLOG_DISPATCH_UNAUTHORIZED', 'Dispatcher authentication failed.', 401);
   const requestedJobId = String(req.body?.jobId || req.query?.jobId || '').trim() || null;
   if (requestedJobId && !/^[0-9a-f-]{36}$/i.test(requestedJobId)) throw new ApiError('BLOG_JOB_ID_INVALID', 'The requested blog job ID is invalid.', 400);
-  const chainDepth = Math.max(0, Math.min(6, Number(req.body?.chainDepth || 0) || 0));
+  const chainDepth = Math.max(0, Math.min(8, Number(req.body?.chainDepth || 0) || 0));
   requestImmediateBlogDispatch(req, requestedJobId, chainDepth, req.method === 'GET' ? prepareScheduledBlogWork : undefined);
   res.setHeader('Cache-Control', 'private, no-store');
   res.status(202).json({ success: true, data: { accepted: true, jobId: requestedJobId, execution: 'durable_background' } });

@@ -186,6 +186,9 @@ export async function generateGroqCompletion(input: {
         rateLimit: {
           remainingRequests: response.headers.get('x-ratelimit-remaining-requests'),
           resetRequests: response.headers.get('x-ratelimit-reset-requests'),
+          remainingTokens: response.headers.get('x-ratelimit-remaining-tokens'),
+          resetTokens: response.headers.get('x-ratelimit-reset-tokens'),
+          limitTokens: response.headers.get('x-ratelimit-limit-tokens'),
         },
         usage: {
           inputTokens: Number.isFinite(Number(body?.usage?.prompt_tokens)) ? Number(body.usage.prompt_tokens) : null,
@@ -210,11 +213,17 @@ export async function generateGroqCompletion(input: {
   throw new GroqBlogProviderError('GROQ_UNAVAILABLE', 'Groq is temporarily unavailable.', { retryable: true });
 }
 
-export async function generateGroqStructured<T>(input: Omit<Parameters<typeof generateGroqCompletion>[0], 'json'> & { validate: (value: unknown) => value is T }) {
+export async function generateGroqStructured<T>(input: Omit<Parameters<typeof generateGroqCompletion>[0], 'json'> & { validate: (value: unknown) => value is T; repair?: boolean }) {
   const result = await generateGroqCompletion({ ...input, json: true });
   let parsed: unknown;
   try { parsed = JSON.parse(result.content); } catch { parsed = null; }
   if (input.validate(parsed)) return { ...result, data: parsed };
+
+  // Durable jobs retry their original bounded prompt after a cooldown instead
+  // of sending a larger inline repair request against the same token allowance.
+  if (input.repair === false) throw new GroqBlogProviderError('GROQ_SCHEMA_VALIDATION_FAILED',
+    'Groq output did not meet the required article structure or content checks. The current section will be retried without losing completed work.',
+    { retryable: true, retryAfterMs: 60_000 });
 
   const repaired = await generateGroqCompletion({
     ...input,
