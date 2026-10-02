@@ -1317,7 +1317,7 @@ apiRouter.put('/admin/blog/posts/:id', asyncJsonRoute(async (req, res) => {
   try {
     const row = prepareBlogPostForStorage(req.body || {});
     row.slug = await uniqueBlogSlug(row.slug, existing.id);
-    const post = await blogRepository.update(existing.id, { ...row, updated_by: requester.userId });
+    const post = await blogRepository.update(existing.id, { ...row, updated_by: requester.userId }, existing.updatedAt);
     if (post) await blogRepository.syncEditorialRecords(post, requester.userId, existing.status);
     await logBlogAction(requester.userId, 'update_blog_post', existing.id, { status: post?.status, slug: post?.slug });
     res.json({ success: true, data: { post } });
@@ -1337,9 +1337,9 @@ apiRouter.post('/admin/blog/posts/:id/workflow', asyncJsonRoute(async (req, res)
   if (reason.length < 4) throw new ApiError('BLOG_WORKFLOW_REASON_REQUIRED', 'Provide a short reason for this workflow change.', 400);
   let post;
   if (action === 'hold' || action === 'cancel') {
-    post = await blogRepository.update(existing.id, { status: action === 'hold' ? 'needs_review' : 'draft', scheduled_at: null, published_at: null, robots_directive: 'noindex,nofollow', publication_reason: reason, reviewer_id: requester.userId, updated_by: requester.userId });
+    post = await blogRepository.update(existing.id, { status: action === 'hold' ? 'needs_review' : 'draft', scheduled_at: null, published_at: null, robots_directive: 'noindex,nofollow', publication_reason: reason, reviewer_id: requester.userId, updated_by: requester.userId }, existing.updatedAt);
   } else if (action === 'convert_manual') {
-    post = await blogRepository.update(existing.id, { origin: 'scheduled_manual', publication_reason: reason, updated_by: requester.userId });
+    post = await blogRepository.update(existing.id, { origin: 'scheduled_manual', publication_reason: reason, updated_by: requester.userId }, existing.updatedAt);
   } else if (action === 'publish_now' || action === 'reschedule' || action === 'unschedule' || action === 'reset_recommended_time') {
     const settings = await blogAutomationRepository.getSettings();
     const posts = await blogRepository.listAdmin(200);
@@ -1351,10 +1351,10 @@ apiRouter.post('/admin/blog/posts/:id/workflow', asyncJsonRoute(async (req, res)
       if (!validation.valid) throw new ApiError('BLOG_SCHEDULE_CONFLICT', validation.conflicts.join(' '), 409);
     }
     if (action === 'unschedule') {
-      post = await blogRepository.update(existing.id, { status: 'draft', scheduled_at: null, robots_directive: 'noindex,nofollow', publication_reason: reason, schedule_version: existing.scheduleVersion + 1, reviewer_id: requester.userId, updated_by: requester.userId });
+      post = await blogRepository.update(existing.id, { status: 'draft', scheduled_at: null, robots_directive: 'noindex,nofollow', publication_reason: reason, schedule_version: existing.scheduleVersion + 1, reviewer_id: requester.userId, updated_by: requester.userId }, existing.updatedAt);
     } else {
       const row = prepareBlogPostForStorage({ ...existing, status: action === 'publish_now' ? 'published' : 'scheduled', publishedAt: action === 'publish_now' ? new Date().toISOString() : null, scheduledAt: requestedTime, publicationReason: reason, publicationRule: action === 'reset_recommended_time' ? 'administrator_reset_to_recommendation' : action === 'reschedule' ? 'administrator_calendar_move' : 'administrator_publish_now', scheduleVersion: existing.scheduleVersion + 1 });
-      post = await blogRepository.update(existing.id, { ...row, reviewer_id: requester.userId, updated_by: requester.userId });
+      post = await blogRepository.update(existing.id, { ...row, reviewer_id: requester.userId, updated_by: requester.userId }, existing.updatedAt);
     }
   } else {
     throw new ApiError('UNSUPPORTED_BLOG_WORKFLOW_ACTION', 'This content workflow action is not supported.', 400);

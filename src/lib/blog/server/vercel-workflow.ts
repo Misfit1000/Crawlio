@@ -424,8 +424,15 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
   }
   if (stage === 'quality_gate') {
     const recovered = await blogRepository.getByGenerationJobId(job.id);
-    if (recovered) {
-      await blogAutomationRepository.updateJob(job.id, { articleId: recovered.id, result: { recoveredAfterRetry: true } });
+    if (recovered && (recovered.status === 'published' || recovered.status === 'scheduled')) {
+      await blogRepository.syncEditorialRecords(recovered, job.requestedBy, '');
+      await blogAutomationRepository.updateJob(job.id, { articleId: recovered.id,
+        result: { articleId: recovered.id, recoveredAfterRetry: true, published: recovered.status === 'published', scheduled: recovered.status === 'scheduled' }, completedAt: new Date().toISOString() });
+      await blogEditorRepository.createNotification({ adminUserId: job.requestedBy,
+        type: recovered.status === 'published' ? 'blog_published' : 'blog_needs_attention',
+        title: recovered.status === 'published' ? 'AI article published' : 'AI article scheduled',
+        message: `${recovered.title} was recovered after an interrupted save.`, articleId: recovered.id, jobId: job.id,
+        linkPath: `/admin/blog?articleId=${encodeURIComponent(recovered.id)}` }).catch(() => undefined);
       const destination = recovered.status === 'published' ? 'published' : recovered.status === 'scheduled' ? 'scheduled' : 'ready_for_review';
       return { output: { articleId: recovered.id }, next: destination, state: destination, message: 'Existing article recovered safely' };
     }
@@ -433,7 +440,7 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
     const metadata = (outputs.metadata || {}) as any;
     const sources = sourcesFromJob(job);
     const fixture = job.provider === BLOG_FIXTURE_PROVIDER;
-    const input: BlogPostInput = {
+    const input: BlogPostInput = recovered ? { ...recovered, prerenderStatus: 'pending' } : {
       title: String(draft.title), slug: String(draft.suggestedSlug), excerpt: String(draft.excerpt), tagline: String(draft.tagline), summary: String(draft.summary),
       contentHtml: String(draft.contentHtml), focusKeyword: String(draft.focusKeyword), tags: Array.isArray(draft.tags) ? draft.tags.map(String) : [],
       seoTitle: String(metadata.seoTitle || draft.title), metaDescription: String(metadata.metaDescription || draft.excerpt), status: fixture ? 'draft' : 'needs_review',
@@ -449,6 +456,12 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
     input.qualityStatus = quality.status;
     input.qualityResults = quality;
     const blockers = publicationBlockers({ qualityReport: quality, originalityStatus: input.originalityStatus || 'pending', sourceStatus: input.sourceStatus || 'pending', imageStatus: input.imageStatus || 'not_required', prerenderStatus: 'passed' });
+    if (recovered && (recovered.contentHtml !== sanitizeBlogHtml(String(draft.contentHtml)) || recovered.title !== String(draft.title))) {
+      blockers.push('Article changed after AI claim validation; editorial review is required');
+    }
+    if (recovered && (recovered.reviewerId || !['draft', 'needs_review'].includes(recovered.status))) {
+      blockers.push('An administrator has reviewed or held this article; confirm publication manually');
+    }
     const row = prepareBlogPost(input);
     // Let database defaults populate optional scheduling and image fields for
     // review-only drafts. This also keeps deployments compatible while an
@@ -458,12 +471,15 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
     if (row.publication_urgency === 'normal') delete row.publication_urgency;
     if (row.schedule_version === 0) delete row.schedule_version;
     if (Array.isArray(row.responsive_images) && row.responsive_images.length === 0) delete row.responsive_images;
-    let slug = row.slug;
-    for (let suffix = 2; await blogRepository.slugExists(slug); suffix += 1) slug = `${row.slug.slice(0, 110)}-${suffix}`;
-    let post = await blogRepository.create({ ...row, slug, author_id: job.requestedBy, updated_by: job.requestedBy });
+    let slug = recovered?.slug || row.slug;
+    if (!recovered) for (let suffix = 2; await blogRepository.slugExists(slug); suffix += 1) slug = `${row.slug.slice(0, 110)}-${suffix}`;
+    let post = recovered || await blogRepository.create({ ...row, slug, author_id: job.requestedBy, updated_by: job.requestedBy });
     const html = renderBlogArticleHtml(post, canonicalSiteOrigin());
     if ((html.match(/<h1>/g) || []).length !== 1 || !html.includes('application/ld+json')) throw new Error('Initial article HTML validation failed.');
-    post = (await blogRepository.update(post.id, { prerender_status: 'passed', robots_directive: fixture ? 'noindex,nofollow' : post.robotsDirective })) || post;
+    post = (await blogRepository.update(post.id, { quality_status: quality.status, quality_results: quality,
+      prerender_status: 'passed', robots_directive: fixture ? 'noindex,nofollow' : post.robotsDirective }, post.updatedAt)) || post;
+    await blogRepository.syncEditorialRecords(post, job.requestedBy, recovered ? recovered.status : '');
+    const syncedVersion = post.updatedAt;
     const claimValidationPassed = (outputs.claimValidation as any)?.claimsSupported === true;
     if (!claimValidationPassed) blockers.push('Factual claims need review against readable source evidence');
     const settings = await blogAutomationRepository.getSettings();
@@ -481,7 +497,7 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
         recommendedPublicationAt: String(automaticSchedule!.scheduledAt), publicationRule: String(automaticSchedule!.rule || ''),
         publicationReason: 'Scheduled automation passed evidence, quality, and configured editorial policy.',
         prerenderStatus: 'passed' }, { publishing: true });
-      post = (await blogRepository.update(post.id, { ...scheduledRow, updated_by: job.requestedBy })) || post;
+      post = (await blogRepository.update(post.id, { ...scheduledRow, updated_by: job.requestedBy }, post.updatedAt)) || post;
     }
     if (publishNow) {
       const publishedRow = prepareBlogPost({
@@ -494,10 +510,10 @@ async function performStage(job: BlogGenerationJob): Promise<{ output: Record<st
         imageStatus: post.imageStatus || 'not_required',
         publicationReason: 'Administrator requested guarded one-click publication; all automated evidence and quality gates passed.',
       }, { publishing: true });
-      post = (await blogRepository.update(post.id, { ...publishedRow, reviewer_id: job.requestedBy, updated_by: job.requestedBy })) || post;
+      post = (await blogRepository.update(post.id, { ...publishedRow, reviewer_id: job.requestedBy, updated_by: job.requestedBy }, post.updatedAt)) || post;
     }
-    await blogRepository.syncEditorialRecords(post, job.requestedBy, '');
-    await blogAutomationRepository.updateJob(job.id, { articleId: post.id, result: { articleId: post.id, blockers, qualityStatus: quality.status, published: publishNow, scheduled: scheduleNow }, inputTokens: Number((outputs.providerUsage as any)?.inputTokens || 0), outputTokens: Number((outputs.providerUsage as any)?.outputTokens || 0), completedAt: new Date().toISOString() });
+    if (post.updatedAt !== syncedVersion) await blogRepository.syncEditorialRecords(post, job.requestedBy, recovered?.status || 'needs_review');
+    await blogAutomationRepository.updateJob(job.id, { articleId: post.id, result: { articleId: post.id, blockers, qualityStatus: quality.status, published: publishNow, scheduled: scheduleNow, recoveredAfterRetry: Boolean(recovered) }, inputTokens: Number((outputs.providerUsage as any)?.inputTokens || 0), outputTokens: Number((outputs.providerUsage as any)?.outputTokens || 0), completedAt: new Date().toISOString() });
     await blogEditorRepository.createNotification({
       adminUserId: job.requestedBy,
       type: publishNow ? 'blog_published' : 'blog_needs_attention',
@@ -525,6 +541,8 @@ function sanitizeStageErrorMessage(value: unknown) {
 
 export function safeBlogStageError(error: unknown) {
   if (error instanceof GroqBlogProviderError) return { code: error.code, message: error.message, retryable: error.retryable, retryAfterMs: error.retryAfterMs };
+  const transientNetworkError = error instanceof Error && (/fetch failed|ECONNRESET|ETIMEDOUT|ENETUNREACH|socket hang up/i.test(error.message)
+    || ['TimeoutError', 'AbortError'].includes(error.name));
   if (error && typeof error === 'object') {
     const record = error as Record<string, unknown>;
     const providerCode = /^[A-Z0-9_]{2,20}$/i.test(String(record.code || '')) ? String(record.code) : '';
@@ -533,12 +551,12 @@ export function safeBlogStageError(error: unknown) {
       return {
         code: providerCode ? `BLOG_DATABASE_${providerCode}` : 'BLOG_DATABASE_OPERATION_FAILED',
         message: providerCode ? `Database operation failed (${providerCode}): ${providerMessage}` : `Database operation failed: ${providerMessage}`,
-        retryable: false,
+        retryable: transientNetworkError || /^(?:08[A-Z0-9]{3}|40001|40P01|53300|57P0[123]|57014|PGRST00[012])$/i.test(providerCode),
       };
     }
   }
   const message = error instanceof Error ? sanitizeStageErrorMessage(error.message) : 'Blog stage could not complete.';
-  return { code: 'BLOG_STAGE_FAILED', message, retryable: false };
+  return { code: transientNetworkError ? 'BLOG_SERVICE_TEMPORARILY_UNAVAILABLE' : 'BLOG_STAGE_FAILED', message, retryable: transientNetworkError };
 }
 
 export async function processNextVercelBlogStage(input: { requestedJobId?: string | null; executionId?: string } = {}) {

@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { getSupabaseAdminClient } from '../supabase/server';
 import { estimateReadingTime } from './seo';
 import type { BlogListResult, BlogPost, BlogPostStatus } from './types';
-import { inspectBlogLinks } from './quality';
+import { buildEditorialRecords } from './editorial-records';
+import { BlogValidationError } from './validation';
 import type { CompetitorReferenceSnapshot } from './research';
 import type { BlogSectionRevision } from './types';
 import { replaceSelectedBlogSection, selectBlogSection } from './section-regeneration';
@@ -201,17 +202,21 @@ export const blogRepository = {
     return toPost(data);
   },
 
-  async update(id: string, row: BlogPostRow) {
+  async update(id: string, row: BlogPostRow, expectedUpdatedAt?: string) {
     const client = getSupabaseAdminClient();
     if (!client) {
       const existing = memoryPosts.get(id);
       if (!existing) return null;
-      const stored = { ...existing, ...row, id, updated_at: new Date().toISOString() };
+      if (expectedUpdatedAt && existing.updated_at !== expectedUpdatedAt) throw new BlogValidationError('This article changed in another session. Reload the latest version before saving.', 409);
+      const stored = { ...existing, ...row, id, updated_at: new Date(Math.max(Date.now(), Date.parse(existing.updated_at) + 1)).toISOString() };
       memoryPosts.set(id, stored);
       return toPost(stored);
     }
-    const { data, error } = await client.from('blog_posts').update(row).eq('id', id).select('*').maybeSingle();
+    let request = client.from('blog_posts').update(row).eq('id', id);
+    if (expectedUpdatedAt) request = request.eq('updated_at', expectedUpdatedAt);
+    const { data, error } = await request.select('*').maybeSingle();
     if (error) throw error;
+    if (!data && expectedUpdatedAt) throw new BlogValidationError('This article changed in another session. Reload the latest version before saving.', 409);
     return data ? toPost(data) : null;
   },
 
@@ -259,7 +264,7 @@ export const blogRepository = {
       if (selection.beforeHtml !== revision.before_html) throw new Error('The article changed after this revision was created. Regenerate the section against the current draft.');
       const replacement = replaceSelectedBlogSection(post, selection, revision.after_html);
       const row = 'tagline' in replacement ? { tagline: replacement.tagline } : 'summary' in replacement ? { summary: replacement.summary } : 'metaDescription' in replacement ? { meta_description: replacement.metaDescription } : { content_html: replacement.contentHtml };
-      const updated = await blogRepository.update(post.id, { ...row, updated_by: actorId });
+      const updated = await blogRepository.update(post.id, { ...row, updated_by: actorId }, post.updatedAt);
       if (!updated) return null;
       await blogRepository.syncEditorialRecords(updated, actorId, post.status);
     }
@@ -294,33 +299,13 @@ export const blogRepository = {
   async syncEditorialRecords(post: BlogPost, actorId: string | null, previousStatus = '') {
     const client = getSupabaseAdminClient();
     if (!client) return;
-    const links = inspectBlogLinks(post.contentHtml);
-    const sourceRows = post.sources.map((source) => ({
-      article_id: post.id, url: source.url, title: source.title, publisher: source.publisher, author: source.author || '',
-      published_at: source.publishedAt || null, updated_at_source: source.updatedAt || null, accessed_at: source.accessedAt || new Date().toISOString(),
-      source_type: source.sourceType || 'reference', supported_claims: source.supportedClaims || [], primary_source: Boolean(source.primary),
-      reliability: source.reliability || 'unverified', citation_status: source.citationStatus || 'needs_review',
-    }));
-    const linkRows = links.map((link) => ({ article_id: post.id, link_type: /^https?:\/\//i.test(link.href) ? 'external' : 'internal', href: link.href, anchor_text: link.anchor, canonical: true, validation_status: 'passed' }));
-    linkRows.push(...post.relatedArticles.map((related) => ({ article_id: post.id, link_type: 'related', href: `/blog/${related.slug}`, anchor_text: related.title, canonical: true, validation_status: 'passed' })));
-    const [sourcesDelete, linksDelete] = await Promise.all([
-      client.from('blog_sources').delete().eq('article_id', post.id),
-      client.from('blog_links').delete().eq('article_id', post.id),
-    ]);
-    if (sourcesDelete.error) throw sourcesDelete.error;
-    if (linksDelete.error) throw linksDelete.error;
-    if (sourceRows.length) { const { error } = await client.from('blog_sources').insert(sourceRows); if (error) throw error; }
-    if (linkRows.length) { const { error } = await client.from('blog_links').insert(linkRows); if (error) throw error; }
-    if (post.qualityResults) {
-      const { error } = await client.from('blog_quality_results').insert({ article_id: post.id, generation_job_id: post.generationJobId, gate_type: 'content', status: post.qualityResults.status === 'pending' ? 'needs_review' : post.qualityResults.status, checks: post.qualityResults.checks, blocked_reasons: post.qualityResults.blockedReasons, checked_at: post.qualityResults.checkedAt });
-      if (error) throw error;
-    }
-    const { error: revisionError } = await client.from('blog_revisions').insert({ article_id: post.id, actor_id: actorId, origin: post.origin, previous_state: previousStatus, new_state: post.status, reason: previousStatus === post.status ? 'Content or metadata updated.' : 'Editorial state changed.', snapshot: { title: post.title, slug: post.slug, qualityStatus: post.qualityStatus, sourceStatus: post.sourceStatus, originalityStatus: post.originalityStatus, prerenderStatus: post.prerenderStatus, imageStatus: post.imageStatus } });
-    if (revisionError) throw revisionError;
-    if (previousStatus !== post.status) {
-      const { error: eventError } = await client.from('blog_publication_events').insert({ article_id: post.id, generation_job_id: post.generationJobId, actor_id: actorId, event_type: 'state_change', previous_state: previousStatus, new_state: post.status, reason: post.publicationReason, scheduled_for: post.scheduledAt });
-      if (eventError) throw eventError;
-    }
+    const records = buildEditorialRecords(post);
+    const { error } = await client.rpc('sync_blog_editorial_records', {
+      p_article: post.id, p_expected_updated_at: post.updatedAt, p_actor: actorId,
+      p_previous_status: previousStatus, p_sources: records.sources, p_links: records.links,
+    });
+    if (error?.message?.includes('BLOG_POST_EDIT_CONFLICT')) throw new BlogValidationError('This article changed in another session. Reload the latest version before saving.', 409);
+    if (error) throw error;
   },
 
   async publishDueScheduled(limit = 10) {

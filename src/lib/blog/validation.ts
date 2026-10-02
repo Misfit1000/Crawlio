@@ -5,12 +5,12 @@ import { normalizeBlogSlug } from './slug';
 import type { BlogPostInput, BlogPostStatus } from './types';
 import { evaluateBlogQuality } from './quality';
 import { publicationBlockers } from './automation';
+import { ApiError } from '../api/errors';
 
-export class BlogValidationError extends Error {
-  status: number;
+export class BlogValidationError extends ApiError {
   constructor(message: string, status = 400) {
-    super(message);
-    this.status = status;
+    super(status === 409 ? 'BLOG_POST_EDIT_CONFLICT' : 'BLOG_VALIDATION_FAILED', message, status);
+    this.name = 'BlogValidationError';
   }
 }
 

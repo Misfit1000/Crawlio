@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import { auditRepository, issueToRow, pageToRow } from '../lib/supabase/audit-repository';
 import { claimScalableAudit, finishScalableSlice, frontierItem, hasPendingFrontier, readFrontier, readScoreAggregate, registerScalableWorker, scalableRpc, type CrawlRun, type FrontierItem } from '../lib/supabase/scalable-audit-repository';
-import { requireSupabaseAdminClient } from '../lib/supabase/server';
 import { calculateTransparentAuditScore, categoryForIssue, deduplicatePageIssues, normalizedIssueKey, toReportScoreRecord } from '../lib/audit/audit-scoring';
 import { CRAWL_SLICE_MS, CRAWL_SLICE_PAGES, retryDelayMs } from '../lib/audit/scalable-policy';
 import { getAuditModeConfig } from '../lib/audit/audit-config';
@@ -120,9 +119,9 @@ export async function analyseScalableItem(audit: ResourceAuditDocument, run: Cra
     if (item.kind === 'robots') return item.attempts < 2
       ? { key: item.key, retryAt: new Date(Date.now() + retryDelayMs(undefined, item.attempts)).toISOString() }
       : { key: item.key, children: [], robotsUnavailable: true, robotsEvidence: createRobotsFetchEvidence({ url: item.url, error: true }) };
-    if (item.kind === 'sitemap') return { key:item.key,children:[],discoveryErrors:['Sitemap unavailable'] };
     const failure = classifyAuditFailure(error,{ affectedUrl:item.url,attemptCount:item.attempts+1 });
     if (failure.retryable && item.attempts<2) return { key:item.key,retryAt:new Date(Date.now()+retryDelayMs(undefined,item.attempts)).toISOString() };
+    if (item.kind === 'sitemap') return { key:item.key,children:[],discoveryErrors:['Sitemap unavailable'] };
     return failurePage(audit,item,failure);
   }
 }
@@ -132,22 +131,36 @@ export async function runScalableSlice(workerId: string, onActivity?: (auditId: 
   const claimed = await claimScalableAudit(workerId);
   if (!claimed) return false;
   const { audit } = claimed;
-  await onActivity?.(audit.id);
   let run = claimed.run;
   const started = Date.now();
   const scheduler = new HostRequestScheduler(2,150);
   let processed = 0;
   let writeChain: Promise<unknown> = Promise.resolve();
   let leaseError: unknown;
+  let sliceReleased = false;
   const commit = (payload: Record<string,unknown>) => {
     const task = writeChain.then(async () => {
+      if (leaseError) throw leaseError;
       run = await scalableRpc<CrawlRun>('scalable_audit_commit',{p_audit:audit.id,p_worker:workerId,p_generation:run.generation,p_payload:{...payload,rss:process.memoryUsage().rss}});
     });
     writeChain = task.catch(error=>{leaseError=error;});
     return task;
   };
-  const leaseTimer = setInterval(()=>{ void commit({}).catch(()=>undefined); },30_000);
+  let renewalPending = false;
+  const leaseTimer = setInterval(()=>{
+    if (renewalPending || leaseError) return;
+    renewalPending = true;
+    void commit({}).catch(()=>undefined).finally(()=>{ renewalPending = false; });
+  },30_000);
   leaseTimer.unref();
+  const finish = async (report: ResourceAuditReport | null, reason?: string) => {
+    // Keep renewing through report reads, then drain writes before releasing the lease.
+    clearInterval(leaseTimer);
+    await writeChain;
+    if (leaseError) throw leaseError;
+    await finishScalableSlice(run,report,reason);
+    sliceReleased = true;
+  };
   const publishScore = async (force = false) => {
     if (!shouldPublishProvisionalScore({ pagesAnalysed:run.analysed,lastPublishedPages:run.last_score_pages,nowMs:Date.now(),lastPublishedAtMs:run.last_score_at ? Date.parse(run.last_score_at) : 0,force })) return;
     const result = calculateTransparentAuditScore({issues:[],pages:[],aggregate:await readScoreAggregate(run),...scoreOptions(run)});
@@ -155,6 +168,11 @@ export async function runScalableSlice(workerId: string, onActivity?: (auditId: 
       scoreState:'provisional',pagesAnalysed:run.analysed,pagesDiscovered:run.discovered,pageLimit:audit.pageLimit,unavailableCount:run.unavailable_count,updatedAt:new Date().toISOString() }});
   };
   try {
+    await onActivity?.(audit.id);
+    if (isScalableWorkerStopRequested(workerId)) {
+      await finish(null);
+      return true;
+    }
     if (!run.metadata.initialized) {
       const origin = new URL(audit.normalizedUrl).origin;
       const sitemapPaths = audit.effectiveMode==='deep' ? ['/sitemap.xml','/sitemap_index.xml','/page-sitemap.xml','/post-sitemap.xml','/product-sitemap.xml'] : ['/sitemap.xml'];
@@ -166,6 +184,8 @@ export async function runScalableSlice(workerId: string, onActivity?: (auditId: 
       const memoryLimit = Math.max(128,Number(process.env.AUDIT_WORKER_RSS_LIMIT_MB || 384))*1024*1024;
       if (process.memoryUsage().rss>memoryLimit) { pauseReason='Worker memory pressure; waiting to resume'; break; }
       const items = await readFrontier(audit.id,Math.min(run.analysed===0 ? 1 : 2,audit.pageLimit-run.analysed,CRAWL_SLICE_PAGES-processed));
+      if (leaseError) throw leaseError;
+      if (isScalableWorkerStopRequested(workerId)) break;
       if (!items.length) break;
       const results = await Promise.all(items.map(item=>analyseScalableItem(audit,run,item,scheduler)));
       for (const result of results) {
@@ -215,21 +235,23 @@ export async function runScalableSlice(workerId: string, onActivity?: (auditId: 
         // Finalization fills the bounded recommendations from all retained findings in the same transaction.
         presentationSummary:readAuditPresentationSummary(run.presentation_summary),
         pages,topIssues,exports:{json:`/api/tools/audit/export/${audit.id}/json`,issuesCsv:`/api/tools/audit/export/${audit.id}/issues.csv`,pagesCsv:`/api/tools/audit/export/${audit.id}/pages.csv`},generatedAt:new Date().toISOString()};
-      await finishScalableSlice(run,report,reason);
+      await finish(report,reason);
       const completed = await auditRepository.getAudit(audit.id);
       if (completed?.status === 'failed') await recordProjectAuditFailure(completed, completed.error || 'No usable evidence.').catch(()=>undefined);
       else if (completed && ['completed','completed_with_warnings'].includes(completed.status)) {
         await recordProjectAuditCompletion(completed, report).catch(()=>undefined);
       }
-    } else await finishScalableSlice(run,null,pauseReason);
+    } else await finish(null,pauseReason);
     return true;
   } catch (error) {
-    if (!String(error).includes('AUDIT_OWNERSHIP_LOST')) await finishScalableSlice(run,null,'Audit paused after a service error; retrying').catch(()=>undefined);
+    clearInterval(leaseTimer);
+    await writeChain;
+    if (!sliceReleased && !String(error).includes('AUDIT_OWNERSHIP_LOST') && !String(leaseError).includes('AUDIT_OWNERSHIP_LOST')) await finishScalableSlice(run,null,'Audit paused after a service error; retrying').catch(()=>undefined);
     throw error;
   } finally {
     clearInterval(leaseTimer);
     await writeChain;
-    await onActivity?.(null);
+    try { await onActivity?.(null); } catch { /* Health reporting must not replace the durable slice outcome. */ }
   }
 }
 

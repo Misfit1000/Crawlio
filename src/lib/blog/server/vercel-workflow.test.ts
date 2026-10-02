@@ -3,13 +3,17 @@ import { test, type TestContext } from 'node:test';
 import { blogAutomationRepository } from '../automation-repository';
 import { blogTextFromHtml } from '../sanitize';
 import type { BlogGenerationJob, BlogWorkflowStage } from '../types';
-import { nextProviderRequestAt, processNextVercelBlogStage } from './vercel-workflow';
+import { nextProviderRequestAt, processNextVercelBlogStage, safeBlogStageError } from './vercel-workflow';
+import { blogRepository, mapBlogPostRow } from '../repository';
+import { blogEditorRepository } from '../editor-repository';
+import { completeManualArticleLinks } from '../editor-safe-fixes';
+import { prepareBlogPost } from '../validation';
 
 const sections = ['First', 'Second', 'Third'].map((name, index) => ({ heading: `${name} section`, purpose: `Explain ${name.toLowerCase()} practices`, sourceUrl: `https://example.com/source-${index}` }));
 const html = (index: number) => `<h2>${sections[index].heading}</h2><p>unique-section-${index} ${'practical explanation '.repeat(115)} end-section-${index}</p>`;
 const evidence = sections.map(section => ({ url: section.sourceUrl, text: 'Readable supporting evidence and context. '.repeat(220), status: 'readable' }));
 const baseOutputs = () => ({ brief: { title: 'Practical SEO checks', tagline: 'Review the evidence', summary: 'An independent guide to reviewing practical SEO checks using readable source material.', focusKeyword: 'SEO checks', articleType: 'evergreen_guide' },
-  outline: { sections }, sources: sections.map(section => ({ url: section.sourceUrl, title: section.heading, publisher: 'Example', citationStatus: 'verified' })), sourceEvidence: evidence });
+  outline: { sections }, sources: sections.map(section => ({ url: section.sourceUrl, title: section.heading, publisher: 'Example', citationStatus: 'verified' as const })), sourceEvidence: evidence });
 
 function mockWorkflow(context: TestContext, stage: BlogWorkflowStage, outputs: Record<string, unknown>, answer: (body: any, index: number) => unknown | Response) {
   const original = { ...process.env };
@@ -211,4 +215,102 @@ test('memory completion shares provider cooldown across jobs and rejected leases
   assert.ok(await blogAutomationRepository.claimVercelStage('second-lease', second.id));
   assert.ok(await blogAutomationRepository.completeVercelStage({ ...input, jobId: second.id, executionId: 'second-lease', output: { savedSection: true } }));
   assert.equal((await blogAutomationRepository.getDispatcherState()).provider_pause_until, ready);
+});
+
+function interruptedSave(context: TestContext, options: { publish?: boolean; edited?: boolean; status?: 'needs_review' | 'published'; unsupported?: boolean } = {}) {
+  const contentHtml = completeManualArticleLinks('<h2>Inspect the response</h2>'
+    + Array.from({ length: 55 }, () => '<p>Inspect the returned document and record the observed page signals.</p>').join('')
+    + '<h2>Review published links</h2><p>Compare the recorded destinations.</p><h2>Verify the correction</h2><p>Retest the original behavior.</p>', baseOutputs().sources);
+  const draft = { title: 'Preserved custom headline', tagline: 'Inspect each correction against the original page evidence.',
+    summary: 'Review page signals with reliable evidence.', excerpt: 'Inspect the initial document, metadata and article links against the evidence collected from the public page.',
+    contentHtml, focusKeyword: 'response verification', tags: ['SEO'], suggestedSlug: 'saved-guide' };
+  const workflow = mockWorkflow(context, 'quality_gate', { ...baseOutputs(), assembled: draft,
+    originality: { passed: true }, claimValidation: { claimsSupported: !options.unsupported }, image: { status: 'not_required' } }, () => { throw new Error('Recovery must not regenerate content.'); });
+  workflow.job.payload.publishWhenReady = Boolean(options.publish);
+  let stored = mapBlogPostRow({ ...prepareBlogPost({ ...draft, status: 'needs_review', sources: baseOutputs().sources,
+    sourceStatus: 'passed', originalityStatus: 'passed', prerenderStatus: 'passed', generationJobId: workflow.job.id }),
+    id: 'saved-article', created_at: '2026-10-03T00:00:00Z', updated_at: '2026-10-03T00:00:01Z',
+    ...(options.edited ? { content_html: `${contentHtml}<p>An administrator changed the article.</p>` } : {}),
+    ...(options.status === 'published' ? { status: 'published', published_at: '2026-10-03T00:00:00Z' } : {}) });
+  const writes: Record<string, unknown>[] = [], syncs: string[] = [], results: Record<string, unknown>[] = [];
+  context.mock.method(blogRepository, 'getByGenerationJobId', async () => structuredClone(stored));
+  context.mock.method(blogRepository, 'create', async () => { throw new Error('Interrupted saves must reuse the article.'); });
+  context.mock.method(blogRepository, 'update', async (id, patch, expectedUpdatedAt) => {
+    assert.equal(id, stored.id); assert.equal(expectedUpdatedAt, stored.updatedAt);
+    writes.push(structuredClone(patch));
+    stored = mapBlogPostRow({ ...prepareBlogPost({ ...stored, ...patch }), ...patch, id: stored.id,
+      updated_at: new Date(Date.parse(stored.updatedAt) + 1000).toISOString() });
+    return structuredClone(stored);
+  });
+  context.mock.method(blogRepository, 'syncEditorialRecords', async post => { syncs.push(post.status); });
+  context.mock.method(blogAutomationRepository, 'getSettings', async () => ({ enabled: false }));
+  context.mock.method(blogAutomationRepository, 'updateJob', async (_id, patch) => { results.push(structuredClone(patch)); return null; });
+  context.mock.method(blogEditorRepository, 'createNotification', async () => null);
+  return { ...workflow, writes, syncs, results, get stored() { return stored; } };
+}
+
+test('an interrupted private article finishes quality and evidence persistence without a second article or provider call', async context => {
+  const workflow = interruptedSave(context);
+  const result = await workflow.run();
+  assert.equal(result.job?.workflowStage, 'ready_for_review');
+  assert.equal(workflow.requests.length, 0);
+  assert.deepEqual(workflow.syncs, ['needs_review']);
+  assert.equal(workflow.results[0].articleId, 'saved-article');
+  assert.equal((workflow.results[0].result as any).recoveredAfterRetry, true);
+  assert.ok(workflow.writes[0].quality_results);
+});
+
+test('transient save errors defer durably and recovery still finishes the same article', async context => {
+  const workflow = interruptedSave(context);
+  let failed = false;
+  context.mock.method(blogRepository, 'syncEditorialRecords', async post => {
+    if (!failed) { failed = true; throw { code: '40001', message: 'Temporary serialization conflict.' }; }
+    workflow.syncs.push(post.status);
+  });
+  const first = await workflow.run();
+  assert.equal(first.errorCode, 'BLOG_DATABASE_40001');
+  assert.equal(first.job?.workflowStage, 'quality_gate');
+  assert.equal(first.job?.state, 'queued');
+  assert.equal(workflow.results.length, 0);
+  const recovered = await workflow.run();
+  assert.equal(recovered.job?.workflowStage, 'ready_for_review');
+  assert.equal(workflow.results.length, 1);
+  assert.equal(workflow.stored.id, 'saved-article');
+  assert.equal(workflow.requests.length, 0);
+});
+
+test('guarded one-click recovery saves evidence privately before publishing', async context => {
+  const workflow = interruptedSave(context, { publish: true });
+  const result = await workflow.run();
+  assert.equal(result.job?.workflowStage, 'published', JSON.stringify(workflow.results));
+  assert.deepEqual(workflow.syncs, ['needs_review', 'published']);
+  assert.equal((workflow.results[0].result as any).published, true);
+});
+
+test('recovery never publishes changed content or unsupported claims', async context => {
+  const workflow = interruptedSave(context, { publish: true, edited: true, unsupported: true });
+  const result = await workflow.run();
+  assert.equal(result.job?.workflowStage, 'ready_for_review');
+  assert.equal(workflow.stored.status, 'needs_review');
+  const blockers = (workflow.results[0].result as any).blockers as string[];
+  assert.ok(blockers.some(item => item.includes('changed after AI claim validation')));
+  assert.ok(blockers.some(item => item.includes('Factual claims need review')));
+});
+
+test('published recovery repairs evidence before completing the job', async context => {
+  const workflow = interruptedSave(context, { status: 'published' });
+  const result = await workflow.run();
+  assert.equal(result.job?.workflowStage, 'published');
+  assert.deepEqual(workflow.syncs, ['published']);
+  assert.equal(workflow.writes.length, 0);
+  assert.equal((workflow.results[0].result as any).published, true);
+});
+
+test('temporary infrastructure errors retry but permanent evidence and schema errors do not', () => {
+  for (const code of ['08006', '40001', '40P01', '53300', '57P01', '57014', 'PGRST002']) {
+    assert.equal(safeBlogStageError({ code, message: 'Temporary service problem.' }).retryable, true, code);
+  }
+  assert.equal(safeBlogStageError(new TypeError('fetch failed')).retryable, true);
+  for (const code of ['23505', '42501', 'PGRST202']) assert.equal(safeBlogStageError({ code, message: 'Permanent configuration or input error.' }).retryable, false);
+  assert.equal(safeBlogStageError(new Error('Unsupported factual claim.')).retryable, false);
 });

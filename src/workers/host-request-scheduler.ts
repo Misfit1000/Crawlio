@@ -71,7 +71,7 @@ export class HostRequestScheduler {
     const operation = state.queue.shift()!;
     state.active += 1;
     state.nextAllowedAt = this.now() + this.minimumIntervalMs;
-    operation.run()
+    Promise.resolve().then(() => operation.run())
       .then(operation.resolve, operation.reject)
       .finally(() => {
         state.active -= 1;
