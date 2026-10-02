@@ -13,7 +13,8 @@ import { classifyAuditFailure, failureForCode, failureForHttpStatus, type AuditF
 import type { ResourceAuditDocument, ResourceAuditIssue, ResourceAuditPage, ResourceAuditReport } from '../lib/audit/resource-types';
 import { CHECKS, runCheckSetSafely } from '../lib/seo/checks/runner';
 import { isSameDomain } from '../lib/seo/url-utils';
-import { parseRobotsTxt, isBlockedByRobots } from '../lib/seo/robots';
+import { createRobotsFetchEvidence, parseRobotsTxt, isBlockedByRobots } from '../lib/seo/robots';
+import { collectToolEvidence } from '../lib/tools/audit-tools';
 import { parseSitemapXml } from '../lib/seo/sitemap';
 import { safePublicFetch } from '../lib/security/safe-public-fetch';
 import { AUDIT_ENGINE_VERSION, SCORING_VERSION, LEGACY_SCORING_VERSION, CHECK_REGISTRY_VERSION } from '../lib/platform/version';
@@ -79,9 +80,10 @@ export async function analyseScalableItem(audit: ResourceAuditDocument, run: Cra
         return { key: item.key, retryAt: new Date(Date.now() + retryDelayMs(response.headers['retry-after'], item.attempts)).toISOString() };
       }
       if (item.kind === 'robots') {
-        if (response.status >= 500 || [401,403,429].includes(response.status)) return { key: item.key, children: [], robotsUnavailable: true };
-        const rules = response.status >= 200 && response.status < 300 ? parseRobotsTxt(response.body) : parseRobotsTxt('');
-        return { key: item.key, children: rules.sitemaps.map(url => eligibleChild(audit,url,'sitemap',0,item.url)).filter(Boolean), robots: rules };
+        const { document, ...robotsEvidence } = createRobotsFetchEvidence({ status: response.status, body: response.body, url: item.url });
+        if (robotsEvidence.policy === 'disallow-all') return { key: item.key, children: [], robotsUnavailable: true, robotsEvidence };
+        const rules = document || parseRobotsTxt('');
+        return { key: item.key, children: rules.sitemaps.map(url => eligibleChild(audit,url,'sitemap',0,item.url)).filter(Boolean), robots: rules, robotsEvidence };
       }
       const parsed = response.status >= 200 && response.status < 300 ? parseSitemapXml(response.body) : { urls: [], sitemaps: [], errors: [`HTTP ${response.status}`] };
       const children = [ ...parsed.urls.map(url => eligibleChild(audit,url,'page',1,item.url)), ...parsed.sitemaps.map(url => eligibleChild(audit,url,'sitemap',0,item.url)) ].filter(Boolean);
@@ -109,13 +111,15 @@ export async function analyseScalableItem(audit: ResourceAuditDocument, run: Cra
       h1:fetched.parsed?.h1?.[0] || '',canonicalUrl:fetched.parsed?.canonical || '',siteName:fetched.parsed?.siteName || '',faviconUrl:fetched.parsed?.faviconUrl || '',
       openGraphImage:fetched.parsed?.ogImage || '',themeColor:fetched.parsed?.themeColor || '',wordCount:fetched.parsed?.wordCount || 0,
       crawlDepth:item.depth,issueCount:issues.length,crawledAt:now,fetchStatus:'success',attemptCount:item.attempts+1,recoveredAfterRetry:item.attempts>0,sourceUrl:item.source_url };
+    page.toolEvidence = collectToolEvidence({ ...fetched, requestedUrl: item.url,
+      robotsAllowed: run.metadata.robots && run.metadata.robotsState !== 'malformed' ? !isBlockedByRobots(item.url, run.metadata.robots) : null });
     const children = (fetched.parsed?.internalLinks || []).map(link=>eligibleChild(audit,link.href,'page',item.depth+1,fetched.finalUrl,link.text)).filter(Boolean);
     return { key:item.key,page:pageToRow(audit.id,page),issues:issues.map(issue=>issueToRow(audit.id,issue)),groups:scoreGroups(issues),checks:checks.completedChecks+2,unavailable:checks.unavailableChecks.length,children,
       measuredCategories: measuredAuditCategories(checks.completedCheckIds) };
   } catch (error) {
     if (item.kind === 'robots') return item.attempts < 2
       ? { key: item.key, retryAt: new Date(Date.now() + retryDelayMs(undefined, item.attempts)).toISOString() }
-      : { key: item.key, children: [], robotsUnavailable: true };
+      : { key: item.key, children: [], robotsUnavailable: true, robotsEvidence: createRobotsFetchEvidence({ url: item.url, error: true }) };
     if (item.kind === 'sitemap') return { key:item.key,children:[],discoveryErrors:['Sitemap unavailable'] };
     const failure = classifyAuditFailure(error,{ affectedUrl:item.url,attemptCount:item.attempts+1 });
     if (failure.retryable && item.attempts<2) return { key:item.key,retryAt:new Date(Date.now()+retryDelayMs(undefined,item.attempts)).toISOString() };
@@ -181,6 +185,10 @@ export async function runScalableSlice(workerId: string, onActivity?: (auditId: 
         }
         result.children = children;
         const metadata: Record<string, unknown> = result.robots ? {robots:result.robots} : result.robotsUnavailable ? {robotsUnavailable:true} : {};
+        if (result.robotsEvidence) {
+          metadata.robotsEvidence = result.robotsEvidence;
+          metadata.robotsState = (result.robotsEvidence as { state: string }).state;
+        }
         const measured = storedMeasuredAuditCategories(run.metadata.measuredCategories);
         const newlyMeasured = storedMeasuredAuditCategories(result.measuredCategories).filter(category => !measured.includes(category));
         if (newlyMeasured.length) metadata.measuredCategories = [...measured, ...newlyMeasured];

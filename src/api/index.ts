@@ -89,6 +89,8 @@ import {
 } from '../lib/search-console/server';
 import { registerImportRoutes } from './import-routes';
 import { registerScalableEvidenceRoutes } from './scalable-evidence-routes';
+import { registerAuditToolRoutes } from './audit-tool-routes';
+import { registerScoreBadgeRoutes } from './score-badge-routes';
 
 const DUPLICATE_AUDIT_WINDOW_MS = 10 * 60 * 1000;
 
@@ -243,6 +245,14 @@ registerScalableEvidenceRoutes(apiRouter, {
     return audit && await canAccessAudit(req, audit) ? audit : null;
   },
 });
+apiRouter.use('/audit/:id/tool-evidence', durableRateLimit({ namespace: 'audit-tool-evidence', limit: 60, windowSeconds: 300 }));
+registerAuditToolRoutes(apiRouter, {
+  requireAccess: async (req, auditId) => {
+    const audit = await auditRepository.getAudit(auditId);
+    return audit && await canAccessAudit(req, audit) ? audit : null;
+  },
+});
+registerScoreBadgeRoutes(apiRouter, { getRequester, readAudit: auditId => auditRepository.getAudit(auditId) });
 
 async function requireAdminRequester(req: any, res: any) {
   const requester = await getRequester(req);
@@ -2015,7 +2025,7 @@ apiRouter.get('/audit/export-status/:id/:format', durableRateLimit({ namespace: 
   const audit = await auditRepository.getAudit(req.params.id);
   if (!audit || !(await canAccessAudit(req, audit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
   if (!(await getPlanLimits(audit.plan)).exportsEnabled) throw new ApiError('EXPORT_NOT_ALLOWED', 'Data exports are not enabled for this plan.', 403);
-  if (!['json', 'pages.csv', 'issues.csv'].includes(req.params.format)) throw new ApiError('INVALID_FORMAT', 'Unsupported export format.', 400);
+  if (!['json', 'pages.csv', 'issues.csv', 'sitemap.xml'].includes(req.params.format)) throw new ApiError('INVALID_FORMAT', 'Unsupported export format.', 400);
   const { data, error } = await requireSupabaseAdminClient().from('audit_export_jobs').select('state,expires_at')
     .eq('audit_id', audit.id).eq('format', req.params.format).maybeSingle();
   if (error) throw error;
@@ -2027,7 +2037,7 @@ apiRouter.get('/audit/export-status/:id/:format', durableRateLimit({ namespace: 
 
 apiRouter.get('/audit/export/:id/:format', asyncJsonRoute(async (req, res) => {
   const { id, format } = req.params;
-  const supportedFormats = new Set(['pdf', 'json', 'issues.csv', 'pages.csv']);
+  const supportedFormats = new Set(['pdf', 'json', 'issues.csv', 'pages.csv', 'sitemap.xml']);
   if (!supportedFormats.has(format)) return res.status(400).json({ success: false, error: 'Unsupported export format' });
   const audit = await auditRepository.getAudit(id);
   if (!audit || !(await canAccessAudit(req, audit))) return res.status(404).json({ success: false, error: 'Audit not found' });
@@ -2050,6 +2060,15 @@ apiRouter.get('/audit/export/:id/:format', asyncJsonRoute(async (req, res) => {
     if (isScalableExportFormat(format)) return handleScalableExportDownload(res, audit, format);
   }
   const liveData = await auditRepository.getLiveData(id, audit);
+
+  if (format === 'sitemap.xml') {
+    if (!isCompletedAuditStatus(audit.status)) return res.status(409).json({ success: false, error: 'Sitemap export is available after the audit completes.' });
+    const { generateSitemap } = await import('../lib/tools/audit-tools');
+    const result = generateSitemap(liveData.latestPages.slice(0, 100), new URL(audit.normalizedUrl).origin);
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="crawlio-loaded-subset-sitemap.xml"');
+    return res.send(result.xml);
+  }
 
   if (format === 'pdf') {
     const { renderAuditPdf } = await import('../lib/report/pdf');

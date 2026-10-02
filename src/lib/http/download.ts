@@ -38,7 +38,7 @@ export async function waitForAuditExport(
   throw new Error('Export is still being prepared. Request it again shortly to resume.');
 }
 
-export async function downloadAuditExport(auditId: string, format: 'pdf' | 'json' | 'issues.csv' | 'pages.csv', options: { signal?: AbortSignal } = {}) {
+export async function downloadAuditExport(auditId: string, format: 'pdf' | 'json' | 'issues.csv' | 'pages.csv' | 'sitemap.xml', options: { signal?: AbortSignal } = {}) {
   const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(120_000)]) : AbortSignal.timeout(120_000);
   let waiting = false;
   const response = await waitForAuditExport(async () => {

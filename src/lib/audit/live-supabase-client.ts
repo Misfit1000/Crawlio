@@ -4,6 +4,7 @@ import { getSupabaseBrowserClient } from '../supabase/client';
 import { safeJsonFetch } from '../http/safe-json';
 import { AUDIT_LIMITS } from './audit-config';
 import { mergeAuditLiveData } from './audit-lifecycle';
+import { readToolEvidence } from '../tools/audit-tools';
 import { hasUsableAuditReport, isTerminalAuditStatus } from './audit-time';
 import type {
   ResourceAuditDocument,
@@ -105,6 +106,7 @@ function toAuditPage(row: DbRow): ResourceAuditPage {
     metaDescription: row.meta_description ?? '',
     h1: row.h1 ?? '',
     canonicalUrl: row.canonical_url ?? '',
+    toolEvidence: readToolEvidence(row.tool_evidence),
     siteName: row.site_name ?? '',
     faviconUrl: row.favicon_url ?? '',
     openGraphImage: row.open_graph_image ?? '',

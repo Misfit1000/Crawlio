@@ -30,7 +30,8 @@ export function sanitizeUrl(value: unknown, keepPath = false) {
     url.password = '';
     url.search = '';
     url.hash = '';
-    return keepPath ? `${url.origin}${url.pathname}` : url.origin;
+    const pathname = url.pathname.replace(/(\/(?:score-badges|shared-reports|share)\/)[^/]+/g, '$1[redacted]');
+    return keepPath ? `${url.origin}${pathname}` : url.origin;
   } catch {
     return redactSensitiveString(value);
   }

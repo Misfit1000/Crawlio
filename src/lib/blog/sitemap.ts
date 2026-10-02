@@ -29,6 +29,7 @@ export async function renderBlogSitemap(origin: string) {
   const urls = [
     { loc: `${origin}/`, changefreq: 'weekly', priority: '1.0', lastmod: null },
     { loc: `${origin}/blog`, changefreq: 'weekly', priority: '0.8', lastmod: null },
+    { loc: `${origin}/tools`, changefreq: 'monthly', priority: '0.6', lastmod: null },
     { loc: `${origin}/privacy`, changefreq: 'yearly', priority: '0.3', lastmod: null },
     { loc: `${origin}/terms`, changefreq: 'yearly', priority: '0.3', lastmod: null },
     { loc: `${origin}/acceptable-use`, changefreq: 'yearly', priority: '0.3', lastmod: null },

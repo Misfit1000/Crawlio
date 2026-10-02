@@ -1,6 +1,8 @@
 import { parseHtml, type ParsedPageData } from '../lib/seo/html-parser';
 import { pathToFileURL } from 'node:url';
-import { fetchRobotsTxt, getSitemapUrlsFromRobots, isBlockedByRobots, parseRobotsTxt } from '../lib/seo/robots';
+import { fetchRobotsEvidence, getSitemapUrlsFromRobots, isBlockedByRobots, parseRobotsTxt } from '../lib/seo/robots';
+import { collectToolEvidence } from '../lib/tools/audit-tools';
+import { persistAuditRobotsEvidence } from '../lib/supabase/audit-tool-repository';
 import { fetchSitemap } from '../lib/seo/sitemap';
 import { isSameDomain, normalizeUrl, stripTrackingParams } from '../lib/seo/url-utils';
 import { AUDIT_CHECK_COUNT, runAllChecksSafely } from '../lib/seo/checks/runner';
@@ -518,8 +520,10 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     currentUrl: new URL('/robots.txt', origin).toString(),
     currentCheck: 'robots.txt',
   }, { type: 'robots_fetching', message: 'Checking search engine access rules' });
-  const robotsTxt = await fetchRobotsTxt(origin, workerFetchOptions(config.timeoutMs));
-  const robotsRules = robotsTxt ? parseRobotsTxt(robotsTxt) : null;
+  const { document: robotsDocument, ...robotsEvidence } = await fetchRobotsEvidence(origin, { ...workerFetchOptions(config.timeoutMs), maxBytes: 128_000 });
+  const robotsTxt = robotsEvidence.raw;
+  const robotsRules = robotsDocument || parseRobotsTxt('');
+  await persistAuditRobotsEvidence(audit.id, robotsEvidence);
 
   if (audit.projectId) {
     const previousPages = await auditRepository.getPreviousProjectPages(audit.projectId, audit.id, Math.min(config.pageLimit, 100)).catch(() => []);
@@ -599,7 +603,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     if (visited.has(currentUrl) || processedContentUrls.has(currentUrl) || candidateBudgetReached() || quotaReached()) return;
     visited.add(currentUrl);
 
-    if (robotsRules && isBlockedByRobots(currentUrl, robotsRules)) {
+    if (robotsEvidence.policy === 'disallow-all' || isBlockedByRobots(currentUrl, robotsRules)) {
       await recordFailure(failureForCode('ROBOTS_BLOCKED', { affectedUrl: currentUrl }), item);
       return;
     }
@@ -761,6 +765,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
 
     writer.recordAnalysisDuration(Date.now() - analysisStartedAt);
     const pageRecord = await writer.addPage({
+      toolEvidence: collectToolEvidence({ ...fetched, requestedUrl: currentUrl, robotsAllowed: robotsEvidence.state === 'malformed' ? null : !isBlockedByRobots(currentUrl, robotsRules) }),
       url: fetched.finalUrl,
       statusCode: fetched.statusCode,
       responseTimeMs: fetched.responseTimeMs,

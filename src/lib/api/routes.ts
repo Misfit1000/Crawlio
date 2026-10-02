@@ -22,6 +22,8 @@ export const API_ROUTES = {
   auditFindingWorkflow: (id: string) => `/api/tools/audit/${encodeURIComponent(id)}/finding-workflow`,
   auditFindingWorkflowItem: (id: string, findingKey: string) => `/api/tools/audit/${encodeURIComponent(id)}/finding-workflow/${encodeURIComponent(findingKey)}`,
   auditShare: (id: string) => `/api/tools/audit/${encodeURIComponent(id)}/share`,
+  auditToolEvidence: (id: string) => `/api/tools/audit/${encodeURIComponent(id)}/tool-evidence`,
+  auditScoreBadge: (id: string) => `/api/tools/audit/${encodeURIComponent(id)}/badge`,
   sharedReport: (token: string) => `/api/tools/shared-reports/${encodeURIComponent(token)}`,
   projectsOverview: '/api/tools/projects/overview',
   projects: '/api/tools/projects',

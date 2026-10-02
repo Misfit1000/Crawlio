@@ -22,6 +22,7 @@ const workspaceLabels: Record<string, string> = {
   '/app/rankings': 'Rankings',
   '/app/search-data': 'Search data',
   '/app/settings': 'Settings',
+  '/app/tools': 'SEO tools',
 };
 
 function WorkspaceBreadcrumbs() {
@@ -78,6 +79,7 @@ export function MarketingShell({
     ['Pricing', `${navigationBase}#pricing`],
     ['Reports', `${navigationBase}#example-report`],
     ['Blog', '/blog'],
+    ['Tools', '/tools'],
   ];
   const auditHref = `${navigationBase}#start-audit`;
   return (
@@ -180,7 +182,7 @@ function PublicFooter() {
         </div>
         <nav aria-label="Product links">
           <h2 className="text-sm font-semibold">Product</h2>
-          <div className="mt-3 grid gap-2 text-sm text-muted-foreground"><a href="/#features" className="hover:text-foreground">Features</a><a href="/#pricing" className="hover:text-foreground">Pricing</a><a href="/blog" className="hover:text-foreground">Blog</a><a href="/contact" className="hover:text-foreground">Contact</a></div>
+          <div className="mt-3 grid gap-2 text-sm text-muted-foreground"><a href="/#features" className="hover:text-foreground">Features</a><a href="/#pricing" className="hover:text-foreground">Pricing</a><a href="/tools" className="hover:text-foreground">SEO tools</a><a href="/blog" className="hover:text-foreground">Blog</a><a href="/contact" className="hover:text-foreground">Contact</a></div>
         </nav>
         <nav aria-label="Legal links">
           <h2 className="text-sm font-semibold">Trust and legal</h2>

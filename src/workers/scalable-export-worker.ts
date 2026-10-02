@@ -3,7 +3,7 @@ import { requireSupabaseAdminClient } from '../lib/supabase/server';
 import { auditRepository } from '../lib/supabase/audit-repository';
 import { readEvidencePage } from '../lib/supabase/scalable-audit-repository';
 import {
-  EXPORT_BUCKET, EXPORT_CHUNK_SIZE, EXPORT_LEASE_MS, exportJsonHeader, exportPartPath,
+  EXPORT_BUCKET, EXPORT_CHUNK_SIZE, EXPORT_LEASE_MS, exportJsonHeader, exportPartPath, exportSitemapHeader, exportSitemapOrigin,
   formatExportChunk, type ExportJob, type ExportChunk,
 } from '../lib/report/scalable-exports';
 
@@ -68,6 +68,7 @@ async function commitPart(job: ExportJob, chunk: ExportChunk) {
 export interface ExportChunkDependencies {
   read: (job: ExportJob) => Promise<{ items: unknown[]; nextCursor: string | null }>;
   header: (job: ExportJob) => Promise<string>;
+  origin?: (job: ExportJob) => Promise<string>;
   check: (job: ExportJob) => Promise<void>;
   upload: (job: ExportJob, text: string) => Promise<void>;
   commit: (job: ExportJob, chunk: ExportChunk) => Promise<void>;
@@ -76,9 +77,11 @@ export interface ExportChunkDependencies {
 /** Exactly one evidence page and one deterministic part per invocation. */
 export async function processExportChunk(job: ExportJob, dependencies: ExportChunkDependencies) {
   await dependencies.check(job);
-  const header = job.format === 'json' && job.part === 0 ? await dependencies.header(job) : '';
+  if (job.format === 'sitemap.xml' && job.section !== 'pages') throw new Error('Sitemap export requires pages');
+  const header = (job.format === 'json' || job.format === 'sitemap.xml') && job.part === 0 ? await dependencies.header(job) : '';
+  const origin = job.format === 'sitemap.xml' ? await dependencies.origin?.(job) : undefined;
   const page = await dependencies.read(job);
-  const chunk = formatExportChunk(job, page, header);
+  const chunk = formatExportChunk(job, page, header, origin);
   await dependencies.check(job);
   await dependencies.upload(job, chunk.text);
   await dependencies.commit(job, chunk);
@@ -96,9 +99,15 @@ export async function runScalableExportWorkerOnce(workerId: string): Promise<boo
         cursor: item.cursor || undefined, limit: EXPORT_CHUNK_SIZE,
       }),
       header: async item => {
+        if (item.format === 'sitemap.xml') return exportSitemapHeader();
         const audit = await auditRepository.getAudit(item.audit_id);
         if (!audit || ['queued', 'running'].includes(audit.status)) throw new Error('EXPORT_AUDIT_NOT_TERMINAL');
         return exportJsonHeader(audit, await auditRepository.getFinalReport(item.audit_id));
+      },
+      origin: async item => {
+        const audit = await auditRepository.getAudit(item.audit_id);
+        if (!audit || ['queued', 'running'].includes(audit.status)) throw new Error('EXPORT_AUDIT_NOT_TERMINAL');
+        return exportSitemapOrigin(audit);
       },
       upload: uploadPart,
       commit: commitPart,
@@ -106,7 +115,7 @@ export async function runScalableExportWorkerOnce(workerId: string): Promise<boo
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
     if (message === 'EXPORT_LEASE_LOST') return true;
-    const permanent = ['EXPORT_PART_CONFLICT', 'EXPORT_AUDIT_NOT_TERMINAL'].includes(message);
+    const permanent = ['EXPORT_PART_CONFLICT', 'EXPORT_AUDIT_NOT_TERMINAL', 'EXPORT_SITEMAP_ORIGIN_INVALID'].includes(message);
     // A transient failure leaves the checkpoint untouched and retries after lease expiry.
     const result = await requireSupabaseAdminClient().from('audit_export_jobs').update({
       ...(permanent ? { state: 'failed', owner: null, lease_until: null } : {}),

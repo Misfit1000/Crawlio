@@ -1,4 +1,4 @@
-export type TabType = 'projects' | 'dashboard' | 'website-analyzer' | 'seo-audit' | 'seo-findings' | 'technical-seo' | 'crawlability' | 'performance' | 'pages' | 'audit-history' | 'security-audit' | 'rank-tracker' | 'imports' | 'reports' | 'settings' | 'admin-dashboard' | 'search-data';
+export type TabType = 'projects' | 'dashboard' | 'website-analyzer' | 'seo-audit' | 'seo-findings' | 'technical-seo' | 'crawlability' | 'performance' | 'pages' | 'audit-history' | 'security-audit' | 'rank-tracker' | 'imports' | 'reports' | 'settings' | 'admin-dashboard' | 'search-data' | 'tools';
 
 export type AuditWorkspaceSection = 'overview' | 'seo' | 'technical' | 'crawlability' | 'links' | 'performance' | 'accessibility' | 'security' | 'pages';
 
@@ -18,6 +18,7 @@ export const TAB_PATHS: Record<TabType, string> = {
   imports: '/app/imports',
   reports: '/app/reports',
   settings: '/app/settings',
+  tools: '/app/tools',
   'admin-dashboard': '/admin',
   'search-data': '/app/search-data',
 };

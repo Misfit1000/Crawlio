@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { lazy, memo, Suspense, useMemo, useState } from 'react';
 import type { ResourceAuditLiveData } from '../../lib/audit/resource-types';
 import { REPORT_SECTIONS, formatBytes } from '../../lib/audit/report-insights';
 import { MetricBarChart, SitePreviewSection, StatusBadge } from '../ui/visual-system';
@@ -6,8 +6,10 @@ import { AuditPageMap } from './AuditPageMap';
 import { completePresentationSummary, samplePresentation } from './audit-presentation';
 import { isTerminalAuditStatus } from '../../lib/audit/audit-time';
 import DomainStrengthCard from '../backlinks/DomainStrengthCard';
+const AuditToolsWorkspace = lazy(() => import('../tools/AuditToolsWorkspace'));
 
 export const AuditOverview = memo(function AuditOverview({ data, onViewFindings }: { data: ResourceAuditLiveData; onViewFindings: () => void }) {
+  const [toolsOpen, setToolsOpen] = useState(false);
   const complete = useMemo(() => completePresentationSummary(data.audit, data.finalReport), [data.audit, data.finalReport]);
   const sample = useMemo(() => complete ? null : samplePresentation(data.latestPages, data.latestIssues), [complete, data.latestPages, data.latestIssues]);
   const presentation = complete || sample!;
@@ -41,6 +43,7 @@ export const AuditOverview = memo(function AuditOverview({ data, onViewFindings 
       {!presentation.topRecommendations.length && <p className="py-4 text-sm text-muted-foreground">{recommendationsPending ? 'Recommendations are prepared at finalization. View Findings to review the evidence collected so far.' : data.audit?.issuesFound ? `No recommendations are included in ${complete ? 'this stored aggregate' : 'the loaded sample'}. View Findings to review the recorded evidence.` : `No recommendations in ${complete ? 'the stored aggregate' : 'this sample'}. Review coverage and unavailable checks before treating the audit as clear.`}</p>}
     </section>
     {firstPage && <details className="border-y border-border py-3"><summary className="cursor-pointer text-sm font-semibold">Collected site preview</summary><div className="pt-4"><SitePreviewSection url={firstPage.url} hostname={data.audit?.hostname} title={firstPage.title} description={firstPage.metaDescription} h1={firstPage.h1} canonicalUrl={firstPage.canonicalUrl} siteName={firstPage.siteName} faviconUrl={firstPage.faviconUrl} openGraphImage={firstPage.openGraphImage} screenshotUrl={firstPage.screenshotUrl} themeColor={firstPage.themeColor} /></div></details>}
+    <details className="border-y border-border py-4 no-print" onToggle={event => setToolsOpen(event.currentTarget.open)}><summary className="cursor-pointer text-sm font-semibold">Audit tools: previews, robots, sitemap, crawl analysis and print</summary>{toolsOpen && <div className="pt-5"><Suspense fallback={<p className="text-sm">Loading audit tools...</p>}><AuditToolsWorkspace key={data.audit?.id} data={data} /></Suspense></div>}</details>
     {data.finalReport && data.audit && <DomainStrengthCard domain={data.audit.hostname} auditScores={data.finalReport.scores} />}
   </div>;
 });

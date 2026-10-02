@@ -132,6 +132,7 @@ export interface ResourceAuditEvent {
 }
 
 export interface ResourceAuditPage {
+  toolEvidence?: AuditToolEvidence;
   id: string;
   url: string;
   statusCode: number;
@@ -161,6 +162,20 @@ export interface ResourceAuditPage {
   crawlDepth: number;
   issueCount: number;
   crawledAt: string;
+}
+
+export interface AuditToolEvidence {
+  version: 1;
+  contentType: string;
+  metaRobots: string;
+  xRobotsTag: string;
+  robotsAllowed: boolean | null;
+  redirected: boolean;
+  lastModified?: string;
+  ogTitle?: string;
+  ogDescription?: string;
+  outgoingInternalLinks?: number;
+  securityHeaders: Record<string, boolean>;
 }
 
 export interface ResourceAuditIssue {

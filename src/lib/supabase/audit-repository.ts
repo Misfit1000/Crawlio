@@ -20,6 +20,7 @@ import {
 } from './server';
 import { deploymentVersionRow } from '../platform/version';
 import { readAuditPresentationSummary } from '../audit/audit-presentation-summary';
+import { readToolEvidence } from '../tools/audit-tools';
 
 type DbRow = Record<string, any>;
 export type WorkerHeartbeatStatus = 'starting' | 'idle' | 'running' | 'stopping' | 'stopped' | 'failed';
@@ -358,6 +359,7 @@ function eventToRow(auditId: string, event: ResourceAuditEvent) {
 
 export function toAuditPage(row: DbRow): ResourceAuditPage {
   return {
+    toolEvidence: readToolEvidence(row.tool_evidence),
     id: row.id,
     url: row.url,
     statusCode: row.status_code ?? 0,
@@ -392,6 +394,7 @@ export function toAuditPage(row: DbRow): ResourceAuditPage {
 
 export function pageToRow(auditId: string, page: ResourceAuditPage) {
   return {
+    ...(page.toolEvidence ? { tool_evidence: readToolEvidence(page.toolEvidence) } : {}),
     id: page.id,
     audit_id: auditId,
     url: page.url,
@@ -426,6 +429,7 @@ export function pageToRow(auditId: string, page: ResourceAuditPage) {
 }
 
 const PREVIEW_METADATA_COLUMNS = new Set([
+  'tool_evidence',
   'canonical_url',
   'site_name',
   'favicon_url',

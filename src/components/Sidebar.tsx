@@ -1,4 +1,4 @@
-import { Activity, BarChart3, FileText, Gauge, Globe, HelpCircle, History, LayoutDashboard, Layers, ListChecks, Search, Settings, ShieldAlert, ShieldCheck, X, type LucideIcon } from 'lucide-react';
+import { Activity, BarChart3, FileText, Gauge, Globe, HelpCircle, History, LayoutDashboard, Layers, ListChecks, Search, Settings, ShieldAlert, ShieldCheck, Wrench, X, type LucideIcon } from 'lucide-react';
 import { TabType } from '../App';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation, useNavigate } from '../app/router';
@@ -22,6 +22,7 @@ const navGroups: Array<{
       { icon: Activity, label: 'Start audit', description: 'Run a live website audit', id: 'seo-audit' },
       { icon: History, label: 'Audit history', description: 'Past runs and comparisons', id: 'audit-history' },
       { icon: FileText, label: 'Reports', description: 'Evidence, exports, and delivery', id: 'reports' },
+      { icon: Wrench, label: 'SEO tools', description: 'Previews, robots, and structured data', id: 'tools' },
     ],
   },
   {

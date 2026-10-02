@@ -44,6 +44,7 @@ const SharedReportPage = lazy(() => import('./components/audit/SharedReportPage'
 const BlogIndex = lazy(() => import('./components/blog/BlogIndex'));
 const BlogPostPage = lazy(() => import('./components/blog/BlogPostPage'));
 const LegalPage = lazy(() => import('./components/LegalPage'));
+const ToolsHub = lazy(() => import('./components/tools/ToolsHub'));
 const NotFoundPage = lazy(() => import('./components/NotFoundPage'));
 
 export type { TabType } from './app/routes';
@@ -129,6 +130,7 @@ export default function App() {
       '/': { title: `${BRAND.name} - ${BRAND.tagline}`, description: BRAND.description },
       '/pricing': { title: `Pricing and Free Audit Limits | ${BRAND.name}`, description: `Compare ${BRAND.name} Quick, Standard, and Deep audit limits without hidden ranking or backlink data claims.` },
       '/reports/example': { title: `Example Website Audit Report | ${BRAND.name}`, description: `Explore an example ${BRAND.name} report with website health, coverage, passive security, previews, and prioritized fixes.` },
+      '/tools': { title: `Free SEO Tools | ${BRAND.name}`, description: 'Private browser tools for search previews, robots rules, structured data and observed header remediation.' },
       '/login': { title: `Sign in | ${BRAND.name}`, description: `Sign in to manage ${BRAND.name} website audits and reports.` },
       '/register': { title: `Create an account | ${BRAND.name}`, description: `Create a ${BRAND.name} account to save audits, reports, and fix progress.` },
       '/admin/login': { title: `Administrator sign in | ${BRAND.name}`, description: `Secure administrator access for ${BRAND.name}.` },
@@ -216,7 +218,7 @@ export default function App() {
   const blogMatch = pathname.match(/^\/blog(?:\/([^/]+))?\/?$/);
   const isBlogRoute = Boolean(blogMatch);
   const shareMatch = pathname.match(/^\/share\/([A-Za-z0-9_-]{40,80})\/?$/);
-  const knownPublicRoute = pathname === '/' || pathname === '/pricing' || pathname === '/reports/example' || pathname === '/login' || pathname === '/register' || isBlogRoute || Boolean(shareMatch) || Boolean(legalKind);
+  const knownPublicRoute = pathname === '/' || pathname === '/tools' || pathname === '/pricing' || pathname === '/reports/example' || pathname === '/login' || pathname === '/register' || isBlogRoute || Boolean(shareMatch) || Boolean(legalKind);
   let blogSlug = '';
   if (blogMatch?.[1]) {
     try {
@@ -353,6 +355,8 @@ export default function App() {
         return <Reports onStartAudit={() => setActiveTab('seo-audit')} />;
       case 'settings':
         return <Settings />;
+      case 'tools':
+        return <ToolsHub />;
       case 'admin-dashboard':
         return <AdminDashboard />;
       default:
@@ -377,7 +381,11 @@ export default function App() {
       )}
 
       <div className="relative z-10 flex flex-col min-h-screen">
-        {shareMatch ? (
+        {pathname === '/tools' ? (
+          <MarketingShell theme={theme} onToggleTheme={toggleTheme} userLabel={user?.username || (user ? 'Account' : null)} authLoading={authLoading} navigationBase="/" onHome={() => navigate('/')} onLogin={() => setAuthMode('login')} onSettings={() => openAppTab('settings')} onLogout={handleLogout}>
+            <main id="main-content" className="section-shell py-8" tabIndex={-1}><Suspense fallback={<LoadingSkeleton rows={5} />}><ToolsHub /></Suspense></main>
+          </MarketingShell>
+        ) : shareMatch ? (
           <MarketingShell theme={theme} onToggleTheme={toggleTheme} userLabel={user?.username || (user ? 'Account' : null)} authLoading={authLoading} navigationBase="/" onHome={() => navigate('/')} onLogin={() => setAuthMode('login')} onSettings={() => openAppTab('settings')} onLogout={handleLogout}>
             <Suspense fallback={<LoadingSkeleton rows={5} />}><SharedReportPage token={shareMatch[1]} /></Suspense>
           </MarketingShell>

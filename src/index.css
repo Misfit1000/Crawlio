@@ -433,7 +433,10 @@
   thead { display: table-header-group; }
   h2, h3 { break-after: avoid; }
   p { orphans: 3; widows: 3; }
+  body.printing-audit-summary > :not(#crawlio-print-summary) { display: none !important; }
+  body.printing-audit-summary #crawlio-print-summary { display: block; color: #171717; background: white; --muted-foreground: #525252; }
 }
+#crawlio-print-summary { display: none; }
 
 @keyframes rise {
   from {

@@ -1,7 +1,18 @@
 # Crawlio Evidence-First, Low-Cost Roadmap
 
-Status: proposed follow-up roadmap, not a claim that these tools are implemented.
-Keep the current audit experience, Vanta Black, admin operations, and blog reliability release separate.
+Status: implemented in the October 2 low-cost tools release. Production deployment status and measured limitations are recorded in `docs/releases/2026-10-02-low-cost-tools.md`.
+The audit experience, Vanta Black, admin operations, and outstanding blog reliability work remain separate releases.
+
+## Implemented Locations
+
+- `/tools` and `/app/tools`: local SERP/social previews, structured-data builder, header guidance and robots sandbox.
+- Report overview, **Audit tools**: previews, recorded robots evidence, crawl/depth analysis, scoped sitemap downloads, executive print summary and opt-in score badge.
+- Page evidence drawer: selected-page preview and markup tools, loaded only when opened.
+- Complete sitemap exports: existing authorized resumable export jobs; private artifacts retain the existing 24-hour expiry.
+
+Migration `031_low_cost_tools.sql` was applied successfully on October 2 before deployment. New audits retain bounded response facts in existing page batches and one private robots document. Historical audits without these facts show unavailable evidence or support local paste mode, without refetching the target.
+
+Tool editing makes no API requests or database writes. Loading retained robots evidence is an authorized on-demand read; complete exports and public badge views have bounded server costs. Badge SVGs use `private, no-store` so revocation is not defeated by CDN caching.
 
 ## Changes to the Proposed Plan
 
@@ -13,7 +24,7 @@ Keep the current audit experience, Vanta Black, admin operations, and blog relia
 
 ## Prerequisites
 
-- **Robots evaluation:** `src/lib/seo/robots.ts` currently combines matching groups and uses prefix checks with Allow-first precedence. That is not sufficient for a multi-crawler tester. Replace the implementation behind the shared interface with one standards-aware evaluator, preserving persisted legacy rules and existing worker behavior during rollout. Test specific-group precedence, merged equal groups, longest matching rule, equal-length Allow preference, wildcards, end anchors, query paths, percent encoding, and line evidence. Do not introduce a second parser.
+- **Robots evaluation:** the shared pure evaluator in `src/lib/seo/robots-evaluator.ts` replaces the former prefix matcher. It preserves legacy rules while handling specific-group precedence, merged equal groups, longest matching rule, equal-length Allow preference, wildcards, end anchors, query paths, percent encoding, and line evidence. Server fetch wrappers and browser tools reuse it.
 - **Robots fetch state:** preserve status, retrieval time, and a bounded raw document alongside the parsed result in the existing one-time audit initialization commit. Missing, empty, malformed, inaccessible, and temporarily unavailable are distinct. An HTTP error must not silently become an empty successful file. Legacy audits without raw content can use paste mode, not a new fetch.
 - **Evidence projection:** document which retained fields support each feature. Add only bounded fields from the already-fetched response to existing commits when justified. Avoid storing full HTML, repeated response headers, or new per-page writes.
 - **Coverage:** include audit ID, processing version, completed/partial state, analysed count, retained count, evidence timestamp, and complete/sample scope in tool inputs. Unknown is never false or zero.
@@ -96,7 +107,7 @@ Keep the current audit experience, Vanta Black, admin operations, and blog relia
 
 Test contracts and risks, not copies of implementation code: parser correctness, safe serialization, evidence scope, ownership/share revocation, source/score honesty, and bounded processing. One production build/typecheck plus targeted desktop/mobile light/dark journeys for each slice is sufficient. Do not rerun the entire suite for copy-only changes.
 
-Measure compressed route JavaScript, request counts, retained bytes per page, API latency, rendering time on the 500/5,000-page fixtures, and database writes. Release only when the existing workflow budgets are preserved. Record limitations and migrations before enabling a feature.
+Record compressed route JavaScript, request counts and retained bytes per page. The focused release validates local editing, bounded export chunks and existing small-audit batching. Production API latency, field rendering timings and new 500/5,000-page load measurements are not established by this release; do not describe these as completed benchmarks. Exact bundle differences are in the release note.
 
 ## Reference Contracts
 

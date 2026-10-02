@@ -12,6 +12,7 @@
       ]
     },
     { "source": "/pricing", "headers": [{ "key": "Cache-Control", "value": "public, max-age=60, must-revalidate" }] },
+    { "source": "/tools", "headers": [{ "key": "Cache-Control", "value": "public, max-age=60, must-revalidate" }] },
     { "source": "/reports/example", "headers": [{ "key": "Cache-Control", "value": "public, max-age=60, must-revalidate" }] },
     { "source": "/privacy", "headers": [{ "key": "Cache-Control", "value": "public, max-age=60, must-revalidate" }] },
     { "source": "/terms", "headers": [{ "key": "Cache-Control", "value": "public, max-age=60, must-revalidate" }] },
@@ -47,6 +48,7 @@
     { "source": "/blog/:slug", "destination": "/api/index.js?path=tools/blog/html/:slug" },
     { "source": "/api/:path*", "destination": "/api/index.js?path=:path*" },
     { "source": "/pricing", "destination": "/index.html" },
+    { "source": "/tools", "destination": "/tools/index.html" },
     { "source": "/reports/example", "destination": "/index.html" },
     { "source": "/login", "destination": "/index.html" },
     { "source": "/register", "destination": "/index.html" },
