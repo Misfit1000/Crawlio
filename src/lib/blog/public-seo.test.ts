@@ -86,7 +86,7 @@ test('canonical site origin never falls back to request-controlled headers', () 
     const request = { headers: { host: 'injected.example', 'x-forwarded-host': 'injected.example' } };
     assert.equal(canonicalSiteOrigin(request), 'https://publisher.example');
     process.env.APP_URL = 'not-a-url';
-    assert.equal(canonicalSiteOrigin(request), 'https://keywordsintel.vercel.app');
+    assert.equal(canonicalSiteOrigin(request), 'https://crawlio1.vercel.app');
     process.env.VERCEL_PROJECT_PRODUCTION_URL = 'production.example';
     assert.equal(canonicalSiteOrigin(request), 'https://production.example');
     for (const invalid of ['javascript:alert(1)', 'ftp://wrong.example', 'https://user:password@wrong.example/']) {

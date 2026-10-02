@@ -7,7 +7,7 @@ function escapeXml(value: string) {
 }
 
 export function canonicalSiteOrigin(_req?: unknown) {
-  const fallback = 'https://keywordsintel.vercel.app';
+  const fallback = 'https://crawlio1.vercel.app';
   // Canonicals must use server configuration, never Host or forwarded request headers.
   for (const configured of [process.env.APP_URL, process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '', fallback]) {
     if (!configured) continue;

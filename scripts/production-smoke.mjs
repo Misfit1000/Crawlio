@@ -5,6 +5,8 @@ const config = {
   workerHealthUrl: absoluteUrlFrom('PRODUCTION_WORKER_HEALTH_URL', process.env.WORKER_URL, '/health'),
   expectedCommit: String(process.env.EXPECTED_COMMIT_IDENTIFIER || '').trim(),
   expectedSchema: optionalInteger(process.env.EXPECTED_API_SCHEMA_VERSION),
+  expectedBlogAutomation: optionalBoolean('EXPECTED_BLOG_AUTOMATION_ENABLED'),
+  expectedBlogProvider: optionalBoolean('EXPECTED_BLOG_PROVIDER_ENABLED'),
   runAudit: process.env.PRODUCTION_SMOKE_ENABLED === 'true' || process.env.RUN_AUDIT_SMOKE === 'true',
   auditTarget: String(process.env.PRODUCTION_SMOKE_TARGET_URL || '').trim(),
   timeoutMs: boundedInteger(process.env.PRODUCTION_SMOKE_TIMEOUT_MS, 120_000, 30_000, 300_000),
@@ -39,6 +41,13 @@ function optionalInteger(value) {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1) throw new Error('EXPECTED_API_SCHEMA_VERSION must be a positive integer.');
   return parsed;
+}
+
+function optionalBoolean(name) {
+  const value = process.env[name];
+  if (value == null || value.trim() === '') return null;
+  if (value !== 'true' && value !== 'false') throw new Error(`${name} must be true or false.`);
+  return value === 'true';
 }
 
 function boundedInteger(value, fallback, min, max) {
@@ -159,7 +168,10 @@ async function runVersionChecks() {
     }
     if (config.expectedCommit && !commitsMatch(payload.commitIdentifier, config.expectedCommit)) throw new Error(`Application commit ${payload.commitIdentifier} does not match expected release ${config.expectedCommit}.`);
     if (config.expectedSchema != null && Number(payload.apiSchemaVersion) !== config.expectedSchema) throw new Error(`API schema ${payload.apiSchemaVersion} does not match expected ${config.expectedSchema}.`);
-    if (payload.blogAutomationEnabled !== false || payload.blogProviderEnabled !== false) throw new Error('Blog automation/provider must remain disabled for this release gate.');
+    for (const [field, expected] of [['blogAutomationEnabled', config.expectedBlogAutomation], ['blogProviderEnabled', config.expectedBlogProvider]]) {
+      if (typeof payload[field] !== 'boolean') throw new Error(`Version response is missing a boolean ${field}.`);
+      if (expected !== null && payload[field] !== expected) throw new Error(`${field} does not match the configured release expectation.`);
+    }
     return payload;
   });
 }

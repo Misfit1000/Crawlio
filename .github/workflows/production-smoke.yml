@@ -55,6 +55,8 @@ jobs:
           PRODUCTION_SMOKE_ENABLED: ${{ inputs.create_quick_audit }}
           EXPECTED_COMMIT_IDENTIFIER: ${{ inputs.expected_commit }}
           EXPECTED_API_SCHEMA_VERSION: ${{ inputs.expected_schema }}
+          EXPECTED_BLOG_AUTOMATION_ENABLED: ${{ vars.EXPECTED_BLOG_AUTOMATION_ENABLED }}
+          EXPECTED_BLOG_PROVIDER_ENABLED: ${{ vars.EXPECTED_BLOG_PROVIDER_ENABLED }}
           OPERATIONS_ALERTS_ENABLED: ${{ vars.OPERATIONS_ALERTS_ENABLED }}
           OPERATIONS_ALERT_WEBHOOK_URL: ${{ secrets.OPERATIONS_ALERT_WEBHOOK_URL }}
         run: npm run smoke:production:ci | tee production-smoke-result.json
