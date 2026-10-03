@@ -17,7 +17,7 @@ Complete static dependency graphs, not just the HTML entry script:
 
 | Measurement | Before | After |
 | --- | ---: | ---: |
-| Initial customer JavaScript, gzip bytes | 98,788 | 90,211 |
+| Initial customer JavaScript, gzip bytes | 98,788 | 90,220 |
 | Total emitted CSS, bytes | 111,659 | 111,639 |
 | Core API static dependency graph, bytes | 4,419,345 | 1,461,887 |
 | Shared API shell, bytes | 1,328,812 | 1,329,201 |
@@ -51,5 +51,7 @@ Deploy the validated commit through `main`, verify the public API and Render wor
 `scripts/measure-public-loading.mjs` records fresh/repeat browser requests, resource transfers, lab paint/layout observations, and CDN response headers without signing in or mutating data. Saved observations are under `artifacts/performance-optimization`.
 
 Before release, a fresh unthrottled desktop visit made five browser requests and no initial API request; pricing scrolling made one plan request. Repeat loading used browser caches. Browser requests, CDN hits, and origin executions are different quantities.
+
+The first deployed measurement identified an early sample-report preload (six initial requests). The observer was corrected to load the interaction only when the sample section is visible. The initial code and sample text remain crawlable; no audit startup behavior changed.
 
 Lab samples are not field Core Web Vitals. Origin query/write telemetry, large-audit peak memory, and genuine cold-instance latency require production instrumentation; they are not inferred from transfer sizes or cache headers.

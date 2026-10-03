@@ -82,7 +82,7 @@ export default function LandingPage({ onStartAudit, onExploreFeatures, onNavigat
   useEffect(() => {
     const observer = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) { setExampleReady(true); observer.disconnect(); }
-    }, { rootMargin: '200px 0px' });
+    }, { rootMargin: '0px', threshold: 0.01 });
     if (example.current) observer.observe(example.current);
     return () => observer.disconnect();
   }, []);
