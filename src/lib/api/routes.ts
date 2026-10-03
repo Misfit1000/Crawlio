@@ -54,6 +54,7 @@ export const API_ROUTES = {
   blogPost: (slug: string) => `/api/tools/blog/posts/${encodeURIComponent(slug)}`,
   adminBlogPosts: "/api/tools/admin/blog/posts",
   adminBlogPost: (id: string) => `/api/tools/admin/blog/posts/${encodeURIComponent(id)}`,
+  adminBlogGenerationReview: (id: string) => `/api/tools/admin/blog/posts/${encodeURIComponent(id)}/generation-review`,
   adminBlogPostWorkflow: (id: string) => `/api/tools/admin/blog/posts/${encodeURIComponent(id)}/workflow`,
   adminBlogSourceInspect: "/api/tools/admin/blog/source/inspect",
   adminBlogPreflight: "/api/tools/admin/blog/preflight",

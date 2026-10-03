@@ -50,6 +50,7 @@ import { BLOG_FIXTURE_MODEL, BLOG_FIXTURE_PROVIDER, getBlogFixtureConfiguration,
 import { blogSourceRepository } from '../lib/blog/source-management';
 import { blogEditorRepository, BlogDraftConflictError } from '../lib/blog/editor-repository';
 import { buildBlogReadiness } from '../lib/blog/editor-experience';
+import { projectBlogGenerationReview } from '../lib/blog/generation-review';
 import { applySafeBlogFixes } from '../lib/blog/editor-safe-fixes';
 import { suggestBlogHeadingStructure } from '../lib/blog/server/editor-assistance';
 import { normalizePublicBlogSourceUrl } from '../lib/blog/source-url';
@@ -1317,7 +1318,7 @@ apiRouter.put('/admin/blog/posts/:id', asyncJsonRoute(async (req, res) => {
   try {
     const row = prepareBlogPostForStorage(req.body || {});
     row.slug = await uniqueBlogSlug(row.slug, existing.id);
-    const post = await blogRepository.update(existing.id, { ...row, updated_by: requester.userId }, existing.updatedAt);
+    const post = await blogRepository.update(existing.id, { ...row, generation_job_id: existing.generationJobId, batch_id: existing.batchId, updated_by: requester.userId }, existing.updatedAt);
     if (post) await blogRepository.syncEditorialRecords(post, requester.userId, existing.status);
     await logBlogAction(requester.userId, 'update_blog_post', existing.id, { status: post?.status, slug: post?.slug });
     res.json({ success: true, data: { post } });
@@ -1325,6 +1326,16 @@ apiRouter.put('/admin/blog/posts/:id', asyncJsonRoute(async (req, res) => {
     if (error instanceof BlogValidationError) return res.status(error.status).json({ success: false, error: error.message });
     throw error;
   }
+}));
+
+apiRouter.get('/admin/blog/posts/:id/generation-review', createRateLimiter({ namespace: 'blog-generation-review', windowMs: 60 * 60 * 1000, maxRequests: 120 }), asyncJsonRoute(async (req, res) => {
+  if (!(await requireAdminRequester(req, res))) return;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)) throw new ApiError('BLOG_POST_ID_INVALID', 'Choose an existing article.', 400);
+  const post = await blogRepository.getAdminById(req.params.id);
+  if (!post) throw new ApiError('BLOG_POST_NOT_FOUND', 'Article not found.', 404);
+  const job = post.generationJobId ? await blogAutomationRepository.getJob(post.generationJobId) : null;
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: { review: projectBlogGenerationReview(job?.stageOutputs?.claimValidation) } });
 }));
 
 apiRouter.post('/admin/blog/posts/:id/workflow', asyncJsonRoute(async (req, res) => {

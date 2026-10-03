@@ -3,6 +3,7 @@ import { getAuthHeaders } from '../api/auth-headers';
 import { safeJsonFetch } from '../http/safe-json';
 import type { BlogAdminOverview, BlogApprovedSource, BlogFixtureScenario, BlogGenerationJob, BlogListResult, BlogOperationsSnapshot, BlogPost, BlogPostInput, BlogSectionRevision, BlogSource } from './types';
 import type { BlogReadinessItem } from './editor-experience';
+import type { BlogGenerationReview } from './generation-review';
 
 type Envelope<T> = { success: boolean; data: T; error?: string };
 
@@ -82,6 +83,12 @@ export function getPublishedPost(slug: string) {
 
 export async function getAdminBlogPosts() {
   return request<{ posts: BlogPost[] }>(API_ROUTES.adminBlogPosts, { headers: await getAuthHeaders() });
+}
+
+export async function getAdminBlogGenerationReview(id: string, signal?: AbortSignal) {
+  return request<{ review: BlogGenerationReview }>(API_ROUTES.adminBlogGenerationReview(id), {
+    headers: await getAuthHeaders(), signal,
+  });
 }
 
 export async function saveAdminBlogPost(input: BlogPostInput, id?: string, expectedUpdatedAt?: string | null) {
