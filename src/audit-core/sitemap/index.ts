@@ -1,4 +1,1 @@
-export {
-  parseSitemapXml,
-  type SitemapDocument,
-} from '../../lib/seo/sitemap';
+export * from './sitemap-parser';

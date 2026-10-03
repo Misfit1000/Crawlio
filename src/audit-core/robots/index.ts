@@ -1,5 +1,1 @@
-export {
-  parseRobotsTxt,
-  getSitemapUrlsFromRobots,
-  isBlockedByRobots,
-} from '../../lib/seo/robots';
+export * from './robots-parser';
