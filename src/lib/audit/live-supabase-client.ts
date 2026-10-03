@@ -3,7 +3,7 @@ import { getAuditAccessHeaders } from '../api/auth-headers';
 import { getSupabaseBrowserClient } from '../supabase/client';
 import { safeJsonFetch } from '../http/safe-json';
 import { AUDIT_LIMITS } from './audit-config';
-import { mergeAuditLiveData } from './audit-lifecycle';
+import { FINAL_REPORT_RETRY_DELAYS_MS, mergeAuditLiveData } from './audit-lifecycle';
 import { readAuditPresentationSummary } from './audit-presentation-summary';
 import { readToolEvidence } from '../tools/audit-tools';
 import { hasUsableAuditReport, isTerminalAuditStatus } from './audit-time';
@@ -317,6 +317,8 @@ export function subscribeToAuditLiveData(
   let fallbackUnsubscribe: (() => void) | null = null;
   let websocketConnected = false;
   let reconciliation: AbortController | null = null;
+  let finalHintTimer: number | undefined;
+  let finalHintAttempts = 0;
 
   onConnectionChange?.({
     transport: 'websocket',
@@ -338,12 +340,29 @@ export function subscribeToAuditLiveData(
           : 'Loaded the audit snapshot. Waiting for the WebSocket subscription.',
       lastUpdateAt: Date.now(),
     });
+    queueFinalReconciliation();
   };
+
+  function queueFinalReconciliation() {
+    if (closed || fallbackUnsubscribe || document.hidden || finalHintTimer != null ||
+      isTerminalAuditStatus(liveData.audit?.status) || finalHintAttempts >= FINAL_REPORT_RETRY_DELAYS_MS.length) return;
+    const hasFinalHint = Boolean(liveData.finalReport) || liveData.latestEvents.some(event =>
+      event.type === 'score_updated' && event.data !== null && typeof event.data === 'object' &&
+      'scoreState' in event.data && event.data.scoreState === 'final');
+    if (!hasFinalHint) return;
+    // Report evidence can arrive before the terminal row; reconcile only this bounded gap.
+    finalHintTimer = window.setTimeout(() => {
+      finalHintTimer = undefined;
+      void reconcile();
+    }, FINAL_REPORT_RETRY_DELAYS_MS[finalHintAttempts++]);
+  }
 
   const startPollingFallback = (message: string) => {
     if (closed || fallbackUnsubscribe) return;
     reconciliation?.abort();
     reconciliation = null;
+    window.clearTimeout(finalHintTimer);
+    finalHintTimer = undefined;
     fallbackUnsubscribe = pollAuditLiveData(auditId, (snapshot) => {
       if (closed) return;
       liveData = snapshot;
@@ -395,7 +414,7 @@ export function subscribeToAuditLiveData(
     .channel(`audit-live:${auditId}`)
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'audits', filter: `id=eq.${auditId}` }, (payload) => {
       if (closed || fallbackUnsubscribe) return;
-      liveData = { ...liveData, audit: toAuditDocument(payload.new as DbRow) };
+      liveData = mergeAuditLiveData(liveData, { ...liveData, audit: toAuditDocument(payload.new as DbRow) });
       emitLiveData();
     })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audit_events', filter: `audit_id=eq.${auditId}` }, (payload) => {
@@ -428,8 +447,19 @@ export function subscribeToAuditLiveData(
       if (payload.eventType === 'DELETE') return;
       liveData = { ...liveData, finalReport: toAuditReport(payload.new as DbRow) };
       emitLiveData();
-    })
-    .subscribe((status, error) => {
+    });
+
+  void (async () => {
+    const { data, error } = await client.auth.getSession();
+    if (closed) return;
+    if (error || !data.session) {
+      startPollingFallback('Live updates are using secure automatic refresh.');
+      return;
+    }
+    await client.realtime.setAuth(data.session.access_token);
+    if (closed) return;
+    channel.subscribe((status, error) => {
+      if (closed) return;
       if (error) {
         onError?.(error);
       }
@@ -480,10 +510,16 @@ export function subscribeToAuditLiveData(
         startPollingFallback('Live updates are using automatic refresh while the connection recovers.');
       }
     });
+  })().catch(error => {
+    if (closed) return;
+    onError?.(error instanceof Error ? error : new Error('Live updates could not connect.'));
+    startPollingFallback('Live updates are reconnecting with automatic refresh.');
+  });
 
   return () => {
     closed = true;
     reconciliation?.abort();
+    window.clearTimeout(finalHintTimer);
     document.removeEventListener('visibilitychange', visible);
     fallbackUnsubscribe?.();
     client.removeChannel(channel);

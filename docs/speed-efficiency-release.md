@@ -7,6 +7,7 @@
 - Grouped customer/admin navigation, compact overviews, and demand-mounted report/configuration details.
 - Session-scoped in-flight reads with independent consumer cancellation, obsolete-response rejection, and account-change invalidation.
 - One audit update path, post-subscription reconciliation, hidden-tab suspension, and terminal shutdown.
+- Authenticate Realtime before joining and reconcile bounded final-score/terminal-row ordering gaps without adding a periodic timer to normal preliminary updates.
 - Lazy server route families; existing URLs, authorization, rate limits, exports, and worker contracts retained.
 - Explicit history summaries, one bounded frontier-selection RPC, and serialized idle-only worker maintenance.
 - Chunked CSV processing and account-isolated import/project state.
@@ -35,6 +36,7 @@ Initial JavaScript is 8.7% smaller. The core route graph is 66.9% smaller; this 
 
 - TypeScript and production build passed; generated Vercel entry/chunk smoke passed.
 - Focused admission/request tests, 35 worker tests, and 43 lazy-route/access tests passed.
+- Five subscription-startup regression tests cover authentication ordering, cancellation, final evidence reconciliation, delayed active rows, and permanent access errors.
 - Eight selected critical browser journeys passed, including launch, terminal recovery, navigation, keyboard access, homepage accessibility, and deferred homepage loading.
 - Registration/access behavior, audit scoring cadence, and terminal protection are preserved.
 - SEO/security package checks passed. These checks are not a penetration test.
@@ -43,6 +45,8 @@ Initial JavaScript is 8.7% smaller. The core route graph is 66.9% smaller; this 
 ## Rollout
 
 Migration `033_performance_optimization.sql` was applied to production Supabase before dependent code. It adds a read-only, service-role-only frontier RPC; it does not change audit ownership, claims, evidence, or schema version 15.
+
+Production metadata confirms that anon/authenticated cannot execute the frontier RPC, service_role can, and all five audit tables participate in Realtime. Read-only query plans use `audit_crawl_frontier_pending` for bounded frontier selection and `audits_user_created` for history. Empty-match observations took 1.900 ms and 1.218 ms respectively; these are not large-audit throughput benchmarks. Existing indexes were retained rather than adding duplicates.
 
 Deploy the validated commit through `main`, verify the public API and Render worker commit, then run a small real audit. No preview, paid service, or test article is required.
 
