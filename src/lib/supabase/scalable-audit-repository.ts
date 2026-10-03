@@ -81,7 +81,25 @@ export async function claimScalableAudit(worker: string): Promise<{ audit: Resou
   return result && audit ? { audit, run: result.run } : null;
 }
 
+const FRONTIER_RPC = 'read_scalable_audit_frontier';
+const missingFrontierRpcUntil = new WeakMap<ReturnType<typeof requireSupabaseAdminClient>, number>();
+
 export async function readFrontier(auditId: string, limit = 2): Promise<FrontierItem[]> {
+  const client = requireSupabaseAdminClient();
+  if ((missingFrontierRpcUntil.get(client) || 0) <= Date.now()) {
+    const { data, error } = await client.rpc(FRONTIER_RPC, { p_audit: auditId, p_limit: Math.min(2, limit) });
+    if (!error) {
+      missingFrontierRpcUntil.delete(client);
+      return (data || []) as FrontierItem[];
+    }
+    // Only an absent additive RPC permits rollback to the old indexed reads.
+    if (error.code !== 'PGRST202' || !error.message.includes(FRONTIER_RPC)) throw error;
+    missingFrontierRpcUntil.set(client, Date.now() + 60_000);
+  }
+  return readFrontierWithoutRpc(auditId, limit);
+}
+
+async function readFrontierWithoutRpc(auditId: string, limit: number): Promise<FrontierItem[]> {
   const client = requireSupabaseAdminClient();
   for (const kind of ['robots', 'root', 'sitemap', 'page']) {
     let query = client.from('audit_crawl_frontier').select('key,url,kind,depth,source_url,anchor,attempts,next_attempt_at,discovery_offset')

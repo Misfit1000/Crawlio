@@ -1334,7 +1334,7 @@ export async function runAuditWorkerLoop() {
   let scalableHeartbeat: Promise<void> | null = null;
   let exportTask: Promise<void> | null = null;
   let exportTimer: ReturnType<typeof setInterval> | undefined;
-  let lastExportCleanup = 0;
+  let auditAdmissionIdle = false;
   const healthServer = startWorkerHealthServer(state, () => workerReady, process.env.WORKER_HEALTH_PORT || process.env.PORT);
 
   const shutdown = async (signal: NodeJS.Signals) => {
@@ -1406,15 +1406,12 @@ export async function runAuditWorkerLoop() {
   }, WORKER_HEARTBEAT_INTERVAL_MS);
   heartbeatTimer.unref?.();
   if (process.env.SCALABLE_AUDITS_ENABLED === 'true') {
+    const exports = await import('./scalable-export-worker');
+    const maintenance = exports.createScalableExportMaintenance(config.workerId, () =>
+      !shutdownRequested && auditAdmissionIdle && !state.currentAuditId && !activeScalableSlices.has(config.workerId));
     exportTimer = setInterval(() => {
-      if (shutdownRequested || exportTask) return;
-      exportTask = import('./scalable-export-worker').then(async (exports) => {
-        await exports.runScalableExportWorkerOnce(config.workerId);
-        if (Date.now() - lastExportCleanup >= 60_000) {
-          lastExportCleanup = Date.now();
-          await exports.cleanupScalableExportsOnce();
-        }
-      }).catch((error) => {
+      if (shutdownRequested || !auditAdmissionIdle || exportTask) return;
+      exportTask = maintenance.tick().catch((error) => {
         console.error(`Export worker: ${error instanceof Error ? error.message : String(error)}`);
       }).finally(() => { exportTask = null; });
     }, config.pollIntervalMs);
@@ -1423,12 +1420,16 @@ export async function runAuditWorkerLoop() {
   while (!shutdownRequested) {
     try {
       const recovering = state.queuePollingStatus === 'error' || !state.databaseConnected;
+      auditAdmissionIdle = false;
       const claimed = await runOneAudit(config.workerId, state);
       if (shutdownRequested) break;
       if (recovering) {
         await writeWorkerHeartbeat(state, { status: claimed ? state.status : 'idle', queuePollingStatus: 'active', databaseConnected: true, lastFatalWorkerError: null });
       }
-      if (!claimed) await wait(config.pollIntervalMs);
+      if (!claimed) {
+        auditAdmissionIdle = true;
+        await wait(config.pollIntervalMs);
+      }
     } catch (error) {
       if (shutdownRequested) break;
       const detail = error instanceof Error ? error.message : String(error || 'Worker polling failure');

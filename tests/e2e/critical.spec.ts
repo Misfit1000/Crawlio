@@ -10,9 +10,9 @@ test.describe('public product journeys', () => {
     await expect(page.getByRole('heading', { level: 1 })).toContainText('website');
     await page.getByRole('navigation', { name: 'Public navigation' }).getByRole('link', { name: 'Pricing' }).click();
     await expect(page.locator('#pricing')).toBeInViewport();
-    await expect(page.locator('#pricing')).toContainText('Up to 5 analysed pages');
-    await expect(page.locator('#pricing')).toContainText('Up to 50 analysed pages');
-    await expect(page.locator('#pricing')).toContainText('Up to 75 analysed pages');
+    await expect(page.locator('#pricing')).toContainText('Up to 5 pages');
+    await expect(page.locator('#pricing')).toContainText('Up to 50 pages');
+    await expect(page.locator('#pricing')).toContainText('Up to 75 pages');
     await expect(page.locator('#pricing')).not.toContainText('deployment');
     await expect(expectNoHorizontalOverflow(page)).resolves.toBe(true);
 
@@ -116,6 +116,7 @@ test.describe('guest audit integration', () => {
     await expect(summary).toContainText('2');
     await expect(summary).toContainText('5');
     const domainStrength = page.getByRole('region', { name: 'Domain strength' });
+    await page.getByText('Domain strength and external signals', { exact: true }).click();
     await expect(domainStrength).toContainText('Crawlio Domain Strength');
     await expect(domainStrength).toContainText('#23,456');
     await expect(domainStrength).toContainText('420');

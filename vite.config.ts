@@ -49,9 +49,6 @@ export default defineConfig(({ mode }) => {
             if (normalizedId.includes('@supabase')) {
               return 'supabase-vendor';
             }
-            if (normalizedId.includes('/lucide-react/')) {
-              return 'icons-vendor';
-            }
             if (normalizedId.includes('/motion/')) {
               return 'motion-vendor';
             }

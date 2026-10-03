@@ -1,9 +1,8 @@
 import { getAuthHeaders } from '../../lib/api/auth-headers';
 import type { AdminPage, AdminRecord } from '../../lib/admin/types';
+import { clearInflightReads, inflightRead } from '../../lib/http/inflight-read';
 
 const root = '/api/tools/admin/';
-type ReadEntry = { controller: AbortController; promise: Promise<unknown>; subscribers: number };
-const reads = new Map<string, ReadEntry>();
 let sessionAuthorization: string | null = null;
 
 async function sessionHeaders(json = false) {
@@ -11,8 +10,7 @@ async function sessionHeaders(json = false) {
   const authorization = new Headers(headers).get('authorization') || '';
   if (sessionAuthorization !== authorization) {
     sessionAuthorization = authorization;
-    for (const entry of reads.values()) entry.controller.abort();
-    reads.clear();
+    clearInflightReads();
   }
   return { headers, authorization };
 }
@@ -31,33 +29,9 @@ async function request<T>(path: string, init: RequestInit = {}, suppliedHeaders?
 
 export async function adminGet<T>(path: string, signal: AbortSignal): Promise<T> {
   signal.throwIfAborted();
-  const { headers, authorization } = await sessionHeaders();
+  const { headers } = await sessionHeaders();
   signal.throwIfAborted();
-  const key = JSON.stringify([authorization, path]);
-  let entry = reads.get(key);
-  if (!entry) {
-    const controller = new AbortController();
-    entry = { controller, subscribers: 0, promise: request<T>(path, { signal: controller.signal }, headers) };
-    reads.set(key, entry);
-    const current = entry;
-    void entry.promise.finally(() => { if (reads.get(key) === current) reads.delete(key); }).catch(() => {});
-  }
-  const current = entry;
-  current.subscribers += 1;
-  return new Promise<T>((resolve, reject) => {
-    let finished = false;
-    const finish = (callback: () => void) => {
-      if (finished) return;
-      finished = true;
-      signal.removeEventListener('abort', abort);
-      current.subscribers -= 1;
-      if (!current.subscribers && reads.get(key) === current) { reads.delete(key); current.controller.abort(); }
-      callback();
-    };
-    const abort = () => finish(() => reject(new DOMException('Request cancelled', 'AbortError')));
-    signal.addEventListener('abort', abort, { once: true });
-    current.promise.then(value => finish(() => resolve(value as T)), error => finish(() => reject(error)));
-  });
+  return inflightRead(`${root}${path}`, headers, sharedSignal => request<T>(path, { signal: sharedSignal }, headers), signal);
 }
 
 export async function adminPost<T = Record<string, unknown>>(path: string, body: Record<string, unknown> = {}) {

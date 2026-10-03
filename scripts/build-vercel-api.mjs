@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { rm } from 'node:fs/promises';
+import { rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 await rm('api/chunks', { recursive: true, force: true });
@@ -47,4 +47,16 @@ visit(entry);
 const initialBytes = [...visited].reduce((total, file) => total + outputs[file].bytes, 0);
 const maximumInitialBytes = 3_255_747;
 console.log(JSON.stringify({ vercelApiEntryBytes: outputs[entry].bytes, initialStaticBytes: initialBytes, initialFiles: visited.size }));
+const shell = new Set(visited);
+const families = {};
+for (const family of ['core', 'blog', 'admin', 'projects', 'search', 'exports', 'providers', 'tools', 'evidence']) {
+  const familyEntry = Object.keys(outputs).find(file => outputs[file].entryPoint?.replace(/\\/g, '/').endsWith(`/api/${family}-router.ts`));
+  visited.clear();
+  for (const file of shell) visited.add(file);
+  if (familyEntry) visit(familyEntry);
+  const dispatcher = Object.keys(outputs).find(file => outputs[file].entryPoint === 'src/api/index.ts');
+  if (dispatcher) visit(dispatcher);
+  families[family] = { staticBytes: [...visited].reduce((total, file) => total + outputs[file].bytes, 0), files: [...visited] };
+}
+await writeFile('dist/api-bundle-report.json', JSON.stringify({ shellBytes: initialBytes, entryBytes: outputs[entry].bytes, families }, null, 2));
 if (initialBytes > maximumInitialBytes) throw new Error(`Vercel API initial static bundle is ${initialBytes} bytes; budget is ${maximumInitialBytes}.`);

@@ -1,10 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, BarChart3, Cable, Eye, Loader2, MousePointerClick, RefreshCw, Search, TrendingDown, TrendingUp, Unplug } from 'lucide-react';
 import { MetricCard, StatusBadge, SurfaceCard } from './ui/visual-system';
 import { PageHeader } from './ui/page-system';
 import { API_ROUTES } from '../lib/api/routes';
 import { getAuthHeaders } from '../lib/api/auth-headers';
 import { safeJsonFetch } from '../lib/http/safe-json';
+import { inflightRead } from '../lib/http/inflight-read';
+import { useAuth } from '../contexts/AuthContext';
 
 type SearchRow = Record<string, any>;
 
@@ -27,6 +29,12 @@ function numberPick(row: SearchRow, names: string[]) {
 }
 
 export default function SearchData() {
+  const { user } = useAuth();
+  const accountId = user?.id || 'guest';
+  return <AccountSearchData key={accountId} accountId={accountId} />;
+}
+
+function AccountSearchData({ accountId }: { accountId: string }) {
   const [rows, setRows] = useState<SearchRow[]>([]);
   const [previousRows, setPreviousRows] = useState<SearchRow[]>([]);
   const [properties, setProperties] = useState<Array<{ id: string; siteUrl: string; lastSyncedAt: string | null; lastSyncStatus: string; lastSyncError?: string | null }>>([]);
@@ -36,46 +44,60 @@ export default function SearchData() {
   const [source, setSource] = useState<'csv' | 'search-console'>('csv');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [rowProperty, setRowProperty] = useState('');
+  const lifetime = useRef<AbortController | null>(null);
+  const selectedProperty = useRef(propertyId);
+  selectedProperty.current = propertyId;
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      setRows(stored ? JSON.parse(stored) : []);
-    } catch {
-      setRows([]);
-    }
+    const controller = new AbortController();
+    lifetime.current = controller;
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
-    let active = true;
+    try {
+      const owner = localStorage.getItem('crawlio_import_owner') || 'guest';
+      if (owner !== accountId) ['seo_gsc_data', 'seo_keyword_data', 'seo_backlink_data'].forEach(key => localStorage.removeItem(key));
+      localStorage.setItem('crawlio_import_owner', accountId);
+      const stored = localStorage.getItem(STORAGE_KEY);
+      const next = stored ? JSON.parse(stored) : [];
+      setRows(Array.isArray(next) ? next.slice(0, 20_000) : []);
+    } catch {
+      setRows([]);
+    }
+  }, [accountId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
     getAuthHeaders()
-      .then((headers) => safeJsonFetch<any>(API_ROUTES.searchConsoleStatus, { headers }))
+      .then((headers) => controller.signal.aborted ? null : inflightRead(API_ROUTES.searchConsoleStatus, headers, signal => safeJsonFetch<any>(API_ROUTES.searchConsoleStatus, { headers, credentials: 'same-origin', signal }), controller.signal))
       .then((response) => {
-        if (!active) return;
+        if (!response || controller.signal.aborted) return;
         if (!response.success) {
-          setConnectionError('Search Console status could not be loaded. Your local CSV data remains available.');
+          setConnectionError('Search Console status could not be loaded. Previously loaded connection data may be stale; local CSV data remains available.');
           return;
         }
         setConnectionError('');
         const data = response.data.data || response.data;
         setConfigured(Boolean(data.configured));
         setProperties(data.properties || []);
-        setPropertyId((current) => current || data.properties?.[0]?.id || '');
+        setPropertyId((current) => data.properties?.some((property: { id: string }) => property.id === current) ? current : data.properties?.[0]?.id || '');
       })
-      .catch(() => { if (active) setConnectionError('Search Console status could not be loaded. Your local CSV data remains available.'); });
-    return () => { active = false; };
+      .catch(nextError => { if (!controller.signal.aborted && nextError?.name !== 'AbortError') setConnectionError('Search Console status could not be loaded. Previously loaded connection data may be stale; local CSV data remains available.'); });
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
     if (!propertyId) return;
-    let active = true;
+    const controller = new AbortController();
     setBusy('load');
     getAuthHeaders()
-      .then((headers) => safeJsonFetch<any>(API_ROUTES.searchConsoleData(propertyId), { headers }))
+      .then((headers) => controller.signal.aborted ? null : inflightRead(API_ROUTES.searchConsoleData(propertyId), headers, signal => safeJsonFetch<any>(API_ROUTES.searchConsoleData(propertyId), { headers, credentials: 'same-origin', signal }), controller.signal))
       .then((response) => {
-        if (!active) return;
+        if (!response || controller.signal.aborted) return;
         if (!response.success) {
-          setError('Search Console rows could not be loaded. Previously imported data remains visible.');
+          setError('Search Console rows could not be loaded. Showing previous rows, which may be stale.');
           return;
         }
         const data = response.data.data || response.data;
@@ -83,35 +105,51 @@ export default function SearchData() {
         setRows(normalized.filter((row: any) => row.period === 'current'));
         setPreviousRows(normalized.filter((row: any) => row.period === 'previous'));
         setSource('search-console');
+        setRowProperty(properties.find(property => property.id === propertyId)?.siteUrl || propertyId);
+        setError('');
       })
-      .catch(() => { if (active) setError('Search Console rows could not be loaded. Previously imported data remains visible.'); })
-      .finally(() => active && setBusy(''));
-    return () => { active = false; };
+      .catch(nextError => { if (!controller.signal.aborted && nextError?.name !== 'AbortError') setError('Search Console rows could not be loaded. Showing previous rows, which may be stale.'); })
+      .finally(() => { if (!controller.signal.aborted) setBusy(current => current === 'load' ? '' : current); });
+    return () => controller.abort();
   }, [propertyId]);
 
   const connect = async () => {
+    const signal = lifetime.current?.signal;
+    if (!signal || signal.aborted || busy) return;
     setBusy('connect');
     setError('');
-    const response = await safeJsonFetch<any>(API_ROUTES.searchConsoleConnect, { method: 'POST', headers: await getAuthHeaders() });
+    const headers = await getAuthHeaders();
+    if (signal.aborted) return;
+    const response = await safeJsonFetch<any>(API_ROUTES.searchConsoleConnect, { method: 'POST', headers, signal });
+    if (signal.aborted) return;
     if (!response.success) setError((response as any).error);
     else window.location.assign((response.data.data || response.data).authorizationUrl);
     setBusy('');
   };
 
   const sync = async () => {
-    if (!propertyId) return;
+    const signal = lifetime.current?.signal;
+    if (!propertyId || !signal || signal.aborted || busy) return;
     setBusy('sync');
     setError('');
-    const response = await safeJsonFetch<any>(API_ROUTES.searchConsoleSync(propertyId), { method: 'POST', headers: await getAuthHeaders() });
+    const headers = await getAuthHeaders();
+    if (signal.aborted || selectedProperty.current !== propertyId) return;
+    const response = await safeJsonFetch<any>(API_ROUTES.searchConsoleSync(propertyId), { method: 'POST', headers, signal });
+    if (signal.aborted || selectedProperty.current !== propertyId) return;
     if (!response.success) setError((response as any).error);
     else window.location.reload();
     setBusy('');
   };
 
   const disconnect = async () => {
+    const signal = lifetime.current?.signal;
+    if (!signal || signal.aborted || busy) return;
     if (!window.confirm('Disconnect Google Search Console and remove imported Search Console rows?')) return;
     setBusy('disconnect');
-    const response = await safeJsonFetch<any>(API_ROUTES.searchConsoleConnection, { method: 'DELETE', headers: await getAuthHeaders() });
+    const headers = await getAuthHeaders();
+    if (signal.aborted) return;
+    const response = await safeJsonFetch<any>(API_ROUTES.searchConsoleConnection, { method: 'DELETE', headers, signal });
+    if (signal.aborted) return;
     if (!response.success) setError((response as any).error);
     else window.location.reload();
     setBusy('');
@@ -172,7 +210,7 @@ export default function SearchData() {
       <SurfaceCard className="p-5 md:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div><div className="flex items-center gap-2"><Cable className="h-5 w-5 text-accent" /><h2 className="text-lg font-semibold">Google Search Console</h2></div><p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">Connect an account you control to load real clicks, impressions, CTR, and average position. OAuth credentials and tokens remain server-only.</p></div>
-          {connectionError ? <StatusBadge tone="danger">Status unavailable</StatusBadge> : configured === null ? <StatusBadge tone="neutral"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking connection</StatusBadge> : configured === false ? <StatusBadge tone="warning">Server setup required</StatusBadge> : properties.length ? <div className="flex flex-col gap-2 sm:flex-row"><select className="suite-input min-w-64" value={propertyId} onChange={(event) => setPropertyId(event.target.value)}>{properties.map((property) => <option value={property.id} key={property.id}>{property.siteUrl}</option>)}</select><button type="button" className="trust-button" onClick={() => void sync()} disabled={!propertyId || busy === 'sync'}>{busy === 'sync' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Sync 28 days</button><button type="button" className="quiet-button" onClick={() => void disconnect()} disabled={busy === 'disconnect'} aria-label="Disconnect Search Console"><Unplug className="h-4 w-4" /></button></div> : <button type="button" className="trust-button" onClick={() => void connect()} disabled={busy === 'connect'}>{busy === 'connect' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Cable className="h-4 w-4" />} Connect Search Console</button>}
+          {connectionError ? <StatusBadge tone="danger">Status unavailable</StatusBadge> : configured === null ? <StatusBadge tone="neutral"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking connection</StatusBadge> : configured === false ? <StatusBadge tone="warning">Server setup required</StatusBadge> : properties.length ? <div className="flex flex-col gap-2 sm:flex-row"><select aria-label="Search Console property" className="suite-input min-w-64" value={propertyId} onChange={(event) => setPropertyId(event.target.value)}>{properties.map((property) => <option value={property.id} key={property.id}>{property.siteUrl}</option>)}</select><button type="button" className="trust-button" onClick={() => void sync()} disabled={!propertyId || Boolean(busy)}>{busy === 'sync' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Sync 28 days</button><button type="button" className="quiet-button" onClick={() => void disconnect()} disabled={Boolean(busy)} aria-label="Disconnect Search Console"><Unplug className="h-4 w-4" /></button></div> : <button type="button" className="trust-button" onClick={() => void connect()} disabled={Boolean(busy)}>{busy === 'connect' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Cable className="h-4 w-4" />} Connect Search Console</button>}
         </div>
         {configured === false && <p className="mt-3 text-xs text-muted-foreground">Add the three documented Search Console server variables in Vercel, then redeploy. CSV imports continue to work without them.</p>}
         {connectionError && <p role="status" className="mt-3 text-sm text-muted-foreground">{connectionError}</p>}
@@ -180,7 +218,7 @@ export default function SearchData() {
       </SurfaceCard>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Measured rows" value={rows.length} detail={source === 'search-console' ? 'From Google Search Console' : 'From local CSV imports'} icon={<BarChart3 className="h-6 w-6" />} tone="accent" />
+        <MetricCard label="Measured rows" value={rows.length} detail={source === 'search-console' ? `From ${rowProperty || 'Google Search Console'}${busy === 'load' ? ' / Loading selected property...' : ''}` : 'From local CSV imports'} icon={<BarChart3 className="h-6 w-6" />} tone="accent" />
         <MetricCard label="Queries" value={summary.queries || '-'} detail="Unique measured queries" icon={<Search className="h-6 w-6" />} tone="green" />
         <MetricCard label="Clicks" value={rows.length ? summary.clicks : '-'} detail={`${summary.impressions} impressions`} icon={<MousePointerClick className="h-6 w-6" />} tone="green" />
         <MetricCard label="Average position" value={summary.avgPosition ? summary.avgPosition.toFixed(1) : '-'} detail="Only when present in measured data" icon={<TrendingUp className="h-6 w-6" />} tone="yellow" />

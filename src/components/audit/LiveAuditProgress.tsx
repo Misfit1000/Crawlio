@@ -33,14 +33,15 @@ import { useAuditEntitlements } from '../../hooks/useAuditEntitlements';
 
 interface Props {
   auditId: string;
+  initialSnapshot?: ResourceAuditLiveData;
   onRerun?: (url: string, mode: AuditMode) => void | Promise<void>;
   onOpenWorkspace?: () => void;
 }
 
-async function loadStoredAuditSnapshot(auditId: string) {
+async function loadStoredAuditSnapshot(auditId: string, signal?: AbortSignal) {
   const url = API_ROUTES.auditResult(auditId);
   const headers = await getAuditAccessHeaders();
-  const response = await inflightRead(url, headers, () => safeJsonFetch<any>(url, { headers }));
+  const response = await inflightRead(url, headers, requestSignal => safeJsonFetch<any>(url, { headers, signal: requestSignal }), signal);
   if (!response.success) throw new Error((response as any).error || 'Audit result is unavailable.');
   return (response.data.data || response.data) as ResourceAuditLiveData;
 }
@@ -73,9 +74,9 @@ function humanizeAuditText(value?: string | null) {
       if (match.toLowerCase() === 'crawling') return 'scanning';
       return 'website scanner';
     })
-    .replace(/crawlability/gi, 'Google access')
+    .replace(/crawlability/gi, 'Crawler access')
     .replace(/canonical/gi, 'preferred page URL')
-    .replace(/indexability/gi, 'Google indexing')
+    .replace(/indexability/gi, 'Indexing directives')
     .replace(/robots\.txt/gi, 'search engine access rules')
     .replace(/security headers/gi, 'browser protections')
     .replace(/HSTS|CSP|X-Frame-Options|X-Content-Type-Options/gi, 'browser protection setting')
@@ -90,9 +91,11 @@ function formatLastUpdate(lastUpdateAt: number | undefined, now: number) {
   return `updated ${Math.floor(seconds / 60)}m ago`;
 }
 
-export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) {
+export function LiveAuditProgress({ auditId, initialSnapshot, onRerun, onOpenWorkspace }: Props) {
   const { exportsEnabled, pdfEnabled } = useAuditEntitlements();
-  const [data, setData] = useState<ResourceAuditLiveData>(() => createEmptyAuditLiveData());
+  const [data, setData] = useState<ResourceAuditLiveData>(() => initialSnapshot || createEmptyAuditLiveData());
+  const admission = useRef(initialSnapshot);
+  admission.current = initialSnapshot;
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [connection, setConnection] = useState<LiveAuditConnectionState>({
@@ -119,7 +122,10 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
 
   useEffect(() => {
     let isActive = true;
-    dataRef.current = createEmptyAuditLiveData();
+    const controller = new AbortController();
+    let renderFrame: number | undefined;
+    const seed = loadRetryKey === 0 && admission.current?.audit?.id === auditId ? admission.current : undefined;
+    dataRef.current = seed || createEmptyAuditLiveData();
     setData(dataRef.current);
     setError(null);
     setWarning(null);
@@ -136,7 +142,7 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
       if (isActive) setConnection({ transport: 'polling', status: 'closed', message, lastUpdateAt: Date.now() });
     };
 
-    loadStoredAuditSnapshot(auditId)
+    (seed ? Promise.resolve(seed) : loadStoredAuditSnapshot(auditId, controller.signal))
       .then(async (snapshot) => {
         if (!isActive) return;
         dataRef.current = snapshot;
@@ -155,9 +161,16 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
             if (!isActive) return;
             const merged = mergeAuditLiveData(dataRef.current, nextData);
             dataRef.current = merged;
-            setData(merged);
             if (isTerminalAuditStatus(merged.audit?.status)) {
+              if (renderFrame != null) cancelAnimationFrame(renderFrame);
+              renderFrame = undefined;
+              setData(merged);
               closeUpdates(isFinalReportPending(merged) ? 'Checks finished. Loading the saved report.' : 'Audit updates finished.');
+            } else if (renderFrame == null) {
+              renderFrame = requestAnimationFrame(() => {
+                renderFrame = undefined;
+                if (isActive) setData(dataRef.current);
+              });
             }
           },
           (err) => isActive && setWarning(err.message),
@@ -175,6 +188,8 @@ export function LiveAuditProgress({ auditId, onRerun, onOpenWorkspace }: Props) 
 
     return () => {
       isActive = false;
+      controller.abort();
+      if (renderFrame != null) cancelAnimationFrame(renderFrame);
       unsubscribeRef.current();
       unsubscribeRef.current = () => {};
     };

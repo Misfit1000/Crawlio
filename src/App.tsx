@@ -3,10 +3,8 @@ import { Mail, Loader2 } from 'lucide-react';
 import LandingPage, { type LandingDestination } from './components/LandingPage';
 import { useAuth } from './contexts/AuthContext';
 import { useTheme } from './contexts/ThemeContext';
-import { API_ROUTES } from './lib/api/routes';
-import { safeJsonFetch } from './lib/http/safe-json';
-import { getAuditStartHeaders } from './lib/api/auth-headers';
-import { createAuditSubmitGuard } from './lib/api/audit-submit-guard';
+import { AuditLaunchProvider, useAuditLaunch } from './contexts/AuditLaunchContext';
+import { loadLiveAuditScreen } from './lib/audit/live-screen-loader';
 import { BrandMark, LoadingSkeleton, ThemeToggle } from './components/ui/visual-system';
 import { MarketingShell, WorkspaceShell } from './components/layout/ProductShells';
 import { useLocation, useNavigate } from './app/router';
@@ -37,7 +35,7 @@ const Reports = lazy(() => import('./components/Reports'));
 const Settings = lazy(() => import('./components/Settings'));
 const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
 const SearchData = lazy(() => import('./components/SearchData'));
-const LiveAuditProgress = lazy(() => import('./components/audit/LiveAuditProgress').then((mod) => ({ default: mod.LiveAuditProgress })));
+const LiveAuditProgress = lazy(() => loadLiveAuditScreen().then((mod) => ({ default: mod.LiveAuditProgress })));
 const AuditWorkspace = lazy(() => import('./components/audit/AuditWorkspace'));
 const AuditHistoryPage = lazy(() => import('./components/audit/AuditHistoryPage'));
 const SharedReportPage = lazy(() => import('./components/audit/SharedReportPage'));
@@ -50,6 +48,10 @@ const NotFoundPage = lazy(() => import('./components/NotFoundPage'));
 export type { TabType } from './app/routes';
 
 export default function App() {
+  return <AuditLaunchProvider><AppContent /></AuditLaunchProvider>;
+}
+
+function AppContent() {
   const { user, loading: authLoading, logout, profilePending, unverifiedEmail, setUnverifiedEmail } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const routerLocation = useLocation();
@@ -75,13 +77,13 @@ export default function App() {
   const liveAuditSection: AuditWorkspaceSection = ['overview', 'seo', 'technical', 'crawlability', 'links', 'performance', 'accessibility', 'security', 'pages'].includes(requestedLiveSection || '')
     ? requestedLiveSection as AuditWorkspaceSection
     : 'overview';
-  const auditStartGuardRef = useRef(createAuditSubmitGuard());
+  const { startAudit, initialSnapshotFor } = useAuditLaunch();
 
   useEffect(() => {
     activateBrowserMonitoringForPath(pathname);
   }, [pathname]);
 
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => window.innerWidth >= 1024);
   const activeTab = tabForPath(pathname);
   const workspaceRoute = parseAuditWorkspacePath(pathname);
   const isSearching = isWorkspacePath(pathname);
@@ -179,21 +181,7 @@ export default function App() {
   };
 
   const startLiveAudit = async (rawUrl: string, mode: 'quick' | 'standard' | 'deep' = 'quick') => {
-    if (!auditStartGuardRef.current.begin()) return;
-    try {
-      const response = await safeJsonFetch<any>(API_ROUTES.auditStart, {
-        method: 'POST',
-        headers: await getAuditStartHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ url: rawUrl, mode }),
-      });
-      if (!response.success) {
-        throw new Error((response as any).error || 'The audit could not start. Please try again.');
-      }
-      const auditId = response.data.data?.auditId || response.data.auditId;
-      navigate(`/audit/live/${encodeURIComponent(auditId)}`);
-    } finally {
-      auditStartGuardRef.current.end();
-    }
+    await startAudit({ url: rawUrl, mode });
   };
 
   const openHomeSection = (sectionId: string) => {
@@ -302,6 +290,7 @@ export default function App() {
           <Suspense fallback={<div className="h-64 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-accent" /></div>}>
             <LiveAuditProgress
               auditId={liveAuditId}
+              initialSnapshot={initialSnapshotFor(liveAuditId)}
               onRerun={startLiveAudit}
               onOpenWorkspace={() => navigate(`/app/audits/${encodeURIComponent(liveAuditId)}/${liveAuditSection}`)}
             />

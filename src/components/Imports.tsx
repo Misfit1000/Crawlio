@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { API_ROUTES } from '../lib/api/routes';
 import { getAuthHeaders } from '../lib/api/auth-headers';
 import { safeJsonFetch } from '../lib/http/safe-json';
+import { inflightRead } from '../lib/http/inflight-read';
 import type { ProjectOverviewResponse } from '../lib/projects/types';
 import type { ImportSourceKind, ProjectDataImportSummary } from '../lib/imports/types';
 
@@ -25,8 +26,51 @@ function sumRows(rows: any[], names: string[]) {
   }, 0);
 }
 
+export function parseImportCsv(file: File, signal: AbortSignal): Promise<Record<string, any>[]> {
+  if (signal.aborted) return Promise.reject(new DOMException('The import was cancelled.', 'AbortError'));
+  if (file.size > 10 * 1024 * 1024) return Promise.reject(new Error('This CSV is over 10 MB. Export a smaller date range or split the file before importing.'));
+  return new Promise((resolve, reject) => {
+    const rows: Record<string, any>[] = [];
+    let parser: Papa.Parser | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal.removeEventListener('abort', cancel);
+      if (error) { parser?.abort(); reject(error); }
+      else resolve(rows);
+    };
+    const cancel = () => finish(new DOMException('The import was cancelled.', 'AbortError'));
+    signal.addEventListener('abort', cancel, { once: true });
+    // Papa's blob worker is blocked by the deployed CSP; yield between bounded file chunks.
+    try {
+      Papa.parse<Record<string, any>>(file, {
+        header: true, skipEmptyLines: true, preview: 20_001, worker: false, chunkSize: 64 * 1024,
+        chunk: (results, handle) => {
+          parser = handle;
+          if (settled || signal.aborted) { handle.abort(); return; }
+          if (results.errors.length) { finish(new Error(results.errors[0].message)); return; }
+          if (rows.length + results.data.length > 20_000) { finish(new Error('This CSV has more than 20,000 rows. Import a smaller date range to keep the workspace responsive.')); return; }
+          rows.push(...results.data);
+          handle.pause();
+          timer = setTimeout(() => { if (!settled && !signal.aborted) handle.resume(); }, 0);
+        },
+        complete: () => { if (!signal.aborted) finish(); },
+        error: error => finish(error),
+      });
+    } catch (error) { finish(error instanceof Error ? error : new Error('This CSV could not be parsed.')); }
+  });
+}
+
 export default function Imports() {
   const { user } = useAuth();
+  const accountId = user?.id || 'guest';
+  return <AccountImports key={accountId} accountId={accountId} signedIn={Boolean(user)} />;
+}
+
+function AccountImports({ accountId, signedIn: user }: { accountId: string; signedIn: boolean }) {
   const [keywordData, setKeywordData] = useState<any[]>([]);
   const [backlinkData, setBacklinkData] = useState<any[]>([]);
   const [gscData, setGscData] = useState<any[]>([]);
@@ -36,15 +80,38 @@ export default function Imports() {
   const [projects, setProjects] = useState<ProjectOverviewResponse['projects']>([]);
   const [projectId, setProjectId] = useState('');
   const [syncing, setSyncing] = useState<ImportSourceKind | 'loading' | null>(null);
+  const [remoteError, setRemoteError] = useState('');
+  const [parsing, setParsing] = useState<ImportSourceKind[]>([]);
+  const reads = useRef(new Map<string, AbortController>());
+  const selectedProject = useRef(projectId);
+  selectedProject.current = projectId;
+  const selectionInitialized = useRef(false);
+  const remoteLoaded = useRef(false);
   const kwFileRef = useRef<HTMLInputElement>(null);
   const blFileRef = useRef<HTMLInputElement>(null);
   const gscFileRef = useRef<HTMLInputElement>(null);
 
+  const begin = useCallback((key: string) => {
+    reads.current.get(key)?.abort();
+    const controller = new AbortController();
+    reads.current.set(key, controller);
+    return controller;
+  }, []);
+  const isCurrent = useCallback((key: string, controller: AbortController) => reads.current.get(key) === controller && !controller.signal.aborted, []);
+  const finish = useCallback((key: string, controller: AbortController) => { if (reads.current.get(key) === controller) reads.current.delete(key); }, []);
+  useEffect(() => () => { reads.current.forEach(controller => controller.abort()); reads.current.clear(); }, []);
+
   useEffect(() => {
+    try {
+      const owner = localStorage.getItem('crawlio_import_owner') || 'guest';
+      if (owner !== accountId) ['seo_gsc_data', 'seo_keyword_data', 'seo_backlink_data'].forEach(key => localStorage.removeItem(key));
+      localStorage.setItem('crawlio_import_owner', accountId);
+    } catch { return; }
     const loadStored = (key: string, setter: (rows: any[]) => void) => {
       try {
         const stored = localStorage.getItem(key);
-        if (stored) setter(JSON.parse(stored));
+        const rows = stored ? JSON.parse(stored) : [];
+        setter(Array.isArray(rows) ? rows.slice(0, 20_000) : []);
       } catch {
         setter([]);
       }
@@ -52,28 +119,41 @@ export default function Imports() {
     loadStored('seo_gsc_data', setGscData);
     loadStored('seo_keyword_data', setKeywordData);
     loadStored('seo_backlink_data', setBacklinkData);
-  }, []);
+  }, [accountId]);
 
   const refreshRemote = useCallback(async () => {
     if (!user) return;
+    const controller = begin('remote');
     setSyncing('loading');
-    const headers = await getAuthHeaders();
-    const [importsResponse, projectsResponse] = await Promise.all([
-      safeJsonFetch<any>(API_ROUTES.imports, { headers, credentials: 'same-origin' }),
-      safeJsonFetch<any>(API_ROUTES.projectsOverview, { headers, credentials: 'same-origin' }),
-    ]);
-    if (importsResponse.success) setRemoteImports(importsResponse.data.data?.imports || importsResponse.data.imports || []);
-    if (projectsResponse.success) {
-      const next = (projectsResponse.data.data || projectsResponse.data) as ProjectOverviewResponse;
-      setProjects(next.projects.filter((project) => project.id));
-      setProjectId((current) => current || next.projects.find((project) => project.id)?.id || '');
+    try {
+      const headers = await getAuthHeaders();
+      if (!isCurrent('remote', controller)) return;
+      const read = (url: string) => inflightRead(url, headers, signal => safeJsonFetch<any>(url, { headers, credentials: 'same-origin', signal }), controller.signal);
+      const [importsResponse, projectsResponse] = await Promise.all([read(API_ROUTES.imports), read(API_ROUTES.projectsOverview)]);
+      if (!isCurrent('remote', controller)) return;
+      const errors: string[] = [];
+      if (importsResponse.success === true) setRemoteImports(importsResponse.data.data?.imports || importsResponse.data.imports || []);
+      else errors.push(importsResponse.error);
+      if (projectsResponse.success === true) {
+        const next = (projectsResponse.data.data || projectsResponse.data) as ProjectOverviewResponse;
+        const tracked = next.projects.filter(project => project.id);
+        setProjects(tracked);
+        const initialized = selectionInitialized.current;
+        selectionInitialized.current = true;
+        setProjectId(current => initialized ? tracked.some(project => project.id === current) ? current : '' : tracked[0]?.id || '');
+      } else errors.push(projectsResponse.error);
+      setRemoteError(errors.length ? `${remoteLoaded.current ? 'Refresh failed; previous account data may be stale. ' : ''}${errors.join(' ')}` : '');
+      remoteLoaded.current = remoteLoaded.current || importsResponse.success || projectsResponse.success;
+    } catch (nextError) {
+      if (isCurrent('remote', controller) && !(nextError instanceof Error && nextError.name === 'AbortError')) setRemoteError(`Account data could not load; previous data may be stale. ${nextError instanceof Error ? nextError.message : ''}`);
+    } finally {
+      if (isCurrent('remote', controller)) { finish('remote', controller); setSyncing(current => current === 'loading' ? null : current); }
     }
-    setSyncing(null);
-  }, [user]);
+  }, [user, begin, isCurrent, finish]);
 
   useEffect(() => { void refreshRemote(); }, [refreshRemote]);
 
-  const syncImport = async (sourceKind: ImportSourceKind, fileName: string, rows: any[]) => {
+  const syncImport = async (sourceKind: ImportSourceKind, fileName: string, rows: any[], controller: AbortController, targetProject: string) => {
     if (!user) {
       setSyncMessage('Saved on this device. Sign in before importing to sync data across devices.');
       return;
@@ -83,49 +163,46 @@ export default function Imports() {
       return;
     }
     setSyncing(sourceKind);
+    const headers = await getAuthHeaders({ 'Content-Type': 'application/json' });
+    if (!isCurrent(`source:${sourceKind}`, controller) || selectedProject.current !== targetProject) return;
     const response = await safeJsonFetch<any>(API_ROUTES.imports, {
       method: 'POST',
-      headers: await getAuthHeaders({ 'Content-Type': 'application/json' }),
+      headers, signal: controller.signal,
       credentials: 'same-origin',
-      body: JSON.stringify({ sourceKind, fileName, projectId: projectId || null, rows }),
+      body: JSON.stringify({ sourceKind, fileName, projectId: targetProject || null, rows }),
     });
+    if (!isCurrent(`source:${sourceKind}`, controller) || selectedProject.current !== targetProject) return;
     if (response.success === false) setSyncMessage(`Saved on this device, but account sync failed: ${response.error}`);
     else {
-      setSyncMessage(`Saved ${rows.length.toLocaleString()} rows to your account${projectId ? ' and selected project' : ''}.`);
+      setSyncMessage(`Saved ${rows.length.toLocaleString()} rows to your account${targetProject ? ' and selected project' : ''}.`);
       await refreshRemote();
     }
-    setSyncing(null);
   };
 
-  const handleCsv = (e: React.ChangeEvent<HTMLInputElement>, setter: any, storageKey: string, sourceKind: ImportSourceKind) => {
+  const handleCsv = (e: React.ChangeEvent<HTMLInputElement>, setter: (rows: any[]) => void, storageKey: string, sourceKind: ImportSourceKind) => {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = '';
-    if (file.size > 10 * 1024 * 1024) {
-      setError('This CSV is over 10 MB. Export a smaller date range or split the file before importing.');
-      return;
-    }
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      preview: 20_001,
-      complete: (results) => {
-        if (results.errors.length > 0) {
-          setError(results.errors[0].message);
-        } else if (results.data.length > 20_000) {
-          setError('This CSV has more than 20,000 rows. Import a smaller date range to keep the workspace responsive.');
-        } else {
-          try {
-            localStorage.setItem(storageKey, JSON.stringify(results.data));
-            setter(results.data);
-            setError(null);
-            void syncImport(sourceKind, file.name, results.data);
-          } catch {
-            setError('The browser could not store this CSV. Clear older imports or use a smaller export. Your previous data was kept.');
-          }
-        }
+    const key = `source:${sourceKind}`;
+    const controller = begin(key);
+    const targetProject = selectedProject.current;
+    setParsing(current => [...current.filter(kind => kind !== sourceKind), sourceKind]);
+    setSyncMessage(null);
+    void (async () => {
+      try {
+        const rows = await parseImportCsv(file, controller.signal);
+        if (!isCurrent(key, controller) || selectedProject.current !== targetProject) return;
+        try { localStorage.setItem(storageKey, JSON.stringify(rows)); }
+        catch { throw new Error('The browser could not store this CSV. Clear older imports or use a smaller export. Your previous data was kept.'); }
+        setter(rows); setError(null);
+        setParsing(current => current.filter(kind => kind !== sourceKind));
+        await syncImport(sourceKind, file.name, rows, controller, targetProject);
+      } catch (nextError) {
+        if (isCurrent(key, controller) && !(nextError instanceof Error && nextError.name === 'AbortError')) setError(nextError instanceof Error ? nextError.message : 'This CSV could not be parsed. Your previous data was kept.');
+      } finally {
+        if (isCurrent(key, controller)) { finish(key, controller); setParsing(current => current.filter(kind => kind !== sourceKind)); setSyncing(current => current === sourceKind ? null : current); }
       }
-    });
+    })();
   };
 
   const latestRemote = (sourceKind: ImportSourceKind) => remoteImports.find((item) => (
@@ -135,16 +212,34 @@ export default function Imports() {
   const loadSynced = async (sourceKind: ImportSourceKind, setter: (rows: any[]) => void, storageKey: string) => {
     const batch = latestRemote(sourceKind);
     if (!batch) return;
+    const key = `source:${sourceKind}`;
+    const controller = begin(key);
+    const targetProject = selectedProject.current;
+    setParsing(current => current.filter(kind => kind !== sourceKind));
     setSyncing(sourceKind);
-    const response = await safeJsonFetch<any>(API_ROUTES.importRows(batch.id), { headers: await getAuthHeaders(), credentials: 'same-origin' });
-    if (response.success === false) setError(response.error);
-    else {
+    try {
+      const headers = await getAuthHeaders();
+      if (!isCurrent(key, controller)) return;
+      const url = API_ROUTES.importRows(batch.id);
+      const response = await inflightRead(url, headers, signal => safeJsonFetch<any>(url, { headers, credentials: 'same-origin', signal }), controller.signal);
+      if (!isCurrent(key, controller) || selectedProject.current !== targetProject) return;
+      if (response.success === false) throw new Error(response.error);
       const rows = response.data.data?.rows || response.data.rows || [];
-      setter(rows);
       localStorage.setItem(storageKey, JSON.stringify(rows));
+      setter(rows); setError(null);
       setSyncMessage(`Loaded ${rows.length.toLocaleString()} synced rows from ${batch.fileName}.`);
+    } catch (nextError) {
+      if (isCurrent(key, controller) && !(nextError instanceof Error && nextError.name === 'AbortError')) setError(`Synced import could not be loaded; previous device data was kept. ${nextError instanceof Error ? nextError.message : ''}`);
+    } finally {
+      if (isCurrent(key, controller)) { finish(key, controller); setSyncing(current => current === sourceKind ? null : current); }
     }
-    setSyncing(null);
+  };
+
+  const changeProject = (value: string) => {
+    selectedProject.current = value;
+    selectionInitialized.current = true;
+    reads.current.forEach((controller, key) => { if (key.startsWith('source:')) { controller.abort(); reads.current.delete(key); } });
+    setProjectId(value); setParsing([]); setSyncing(current => current === 'loading' ? current : null); setSyncMessage(null); setError(null);
   };
 
   const gscClicks = sumRows(gscData, ['clicks']);
@@ -165,8 +260,10 @@ export default function Imports() {
       <Notice tone="info" title="First-party and user-provided data only">Google Search Console and Bing data works only for sites you can verify or export. Crawlio does not invent search volume, rankings, traffic, backlinks, or authority metrics.</Notice>
 
       {error && <Notice tone="danger" title="Import failed">{error}</Notice>}
+      {remoteError && <Notice tone="danger" title="Account data unavailable">{remoteError}</Notice>}
+      {parsing.length > 0 && <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Parsing CSV...</p>}
       {syncMessage && <Notice tone={syncMessage.includes('failed') ? 'warning' : 'success'} title="Import storage">{syncMessage}</Notice>}
-      {user && <div className="trust-card flex flex-col gap-3 p-5 sm:flex-row sm:items-end sm:justify-between"><div><label htmlFor="import-project" className="text-sm font-semibold">Save imports to a project</label><p className="mt-1 text-xs text-muted-foreground">Synced imports are private to your account and expire after one year.</p></div><select id="import-project" className="suite-input max-w-sm" value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">Account library only</option>{projects.map((project) => <option key={project.id} value={project.id || ''}>{project.name}</option>)}</select></div>}
+      {user && <div className="trust-card flex flex-col gap-3 p-5 sm:flex-row sm:items-end sm:justify-between"><div><label htmlFor="import-project" className="text-sm font-semibold">Save imports to a project</label><p className="mt-1 text-xs text-muted-foreground">Synced imports are private to your account and expire after one year.</p></div><select id="import-project" className="suite-input max-w-sm" value={projectId} onChange={(event) => changeProject(event.target.value)}><option value="">Account library only</option>{projects.map((project) => <option key={project.id} value={project.id || ''}>{project.name}</option>)}</select></div>}
 
       <section aria-label="CSV import sources" className="grid grid-cols-1 gap-4 lg:grid-cols-3">
 

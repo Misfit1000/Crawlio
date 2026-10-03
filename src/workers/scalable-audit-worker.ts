@@ -255,9 +255,17 @@ export async function runScalableSlice(workerId: string, onActivity?: (auditId: 
   }
 }
 
-let lastRegistration = 0;
-export async function maintainScalableWorker(workerId: string) {
-  if (Date.now()-lastRegistration<30_000) return;
-  await registerScalableWorker(workerId);
-  lastRegistration=Date.now();
+const registrations = new Map<string, { attemptedAt: number; task?: Promise<void> }>();
+export function maintainScalableWorker(workerId: string): Promise<void> {
+  const previous = registrations.get(workerId);
+  if (previous?.task) return previous.task;
+  if (previous && Date.now() - previous.attemptedAt < 30_000) return Promise.resolve();
+  const registration = { attemptedAt: Date.now(), task: undefined as Promise<void> | undefined };
+  const task = registerScalableWorker(workerId).finally(() => {
+    registration.attemptedAt = Date.now();
+    registration.task = undefined;
+  });
+  registration.task = task;
+  registrations.set(workerId, registration);
+  return task;
 }

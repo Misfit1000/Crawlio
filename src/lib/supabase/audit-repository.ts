@@ -23,6 +23,18 @@ import { readAuditPresentationSummary } from '../audit/audit-presentation-summar
 import { readToolEvidence } from '../tools/audit-tools';
 
 type DbRow = Record<string, any>;
+const AUDIT_HISTORY_SUMMARY_SELECT = [
+  'id', 'processing_version', 'presentation_summary', 'user_id', 'project_id',
+  'submitted_input', 'normalized_url', 'final_url', 'hostname', 'mode', 'plan',
+  'requested_mode', 'effective_mode', 'queue_priority', 'processing_tier',
+  'quota_counted', 'worker_runtime', 'estimated_wait_seconds', 'status', 'progress',
+  'current_phase', 'current_url', 'current_check', 'page_limit', 'pages_discovered',
+  'pages_crawled', 'checks_total', 'checks_completed', 'issues_found', 'critical_count',
+  'high_count', 'medium_count', 'low_count', 'created_at', 'updated_at', 'started_at',
+  'completed_at', 'expires_at', 'cancelled_at', 'error', 'used_http_fallback',
+  'warning_count', 'failure_counts', 'archived_at', 'deleted_at', 'recovery_attempts',
+  'last_recovered_at', 'checkpoint_pages_crawled', 'checkpoint_updated_at',
+].join(',');
 export type WorkerHeartbeatStatus = 'starting' | 'idle' | 'running' | 'stopping' | 'stopped' | 'failed';
 
 export interface WorkerHeartbeat {
@@ -1376,7 +1388,7 @@ export const auditRepository = {
     if (client) {
       let query = client
         .from('audits')
-        .select('*', { count: 'exact' })
+        .select(input.summaryOnly ? AUDIT_HISTORY_SUMMARY_SELECT : '*', { count: 'exact' })
         .eq('user_id', input.userId)
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);

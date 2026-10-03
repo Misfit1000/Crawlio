@@ -1,0 +1,95 @@
+{
+  "origin": "https://crawlio1.vercel.app",
+  "observedAt": "2026-10-03T16:50:05.407Z",
+  "visits": [
+    {
+      "kind": "fresh",
+      "domContentLoadedMs": 3394,
+      "lcpMs": 3556,
+      "cls": 0,
+      "transferredBytes": 123645,
+      "scriptEncodedBytes": 44388,
+      "browserRequests": 5,
+      "apiRequests": [],
+      "requestedScripts": [
+        "/assets/index-Wyh6FUCt.js",
+        "/assets/react-vendor-CTuahcxZ.js",
+        "/assets/icons-vendor-BAB5Kge1.js"
+      ],
+      "cdnResponses": [
+        {
+          "path": "/",
+          "cache": "HIT",
+          "status": 200
+        },
+        {
+          "path": "/assets/icons-vendor-BAB5Kge1.js",
+          "cache": "HIT",
+          "status": 200
+        },
+        {
+          "path": "/assets/react-vendor-CTuahcxZ.js",
+          "cache": "HIT",
+          "status": 200
+        },
+        {
+          "path": "/assets/index-Wyh6FUCt.js",
+          "cache": "HIT",
+          "status": 200
+        },
+        {
+          "path": "/assets/index-vSEClY6D.css",
+          "cache": "MISS",
+          "status": 200
+        }
+      ],
+      "note": "Unthrottled local browser sample, not field Core Web Vitals or origin execution counts."
+    },
+    {
+      "kind": "repeat",
+      "domContentLoadedMs": 68,
+      "lcpMs": 108,
+      "cls": 0,
+      "transferredBytes": 300,
+      "scriptEncodedBytes": 44388,
+      "browserRequests": 5,
+      "apiRequests": [],
+      "requestedScripts": [
+        "/assets/index-Wyh6FUCt.js",
+        "/assets/react-vendor-CTuahcxZ.js",
+        "/assets/icons-vendor-BAB5Kge1.js"
+      ],
+      "cdnResponses": [
+        {
+          "path": "/",
+          "cache": "HIT",
+          "status": 200
+        },
+        {
+          "path": "/assets/index-Wyh6FUCt.js",
+          "cache": "HIT",
+          "status": 200
+        },
+        {
+          "path": "/assets/react-vendor-CTuahcxZ.js",
+          "cache": "HIT",
+          "status": 200
+        },
+        {
+          "path": "/assets/icons-vendor-BAB5Kge1.js",
+          "cache": "HIT",
+          "status": 200
+        },
+        {
+          "path": "/assets/index-vSEClY6D.css",
+          "cache": "MISS",
+          "status": 200
+        }
+      ],
+      "note": "Unthrottled local browser sample, not field Core Web Vitals or origin execution counts."
+    }
+  ],
+  "pricingRequests": [
+    "/api/tools/plans/public"
+  ]
+}
