@@ -30,11 +30,13 @@ import PaginatedAuditEvidence from './PaginatedAuditEvidence';
 import { AuditReportReadyNote, AuditTerminalState } from './AuditTerminalState';
 import { useFindingWorkflow } from './useFindingWorkflow';
 import { useAuditEntitlements } from '../../hooks/useAuditEntitlements';
+import { auditFocusLabel, isFocusedAudit, scopeIncludesSection, type AuditScope } from '../../lib/audit/audit-scope';
+import { auditScopeProgressLabel, reportCategoryScores, scopeEvents, scopeScoreMetadata } from '../../lib/report/scope-presentation';
 
 interface Props {
   auditId: string;
   initialSnapshot?: ResourceAuditLiveData;
-  onRerun?: (url: string, mode: AuditMode) => void | Promise<void>;
+  onRerun?: (url: string, mode: AuditMode, scope?: AuditScope | null) => void | Promise<void>;
   onOpenWorkspace?: () => void;
 }
 
@@ -299,7 +301,7 @@ export function LiveAuditProgress({ auditId, initialSnapshot, onRerun, onOpenWor
   const rerunAudit = () => {
     const url = audit?.normalizedUrl || data.audit?.normalizedUrl;
     const mode = audit?.effectiveMode || data.audit?.effectiveMode || 'quick';
-    if (url && onRerun) onRerun(url, mode);
+    if (url && onRerun) onRerun(url, mode, audit?.scope);
   };
 
   const downloadPdf = async () => {
@@ -336,13 +338,13 @@ export function LiveAuditProgress({ auditId, initialSnapshot, onRerun, onOpenWor
   const [selectedPage, setSelectedPage] = useState<ResourceAuditPage | null>(null);
   const closePage = useCallback(() => setSelectedPage(null), []);
   const liveScore = useMemo(() => audit ? getAuditLiveScore({ audit, events: data.latestEvents, finalReport: data.finalReport }) : null, [audit, data.latestEvents, data.finalReport]);
-  const categoryScores = useMemo(() => liveScore ? [
+  const categoryScores = useMemo(() => liveScore ? audit?.scope ? reportCategoryScores(audit.scope, { ...liveScore.categoryScores, overall: liveScore.overallScore }) : [
     { label: 'On-page SEO', value: liveScore.categoryScores.onPage ?? null },
     { label: 'Technical delivery', value: liveScore.categoryScores.technical ?? null },
     { label: 'Performance', value: liveScore.categoryScores.performance ?? null },
     { label: 'Passive security', value: liveScore.categoryScores.security ?? null },
     { label: 'Crawlability', value: liveScore.categoryScores.crawlability ?? null },
-  ].filter((item): item is AuditCategoryScore => item.value != null) : [], [liveScore]);
+  ].filter((item): item is AuditCategoryScore => item.value != null) : [], [liveScore, audit?.scope]);
   const coverageExplanation = useMemo(() => {
     if (!audit) return null;
     const finalCoverage = data.finalReport?.scores?.coverage as Record<string, unknown> | undefined;
@@ -355,10 +357,12 @@ export function LiveAuditProgress({ auditId, initialSnapshot, onRerun, onOpenWor
   if (error && !audit) return <SurfaceCard className="p-5" role="alert"><Notice tone="danger" title="Audit unavailable">{humanizeAuditText(error)}</Notice><div className="mt-4 flex flex-wrap gap-2"><button type="button" className="trust-button" onClick={() => setLoadRetryKey(value => value + 1)}><RefreshCw className="h-4 w-4" />Try again</button><Link className="quiet-button" to="/app/audits/history"><History className="h-4 w-4" />Audit history</Link><Link className="quiet-button" to="/app"><LayoutDashboard className="h-4 w-4" />Dashboard</Link></div></SurfaceCard>;
   if (!audit || !liveScore) return <SurfaceCard className="flex items-center gap-3 p-5"><Loader2 className="h-5 w-5 animate-spin text-accent" /><span>Loading stored audit evidence...</span></SurfaceCard>;
   const terminal = isTerminalAuditStatus(audit.status);
-  const workflowProps = { statuses: checklist, onStatusChange: setChecklistStatus, workflowRecords: findingWorkflow.records, workflowStorage: findingWorkflow.storage, workflowError: findingWorkflow.error, savingKeys: findingWorkflow.savingKeys, onWorkflowSave: findingWorkflow.update };
+  const workflowProps = { scope: audit.scope, statuses: checklist, onStatusChange: setChecklistStatus, workflowRecords: findingWorkflow.records, workflowStorage: findingWorkflow.storage, workflowError: findingWorkflow.error, savingKeys: findingWorkflow.savingKeys, onWorkflowSave: findingWorkflow.update };
+  const scopedScores = scopeScoreMetadata(audit.scope, data.finalReport?.scores);
+  const unavailableChecks = Array.isArray(scopedScores?.unavailableChecks) ? scopedScores.unavailableChecks.length : liveScore.unavailableCount;
   return <div className="audit-customer-workspace w-full space-y-4">
     <header className="flex flex-col gap-3 border-b border-border pb-4 lg:flex-row lg:items-center lg:justify-between">
-      <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><StatusBadge tone={isCompletedAuditStatus(audit.status) ? 'success' : terminal ? 'danger' : 'accent'}>{statusLabel(audit.status)}</StatusBadge><span className="text-xs text-muted-foreground">{tierLabel(audit.processingTier, audit.effectiveMode || audit.mode)}</span></div><h1 className="mt-2 break-words text-2xl font-semibold">{audit.hostname}</h1><p className="mt-1 break-all text-xs text-muted-foreground">{audit.normalizedUrl}</p></div>
+      <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><StatusBadge tone={isCompletedAuditStatus(audit.status) ? 'success' : terminal ? 'danger' : 'accent'}>{statusLabel(audit.status)}</StatusBadge><span className="text-xs text-muted-foreground">{audit.scope ? `${auditFocusLabel(audit.scope)} · ${audit.scope.coverage} coverage · ` : ''}{tierLabel(audit.processingTier, audit.effectiveMode || audit.mode)}</span></div><h1 className="mt-2 break-words text-2xl font-semibold">{audit.hostname}</h1><p className="mt-1 break-all text-xs text-muted-foreground">{audit.normalizedUrl}</p></div>
       <div className="flex flex-wrap gap-2">
         {data.finalReport && onOpenWorkspace && <button type="button" onClick={onOpenWorkspace} className="quiet-button min-h-9 px-3 py-1 text-xs"><BarChart3 className="h-4 w-4" />Detailed report</button>}
         {onRerun && terminal && <button type="button" onClick={rerunAudit} className="quiet-button min-h-9 px-3 py-1 text-xs"><RefreshCw className="h-4 w-4" />Rerun</button>}
@@ -368,7 +372,7 @@ export function LiveAuditProgress({ auditId, initialSnapshot, onRerun, onOpenWor
         {!terminal && <button type="button" onClick={cancelAudit} disabled={isCancelling} className="quiet-button min-h-9 px-3 py-1 text-xs text-[var(--danger)]">{isCancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : <StopCircle className="h-4 w-4" />}Stop</button>}
       </div>
     </header>
-    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground"><span className="inline-flex items-center gap-1.5">{connection.status === 'error' ? <WifiOff className="h-3.5 w-3.5" /> : <Wifi className="h-3.5 w-3.5" />}{terminal ? 'Stored audit' : formatLastUpdate(connection.lastUpdateAt, now)}</span><span className="inline-flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" />{formatAuditElapsed(audit, now)} elapsed</span>{!terminal && <span>{humanizeAuditText(audit.currentPhase)}</span>}</div>
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground"><span className="inline-flex items-center gap-1.5">{connection.status === 'error' ? <WifiOff className="h-3.5 w-3.5" /> : <Wifi className="h-3.5 w-3.5" />}{terminal ? 'Stored audit' : formatLastUpdate(connection.lastUpdateAt, now)}</span><span className="inline-flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" />{formatAuditElapsed(audit, now)} elapsed</span>{!terminal && <span>{humanizeAuditText(auditScopeProgressLabel(audit))}</span>}</div>
     <AuditTerminalState audit={audit} reportPending={reportPending} reportRetrying={reportPending && !reportRetryExhausted} onRetryReport={() => setReportRetryKey(value => value + 1)} />
     <AuditReportReadyNote warning={audit.status === 'completed_with_warnings' && Boolean(data.finalReport)} />
     {error && <Notice tone="danger" title="Some audit data could not refresh">{humanizeAuditText(error)}</Notice>}
@@ -377,13 +381,13 @@ export function LiveAuditProgress({ auditId, initialSnapshot, onRerun, onOpenWor
     {queuedTooLong && <Notice tone="warning" title="This audit is taking longer than usual to start">The audit engine may be waking up or finishing earlier work. Updates will resume automatically. Audit ID: {audit.id}</Notice>}
     <AuditWorkspaceModes mode={modes.mode} pathFor={modes.pathFor} />
     {modes.mode === 'overview' && <>
-      <AuditExecutiveSummary audit={audit} score={liveScore.overallScore} scoreState={liveScore.scoreState} scoreLabel={liveScore.scoreState === 'final' ? 'Final score' : 'Live score'} scoreDetail={liveScore.scoreState === 'provisional' ? `Preliminary, from ${liveScore.pagesAnalysed} analysed pages` : 'Stored deterministic score'} categoryScores={categoryScores} progress={Math.max(0, Math.min(100, audit.progress || 0))} unavailableChecks={liveScore.unavailableCount} />
+      <AuditExecutiveSummary audit={audit} score={liveScore.overallScore} scoreState={liveScore.scoreState} scoreLabel={liveScore.scoreState === 'final' ? 'Final score' : 'Live score'} scoreDetail={liveScore.scoreState === 'provisional' ? `Preliminary, from ${liveScore.pagesAnalysed} analysed pages` : 'Stored deterministic score'} categoryScores={categoryScores} progress={Math.max(0, Math.min(100, audit.progress || 0))} unavailableChecks={unavailableChecks} />
       {coverageExplanation && <p className="text-xs text-muted-foreground">{coverageExplanation}</p>}
       <AuditOverview data={data} onViewFindings={viewFindings} />
-      <details className="border-y border-border py-3"><summary className="cursor-pointer text-sm font-semibold">Score history</summary><div className="max-w-xl pt-4"><SparklineChart values={scoreTrend.filter(entry => entry.score != null).map(entry => entry.score!)} label="Stored final scores" valueLabel={scoreTrend.at(-1)?.score == null ? 'No final score yet' : String(scoreTrend.at(-1)!.score)} /></div><Link className="quiet-button mt-3 min-h-9 text-xs" to={auditWorkspacePath(auditId)}>Compare stored audits</Link></details>
+      {!isFocusedAudit(audit) && audit.scope?.coverage !== 'page' && <details className="border-y border-border py-3"><summary className="cursor-pointer text-sm font-semibold">Score history</summary><div className="max-w-xl pt-4"><SparklineChart values={scoreTrend.filter(entry => entry.score != null).map(entry => entry.score!)} label="Stored final scores" valueLabel={scoreTrend.at(-1)?.score == null ? 'No final score yet' : String(scoreTrend.at(-1)!.score)} /></div><Link className="quiet-button mt-3 min-h-9 text-xs" to={auditWorkspacePath(auditId)}>Compare stored audits</Link></details>}
     </>}
-    {modes.mode === 'findings' && <><nav className="flex flex-wrap gap-1 border-b border-border pb-2" aria-label="Detailed report categories">{(['seo', 'technical', 'crawlability', 'links', 'performance', 'accessibility', 'security'] as const).map(section => <Link key={section} to={auditWorkspacePath(auditId, section)} className="min-h-9 rounded-md px-3 py-2 text-xs capitalize text-muted-foreground hover:bg-muted">{section === 'seo' ? 'SEO' : section === 'security' ? 'Passive security' : section}</Link>)}</nav>{audit.processingVersion === 2 ? <PaginatedAuditEvidence auditId={auditId} kind="issues" {...workflowProps} /> : <FindingWorkspace auditId={auditId} issues={data.latestIssues} {...workflowProps} />}</>}
-    {modes.mode === 'pages' && (audit.processingVersion === 2 ? <PaginatedAuditEvidence auditId={auditId} kind="pages" pageIssues={data.latestIssues} /> : <section><h2 className="mb-3 text-lg font-semibold">Pages checked</h2><AuditPagesTable pages={data.latestPages} onSelect={setSelectedPage} /><PageEvidenceDrawer page={selectedPage} issues={data.latestIssues} onClose={closePage} /></section>)}
+    {modes.mode === 'findings' && <><nav className="flex flex-wrap gap-1 border-b border-border pb-2" aria-label="Detailed report categories">{(['seo', 'technical', 'crawlability', 'links', 'performance', 'structured-data', 'accessibility', 'security'] as const).filter(section => scopeIncludesSection(audit.scope, section)).map(section => <Link key={section} to={auditWorkspacePath(auditId, section)} className="min-h-9 rounded-md px-3 py-2 text-xs capitalize text-muted-foreground hover:bg-muted">{section === 'seo' ? 'SEO' : section === 'security' ? 'Passive security' : section.replace(/-/g, ' ')}</Link>)}</nav>{audit.processingVersion === 2 ? <PaginatedAuditEvidence auditId={auditId} kind="issues" {...workflowProps} /> : <FindingWorkspace auditId={auditId} issues={data.latestIssues} {...workflowProps} />}</>}
+    {modes.mode === 'pages' && (audit.processingVersion === 2 ? <PaginatedAuditEvidence scope={audit.scope} auditId={auditId} kind="pages" pageIssues={data.latestIssues} /> : <section><h2 className="mb-3 text-lg font-semibold">Pages checked</h2><AuditPagesTable scope={audit.scope} pages={data.latestPages} onSelect={setSelectedPage} /><PageEvidenceDrawer scope={audit.scope} page={selectedPage} issues={data.latestIssues} onClose={closePage} /></section>)}
     {modes.mode === 'activity' && <><div className="border-b border-border pb-4"><h2 className="text-sm font-semibold">{livePresentation?.heading}</h2><p className="mt-1 break-words text-sm text-muted-foreground">{livePresentation?.message}</p>{livePresentation?.target && <p className="mt-1 break-all text-xs text-muted-foreground">{livePresentation.target}</p>}</div><AuditActivityFeed events={data.latestEvents} /><details className="border-y border-border py-3"><summary className="cursor-pointer text-sm font-semibold">Audit details and queue state</summary><dl className="grid gap-4 pt-4 sm:grid-cols-2 lg:grid-cols-3">{[['Audit ID', audit.id], ['Submitted input', audit.submittedInput], ['Cleaned URL', audit.normalizedUrl], ['Final URL', audit.finalUrl || 'Not recorded'], ['Audit mode', getAuditModeLabel(audit.mode)], ['Pages', `${audit.pagesCrawled} / ${audit.pageLimit}`], ['Current check', humanizeAuditText(audit.currentCheck)], ['Created', new Date(audit.createdAt).toLocaleString()], ['Plan', audit.plan || 'free']].map(([label, value]) => <div key={label}><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 break-all text-sm">{value}</dd></div>)}</dl>{audit.status === 'queued' && audit.estimatedWaitSeconds != null && <p className="mt-4 text-xs text-muted-foreground">Estimated start: {audit.estimatedWaitSeconds > 0 ? `about ${Math.max(1, Math.ceil(audit.estimatedWaitSeconds / 60))} minutes` : 'next available slot'}. Estimates may change.</p>}</details></>}
     {terminal && audit.processingTier === 'free' && <p className="text-xs text-muted-foreground">Standard audit access provides broader reachable-page coverage and extended export options.</p>}
   </div>;

@@ -1,4 +1,5 @@
 import { blogRepository } from './repository';
+import { PUBLIC_PAGES } from '../../components/public/public-pages.mjs';
 import { BRAND } from '../brand';
 import { blogArticleUrl } from './seo';
 
@@ -27,14 +28,8 @@ export async function renderBlogSitemap(origin: string) {
     blogRepository.listPublishedTopics(),
   ]);
   const urls = [
-    { loc: `${origin}/`, changefreq: 'weekly', priority: '1.0', lastmod: null },
+    ...PUBLIC_PAGES.map(page => ({ loc: `${origin}${page.path}`, changefreq: page.kind === 'legal' ? 'yearly' : 'monthly', priority: page.path === '/' ? '1.0' : page.kind === 'legal' ? '0.3' : '0.6', lastmod: null })),
     { loc: `${origin}/blog`, changefreq: 'weekly', priority: '0.8', lastmod: null },
-    { loc: `${origin}/tools`, changefreq: 'monthly', priority: '0.6', lastmod: null },
-    { loc: `${origin}/privacy`, changefreq: 'yearly', priority: '0.3', lastmod: null },
-    { loc: `${origin}/terms`, changefreq: 'yearly', priority: '0.3', lastmod: null },
-    { loc: `${origin}/acceptable-use`, changefreq: 'yearly', priority: '0.3', lastmod: null },
-    { loc: `${origin}/cookies`, changefreq: 'yearly', priority: '0.2', lastmod: null },
-    { loc: `${origin}/contact`, changefreq: 'yearly', priority: '0.4', lastmod: null },
     ...topics.map((topic) => ({ loc: `${origin}/blog/topic/${encodeURIComponent(topic.slug)}`, changefreq: 'weekly', priority: '0.6', lastmod: topic.latestPublishedAt })),
     ...posts.map((post) => ({ loc: blogArticleUrl(origin, post.slug), changefreq: 'monthly', priority: '0.7', lastmod: post.updatedAt, imageUrl: post.imageUrl })),
   ];

@@ -9,6 +9,8 @@ import { BrandMark, LoadingSkeleton, ThemeToggle } from './components/ui/visual-
 import { MarketingShell, WorkspaceShell } from './components/layout/ProductShells';
 import { useLocation, useNavigate } from './app/router';
 import { BRAND } from './lib/brand';
+import type { AuditScope } from './lib/audit/audit-scope';
+import { publicPageForPath } from './app/public-routes';
 import { activateBrowserMonitoringForPath } from './lib/monitoring/sentry-browser';
 import {
   TAB_PATHS,
@@ -43,6 +45,10 @@ const BlogIndex = lazy(() => import('./components/blog/BlogIndex'));
 const BlogPostPage = lazy(() => import('./components/blog/BlogPostPage'));
 const LegalPage = lazy(() => import('./components/LegalPage'));
 const ToolsHub = lazy(() => import('./components/tools/ToolsHub'));
+const AuditPages = lazy(() => import('./components/public/AuditPages'));
+const ToolsPublicPage = lazy(() => import('./components/public/ToolsPublicPage'));
+const PricingPage = lazy(() => import('./components/public/PricingPage'));
+const ExampleReportPage = lazy(() => import('./components/public/ExampleReportPage'));
 const NotFoundPage = lazy(() => import('./components/NotFoundPage'));
 
 export type { TabType } from './app/routes';
@@ -56,7 +62,9 @@ function AppContent() {
   const { theme, toggleTheme } = useTheme();
   const routerLocation = useLocation();
   const navigate = useNavigate();
-  const pathname = routerLocation.pathname;
+  const pathname = routerLocation.pathname.replace(/\/$/, '') || '/';
+  const publicPage = publicPageForPath(pathname);
+  const canonicalOrigin = useRef(new URL(document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href || window.location.origin).origin);
   const [authMode, setAuthMode] = useState<'login' | 'register' | null>(() => {
     if (window.location.pathname === '/admin/login' || window.location.pathname === '/login') {
       return 'login';
@@ -123,30 +131,31 @@ function AppContent() {
   useEffect(() => {
     if (pathname === '/login' || pathname === '/admin/login') setAuthMode('login');
     if (pathname === '/register') setAuthMode('register');
-    if (pathname === '/pricing') window.setTimeout(() => document.getElementById('pricing')?.scrollIntoView({ block: 'start' }), 80);
-    if (pathname === '/reports/example') window.setTimeout(() => document.getElementById('reports')?.scrollIntoView({ block: 'start' }), 80);
   }, [pathname]);
 
   useEffect(() => {
+    // Standalone tool metadata is owned by its lazy page module.
+    if (publicPage?.kind === 'tool') return;
     const pages: Record<string, { title: string; description: string }> = {
-      '/': { title: `${BRAND.name} - ${BRAND.tagline}`, description: BRAND.description },
-      '/pricing': { title: `Pricing and Free Audit Limits | ${BRAND.name}`, description: `Compare ${BRAND.name} Quick, Standard, and Deep audit limits without hidden ranking or backlink data claims.` },
-      '/reports/example': { title: `Example Website Audit Report | ${BRAND.name}`, description: `Explore an example ${BRAND.name} report with website health, coverage, passive security, previews, and prioritized fixes.` },
-      '/tools': { title: `Free SEO Tools | ${BRAND.name}`, description: 'Private browser tools for search previews, robots rules, structured data and observed header remediation.' },
       '/login': { title: `Sign in | ${BRAND.name}`, description: `Sign in to manage ${BRAND.name} website audits and reports.` },
       '/register': { title: `Create an account | ${BRAND.name}`, description: `Create a ${BRAND.name} account to save audits, reports, and fix progress.` },
       '/admin/login': { title: `Administrator sign in | ${BRAND.name}`, description: `Secure administrator access for ${BRAND.name}.` },
     };
-    const page = pages[pathname]
+    const page = (publicPage && publicPage.kind !== 'legal' ? { title: `${publicPage.title} | ${BRAND.name}`, description: publicPage.description } : null) || pages[pathname]
       || (pathname.startsWith('/audit/live/') ? { title: `Live website audit | ${BRAND.name}`, description: 'Follow website checks and collected evidence as the audit runs.' } : null)
       || (pathname.startsWith('/app') ? { title: `Audit workspace | ${BRAND.name}`, description: 'Review website audits, findings, reports, imports, and saved history.' } : null)
-      || (pathname.startsWith('/admin') ? { title: `Admin dashboard | ${BRAND.name}`, description: `Manage ${BRAND.name} users, audits, plans, blog operations, and deployment health.` } : null);
+      || (pathname.startsWith('/admin') ? { title: `Admin dashboard | ${BRAND.name}`, description: `Manage ${BRAND.name} users, audits, plans, blog operations, and deployment health.` } : null)
+      || (!knownPublicRoute ? { title: `Page not found | ${BRAND.name}`, description: 'This page does not exist. Browse Crawlio audits and tools.' } : null);
     if (!page) return;
     const description = document.querySelector<HTMLMetaElement>('meta[name="description"]');
     const canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
     document.title = page.title;
     if (description) description.content = page.description;
-    if (canonical) canonical.href = `${window.location.origin}${pathname}`;
+    if (canonical) canonical.href = `${canonicalOrigin.current}${pathname}`;
+    for (const selector of ['meta[property="og:title"]', 'meta[name="twitter:title"]']) document.querySelector<HTMLMetaElement>(selector)?.setAttribute('content', page.title);
+    for (const selector of ['meta[property="og:description"]', 'meta[name="twitter:description"]']) document.querySelector<HTMLMetaElement>(selector)?.setAttribute('content', page.description);
+    document.querySelector<HTMLMetaElement>('meta[property="og:url"]')?.setAttribute('content', `${canonicalOrigin.current}${pathname}`);
+    if (publicPage) document.querySelector('script[type="application/ld+json"]')?.replaceChildren(document.createTextNode(JSON.stringify({ '@context': 'https://schema.org', '@type': 'WebPage', name: page.title, description: page.description, url: `${canonicalOrigin.current}${pathname}` })));
   }, [pathname]);
 
   useEffect(() => {
@@ -166,7 +175,7 @@ function AppContent() {
 
   useEffect(() => {
     const robots = document.querySelector<HTMLMetaElement>('meta[name="robots"]') || document.head.appendChild(Object.assign(document.createElement('meta'), { name: 'robots' }));
-    robots.content = pathname.startsWith('/app') || pathname.startsWith('/admin') || pathname.startsWith('/audit/live/') || pathname.startsWith('/share/') || pathname === '/login' || pathname === '/register'
+    robots.content = !knownPublicRoute || pathname.startsWith('/app') || pathname.startsWith('/admin') || pathname.startsWith('/audit/live/') || pathname.startsWith('/share/') || pathname === '/login' || pathname === '/register'
       ? 'noindex, nofollow'
       : 'index, follow';
   }, [pathname]);
@@ -180,8 +189,8 @@ function AppContent() {
     }
   };
 
-  const startLiveAudit = async (rawUrl: string, mode: 'quick' | 'standard' | 'deep' = 'quick') => {
-    await startAudit({ url: rawUrl, mode });
+  const startLiveAudit = async (rawUrl: string, mode: 'quick' | 'standard' | 'deep' = 'quick', scope?: AuditScope) => {
+    await startAudit({ url: rawUrl, mode, scope });
   };
 
   const openHomeSection = (sectionId: string) => {
@@ -206,7 +215,7 @@ function AppContent() {
   const blogMatch = pathname.match(/^\/blog(?:\/([^/]+))?\/?$/);
   const isBlogRoute = Boolean(blogMatch);
   const shareMatch = pathname.match(/^\/share\/([A-Za-z0-9_-]{40,80})\/?$/);
-  const knownPublicRoute = pathname === '/' || pathname === '/tools' || pathname === '/pricing' || pathname === '/reports/example' || pathname === '/login' || pathname === '/register' || isBlogRoute || Boolean(shareMatch) || Boolean(legalKind);
+  const knownPublicRoute = Boolean(publicPage) || pathname === '/login' || pathname === '/register' || isBlogRoute || Boolean(shareMatch) || Boolean(legalKind);
   let blogSlug = '';
   if (blogMatch?.[1]) {
     try {
@@ -356,7 +365,7 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-background text-foreground font-sans overflow-x-hidden selection:bg-accent/30 transition-colors duration-300">
       {authMode && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[#0b1b46]/35 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={authMode === 'login' ? 'Sign in' : 'Create account'}>
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[var(--overlay)] p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={authMode === 'login' ? 'Sign in' : 'Create account'}>
           <div className="relative w-full max-w-md">
             <Suspense fallback={<div className="flex items-center justify-center rounded-xl border border-border bg-card p-8"><Loader2 className="h-6 w-6 animate-spin text-accent" /></div>}>
               {authMode === 'login' ? (
@@ -370,9 +379,13 @@ function AppContent() {
       )}
 
       <div className="relative z-10 flex flex-col min-h-screen">
-        {pathname === '/tools' ? (
+        {publicPage && publicPage.kind !== 'home' && publicPage.kind !== 'legal' ? (
           <MarketingShell theme={theme} onToggleTheme={toggleTheme} userLabel={user?.username || (user ? 'Account' : null)} authLoading={authLoading} navigationBase="/" onHome={() => navigate('/')} onLogin={() => setAuthMode('login')} onSettings={() => openAppTab('settings')} onLogout={handleLogout}>
-            <main id="main-content" className="section-shell py-8" tabIndex={-1}><Suspense fallback={<LoadingSkeleton rows={5} />}><ToolsHub /></Suspense></main>
+            <Suspense fallback={<LoadingSkeleton rows={5} />}>
+              {publicPage.kind === 'audits' || publicPage.kind === 'audit' ? <AuditPages slug={'slug' in publicPage ? publicPage.slug : undefined} />
+                : publicPage.kind === 'tools' || publicPage.kind === 'tool' ? <ToolsPublicPage slug={'slug' in publicPage ? publicPage.slug : undefined} />
+                : publicPage.kind === 'pricing' ? <PricingPage /> : <ExampleReportPage />}
+            </Suspense>
           </MarketingShell>
         ) : shareMatch ? (
           <MarketingShell theme={theme} onToggleTheme={toggleTheme} userLabel={user?.username || (user ? 'Account' : null)} authLoading={authLoading} navigationBase="/" onHome={() => navigate('/')} onLogin={() => setAuthMode('login')} onSettings={() => openAppTab('settings')} onLogout={handleLogout}>

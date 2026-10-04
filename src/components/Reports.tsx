@@ -60,6 +60,9 @@ import {
   SurfaceCard,
 } from './ui/visual-system';
 import { PageHeader } from './ui/page-system';
+import { auditFocusLabel, auditScopeScoreLabel, isFocusedAudit, scopeIncludesGroup, type AuditScope } from '../lib/audit/audit-scope';
+import { reportCategoryScores, scopeFindings, scopeIncludesReportSection, scopeScoreMetadata } from '../lib/report/scope-presentation';
+import { AuditScopeNotIncluded } from './audit/AuditScopeNotIncluded';
 
 type ApiEnvelope<T> = { success: boolean; data: T; error?: string };
 type PageStatusFilter = 'all' | '2xx' | '3xx' | '4xx' | '5xx';
@@ -158,6 +161,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
   const initialSectionHandled = useRef(false);
   const viewCopy = reportViewCopy(initialSection);
   const [history, setHistory] = useState<AuditHistoryEntry[]>([]);
+  const [historyScopes, setHistoryScopes] = useState<Record<string, AuditScope | null>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [reportData, setReportData] = useState<ResourceAuditLiveData | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
@@ -177,6 +181,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
       .then((response) => {
         if (!active || !response.success) throw new Error((response as any).error || 'Stored audit history is unavailable.');
         const page = (response.data.data || response.data) as AuditHistoryPage<AuditReportSummary>;
+        setHistoryScopes(Object.fromEntries(page.items.map(item => [item.audit.id, item.audit.scope || null])));
         const entries = page.items
           .map((item) => buildHistoryEntry({ audit: item.audit, latestEvents: [], latestPages: [], latestIssues: [], finalReport: item.finalReport }))
           .filter((entry): entry is AuditHistoryEntry => Boolean(entry));
@@ -239,11 +244,14 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
   }, [pageQuery, pageStatus, pageSort, selectedId]);
 
   const selectedHistory = history.find((entry) => entry.auditId === selectedId) || null;
+  const scope = reportData?.audit?.scope || (selectedId ? historyScopes[selectedId] : null);
+  const includedSections = useMemo(() => REPORT_SECTIONS.filter(section => scopeIncludesReportSection(scope, section.id)), [scope]);
+  const categories = useMemo(() => reportCategoryScores(scope, reportData?.finalReport?.scores), [scope, reportData?.finalReport?.scores]);
   const groupedSites = useMemo(() => new Set(history.map((entry) => entry.normalizedUrl)).size, [history]);
-  const scores = useMemo(() => extractReportScores(reportData?.finalReport?.scores), [reportData]);
+  const scores = useMemo(() => extractReportScores(scopeScoreMetadata(scope, reportData?.finalReport?.scores)), [reportData, scope]);
   const overallScore = scores.overall ?? (isCompletedAuditStatus(selectedHistory?.status) ? selectedHistory?.score ?? null : null);
   const scoreIsFinal = scores.overall != null || (isCompletedAuditStatus(selectedHistory?.status) && selectedHistory?.score != null);
-  const issues = reportData?.latestIssues || selectedHistory?.topIssues || [];
+  const issues = useMemo(() => scopeFindings(scope, reportData?.latestIssues || selectedHistory?.topIssues || []), [scope, reportData?.latestIssues, selectedHistory?.topIssues]);
   const pages = reportData?.latestPages || [];
   const recommendations = useMemo(() => groupRecommendations(issues), [issues]);
   const counts = severityCounts(reportData, selectedHistory);
@@ -333,6 +341,11 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
     );
   }
 
+  const requestedSection = initialSection?.replace(/^report-/, '');
+  if (scope && requestedSection && REPORT_SECTIONS.some(section => section.id === requestedSection) && !scopeIncludesReportSection(scope, requestedSection)) {
+    return <div className="w-full space-y-5"><PageHeader eyebrow="Audit report" icon={FileText} title={auditFocusLabel(scope)} /><AuditScopeNotIncluded /></div>;
+  }
+
   return (
     <div className="w-full space-y-8 animate-rise">
       <PageHeader
@@ -353,14 +366,14 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
             </select>
             <div className="mt-5 space-y-2 text-sm">
               <div className="flex justify-between gap-4"><span className="text-muted-foreground">Website</span><span className="max-w-[65%] truncate font-semibold">{reportData?.audit?.normalizedUrl || selectedHistory?.normalizedUrl}</span></div>
-              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Audit type</span><span className="font-semibold">{reportData?.audit?.effectiveMode || selectedHistory?.mode || 'Not stored'}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Audit type</span><span className="font-semibold">{scope ? `${auditFocusLabel(scope)} · ${scope.coverage} coverage` : reportData?.audit?.effectiveMode || selectedHistory?.mode || 'Not stored'}</span></div>
               <div className="flex justify-between gap-4"><span className="text-muted-foreground">Ended</span><span className="text-right font-semibold">{formatDate(reportData?.audit?.completedAt || reportData?.audit?.cancelledAt || selectedHistory?.completedAt || selectedHistory?.updatedAt)}</span></div>
               <div className="flex justify-between gap-4"><span className="text-muted-foreground">Saved audits</span><span className="font-semibold tabular-nums">{history.length} across {groupedSites} site(s)</span></div>
             </div>
           </div>
           <div className="p-5 md:p-6">
             <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-              <AuditGrade score={overallScore} detail={scoreIsFinal ? 'Stored final audit engine score' : `No final score: audit ${selectedHistory?.status || 'not completed'}`} />
+              <AuditGrade score={overallScore} label={scope ? auditScopeScoreLabel(scope) : undefined} detail={scoreIsFinal ? 'Stored final audit engine score' : `No final score: audit ${selectedHistory?.status || 'not completed'}`} />
               <div className="flex flex-wrap gap-2 no-print">
                 <button type="button" onClick={copyReportLink} className="quiet-button"><Share2 className="h-4 w-4" /> Copy link</button>
                 <button type="button" onClick={() => window.print()} className="quiet-button"><Printer className="h-4 w-4" /> Print</button>
@@ -381,7 +394,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
       <StickyReportNavigation items={[
         { id: 'report-summary', label: 'Summary' },
         { id: 'recommendations', label: 'Top fixes', count: recommendations.length },
-        ...REPORT_SECTIONS.map((section) => ({ id: `report-${section.id}`, label: section.label, count: sectionGroups.get(section.id)?.length || 0 })),
+        ...includedSections.map((section) => ({ id: `report-${section.id}`, label: section.label, count: sectionGroups.get(section.id)?.length || 0 })),
         { id: 'report-pages', label: 'Pages', count: pages.length },
         { id: 'report-exports', label: 'Exports' },
       ]} />
@@ -392,7 +405,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
           <p className="mt-1 text-sm text-muted-foreground">The audit result and its measured categories, before technical detail.</p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard label="Overall grade" value={scoreToGrade(overallScore) || '--'} detail={overallScore == null ? 'Not measured' : `${Math.round(overallScore)}/100 final score`} icon={<BarChart3 className="h-5 w-5" />} tone={overallScore != null && overallScore >= 80 ? 'green' : 'yellow'} />
+          <MetricCard label={scope ? auditScopeScoreLabel(scope) : 'Overall grade'} value={scoreToGrade(overallScore) || '--'} detail={overallScore == null ? 'Not measured' : `${Math.round(overallScore)}/100 final score`} icon={<BarChart3 className="h-5 w-5" />} tone={overallScore != null && overallScore >= 80 ? 'green' : 'yellow'} />
           <MetricCard label="Pages checked" value={reportData?.audit?.pagesCrawled ?? selectedHistory?.pagesCrawled ?? '--'} detail={reportData?.audit ? `${reportData.audit.pagesDiscovered} discovered` : 'Stored audit summary'} icon={<Layers className="h-5 w-5" />} />
           <MetricCard label="Fix now" value={counts.critical} detail={`${counts.high} high-priority finding(s)`} icon={<AlertTriangle className="h-5 w-5" />} tone={counts.critical ? 'red' : counts.high ? 'yellow' : 'green'} />
           <MetricCard label="Observed pages" value={pages.length || '--'} detail={pages.length ? `${pageMetrics.errorPages} returned an error status` : 'Page details unavailable'} icon={<Globe2 className="h-5 w-5" />} />
@@ -403,13 +416,13 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
             <h3 className="text-lg font-semibold">Section grades</h3>
             <p className="mt-1 text-sm text-muted-foreground">A-F uses A: 90-100, B: 80-89, C: 70-79, D: 60-69, E: 50-59, F: below 50.</p>
             <div className="mt-5 grid gap-x-8 sm:grid-cols-2">
-              <CategoryGradeCard label="On-page SEO" score={scores.seo} description="Metadata and page content." icon={<Search className="h-4 w-4" />} />
+              {scope ? categories.map(category => <CategoryGradeCard key={category.label} label={category.label} score={category.value} description="Selected measured checks." icon={<FileText className="h-4 w-4" />} />) : <><CategoryGradeCard label="On-page SEO" score={scores.seo} description="Metadata and page content." icon={<Search className="h-4 w-4" />} />
               <CategoryGradeCard label="Technical SEO" score={scores.technical} description="Technical delivery checks." icon={<Wrench className="h-4 w-4" />} />
               <CategoryGradeCard label="Crawlability" score={scores.crawlability} description="Discovery and index signals." icon={<Globe2 className="h-4 w-4" />} />
               <CategoryGradeCard label="Performance" score={scores.performance} description="Observed response and size signals." icon={<BarChart3 className="h-4 w-4" />} />
               <CategoryGradeCard label="Passive Security Review" score={scores.security} description="Non-invasive public observations." icon={<ShieldCheck className="h-4 w-4" />} />
               <CategoryGradeCard label="Accessibility signals" score={scores.accessibility} description="Deterministic HTML observations, not certification." icon={<Accessibility className="h-4 w-4" />} />
-              <CategoryGradeCard label="Mobile usability" score={null} description="Not scored by this audit." icon={<MonitorSmartphone className="h-4 w-4" />} />
+              <CategoryGradeCard label="Mobile usability" score={null} description="Not scored by this audit." icon={<MonitorSmartphone className="h-4 w-4" />} /></>}
             </div>
           </SurfaceCard>
           <SurfaceCard className="p-5 md:p-6">
@@ -422,7 +435,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
         {reportData?.finalReport?.summary && <SurfaceCard className="p-5 md:p-6"><h3 className="text-lg font-semibold">Audit engine summary</h3><p className="mt-2 max-w-5xl text-sm leading-7 text-muted-foreground">{reportData.finalReport.summary}</p></SurfaceCard>}
       </section>
 
-      {firstPage && reportData?.audit && (
+      {firstPage && reportData?.audit && !isFocusedAudit({ scope }) && (
         <SitePreviewSection
           url={firstPage.url || reportData.audit.normalizedUrl}
           hostname={reportData.audit.hostname}
@@ -456,7 +469,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
         )}
       </section>
 
-      {REPORT_SECTIONS.map((section) => {
+      {includedSections.map((section) => {
         const sectionFindings = sectionGroups.get(section.id) || [];
         return (
           <section key={section.id} id={`report-${section.id}`} className="scroll-mt-32 space-y-5" aria-labelledby={`report-${section.id}-title`}>
@@ -511,7 +524,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
               <input value={pageQuery} onChange={(event) => setPageQuery(event.target.value)} placeholder="Search URL, title, or status" className="suite-input pl-10" />
             </label>
             <label><span className="sr-only">Filter status codes</span><select value={pageStatus} onChange={(event) => setPageStatus(event.target.value as PageStatusFilter)} className="suite-input"><option value="all">All status codes</option><option value="2xx">2xx success</option><option value="3xx">3xx redirects</option><option value="4xx">4xx errors</option><option value="5xx">5xx errors</option></select></label>
-            <label><span className="sr-only">Sort pages</span><select value={pageSort} onChange={(event) => setPageSort(event.target.value as PageSort)} className="suite-input"><option value="issues">Most fixes</option><option value="response">Slowest response</option><option value="size">Largest response</option><option value="status">Highest status code</option><option value="url">URL A-Z</option></select></label>
+            <label><span className="sr-only">Sort pages</span><select value={pageSort} onChange={(event) => setPageSort(event.target.value as PageSort)} className="suite-input"><option value="issues">Most fixes</option>{scopeIncludesGroup(scope, 'performance') && <><option value="response">Slowest response</option><option value="size">Largest response</option></>}<option value="status">Highest status code</option><option value="url">URL A-Z</option></select></label>
           </div>
 
           {pages.length ? (
@@ -519,19 +532,18 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
               <div className="overflow-x-auto" role="region" aria-label="Audited page results" tabIndex={0}>
                 <table className="suite-table min-w-[900px]">
                   <caption className="sr-only">Audited pages with status, observed response time, HTML size, crawl depth, and finding count.</caption>
-                  <thead><tr><th>Page</th><th>Status</th><th>Response</th><th>HTML size</th><th>Depth</th><th>Fixes</th></tr></thead>
+                  <thead><tr><th>Page</th><th>Status</th>{scopeIncludesGroup(scope, 'performance') && <><th>Response</th><th>HTML size</th></>}<th>Depth</th><th>Fixes</th></tr></thead>
                   <tbody>
                     {visiblePages.map((page) => (
                       <tr key={page.id || page.url}>
-                        <td className="max-w-[430px]"><div className="truncate font-semibold" title={page.url}>{page.title || page.url}</div>{page.title && <div className="mt-1 truncate text-xs text-muted-foreground" title={page.url}>{page.url}</div>}</td>
+                        <td className="max-w-[430px]"><div className="truncate font-semibold" title={page.url}>{scopeIncludesGroup(scope, 'seo') ? page.title || page.url : page.url}</div>{scopeIncludesGroup(scope, 'seo') && page.title && <div className="mt-1 truncate text-xs text-muted-foreground" title={page.url}>{page.url}</div>}</td>
                         <td><StatusBadge tone={page.statusCode <= 0 || page.statusCode >= 400 ? 'danger' : page.statusCode >= 300 ? 'warning' : 'success'}>{page.statusCode || 'No response'}</StatusBadge></td>
-                        <td className="tabular-nums">{formatMilliseconds(page.responseTimeMs)}</td>
-                        <td className="tabular-nums">{formatBytes(page.pageSizeBytes)}</td>
+                        {scopeIncludesGroup(scope, 'performance') && <><td className="tabular-nums">{formatMilliseconds(page.responseTimeMs)}</td><td className="tabular-nums">{formatBytes(page.pageSizeBytes)}</td></>}
                         <td className="tabular-nums">{page.crawlDepth}</td>
                         <td className="font-semibold tabular-nums">{page.issueCount}</td>
                       </tr>
                     ))}
-                    {!visiblePages.length && <tr><td colSpan={6} className="py-10 text-center text-muted-foreground">No pages match these filters.</td></tr>}
+                    {!visiblePages.length && <tr><td colSpan={scopeIncludesGroup(scope, 'performance') ? 6 : 4} className="py-10 text-center text-muted-foreground">No pages match these filters.</td></tr>}
                   </tbody>
                 </table>
               </div>

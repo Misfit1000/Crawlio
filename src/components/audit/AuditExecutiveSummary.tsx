@@ -6,6 +6,8 @@ import { isTerminalAuditStatus } from '../../lib/audit/audit-time';
 import { issueSignature, type ChecklistStatus } from '../../lib/audit/client-insights';
 import { findingImpact } from '../../lib/audit/report-insights';
 import { auditCoverage } from '../../lib/audit/audit-evidence-quality';
+import { auditScopeScoreLabel } from '../../lib/audit/audit-scope';
+import { auditScopeProgressLabel } from '../../lib/report/scope-presentation';
 import { AuditGrade, CategoryScoreBar, ProgressBar, SeverityDistribution, StatusBadge } from '../ui/visual-system';
 
 export interface AuditCategoryScore {
@@ -16,7 +18,7 @@ export interface AuditCategoryScore {
 }
 
 export const AuditExecutiveSummary = memo(function AuditExecutiveSummary({
-  audit, score, scoreState = 'unavailable', scoreLabel = 'Overall score', scoreDetail,
+  audit, score, scoreState = 'unavailable', scoreLabel, scoreDetail,
   categoryScores = [], progress, unavailableChecks = null,
 }: {
   audit: ResourceAuditDocument;
@@ -34,8 +36,8 @@ export const AuditExecutiveSummary = memo(function AuditExecutiveSummary({
   return <section className="audit-compact-summary" aria-label="Audit summary">
     <div className="min-w-0 py-4">
       <div className="mb-3"><StatusBadge tone={scoreState === 'final' ? 'success' : scoreState === 'provisional' ? 'accent' : 'neutral'}>{scoreState === 'final' ? 'Final score' : scoreState === 'provisional' ? 'Preliminary' : terminal ? 'Unavailable' : 'Score pending'}</StatusBadge></div>
-      <AuditGrade score={score} label={scoreLabel} detail={scoreDetail} compact />
-      {progress != null && !terminal && <div className="mt-4"><ProgressBar label={audit.currentPhase || 'Audit progress'} value={progress} /></div>}
+      <AuditGrade score={score} label={audit.scope ? auditScopeScoreLabel(audit.scope) : scoreLabel || 'Overall score'} detail={scoreDetail} compact />
+      {progress != null && !terminal && <div className="mt-4"><ProgressBar label={auditScopeProgressLabel(audit)} value={progress} /></div>}
     </div>
     <div className="min-w-0 py-4">
       <h2 className="mb-3 text-sm font-semibold">Finding priority <span className="ml-1 text-xs font-normal text-muted-foreground">{audit.issuesFound.toLocaleString()} total</span></h2>
@@ -46,7 +48,7 @@ export const AuditExecutiveSummary = memo(function AuditExecutiveSummary({
       <dl className="grid grid-cols-2 gap-x-3 gap-y-3">
         {[[coverage.analysed.toLocaleString(), 'Pages analysed'], [coverage.discovered.toLocaleString(), 'URLs discovered'], [audit.checksCompleted.toLocaleString(), 'Check groups'], [limitationCount.toLocaleString(), unavailableChecks == null ? 'Warnings' : 'Unavailable checks']].map(([value, label]) => <div key={label}><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{value}</dd></div>)}
       </dl>
-      <p className="mt-3 text-xs text-muted-foreground">{coverage.allowance.toLocaleString()} page allowance. Discovered URLs are not total site size.</p>
+      <p className="mt-3 text-xs text-muted-foreground">{audit.scope?.coverage === 'page' ? `Single-page coverage. ${(audit.planPageLimit ?? coverage.allowance).toLocaleString()} pages in your plan allowance.` : `${(audit.planPageLimit ?? coverage.allowance).toLocaleString()} page allowance. Discovered URLs are not total site size.`}</p>
       {coverage.discoveredPercent != null && <div className="mt-3"><ProgressBar label="Discovered pages analysed" value={coverage.discoveredPercent} tone="green" /></div>}
     </div>
     {categoryScores.length > 0 && <div className="min-w-0 py-4"><h2 className="mb-3 text-sm font-semibold">Measured score factors</h2><div className="grid gap-2.5">{categoryScores.map(item => <CategoryScoreBar key={item.label} label={item.label} value={item.value} framed={false} />)}</div></div>}

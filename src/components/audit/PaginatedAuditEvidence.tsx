@@ -5,6 +5,8 @@ import type { ReportSectionId } from '../../lib/audit/report-insights';
 import { useUrlFilter } from '../../app/use-url-filter';
 import FindingWorkspace, { type EvidenceFilters } from './FindingWorkspace';
 import { AuditPagesTable, PageEvidenceDrawer } from './PageEvidenceDrawer';
+import { scopeIncludesReportSection } from '../../lib/report/scope-presentation';
+import { AuditScopeNotIncluded } from './AuditScopeNotIncluded';
 
 type Props = Omit<React.ComponentProps<typeof FindingWorkspace>, 'issues' | 'evidenceFilters'> & {
   auditId: string;
@@ -18,11 +20,12 @@ export default React.memo(function PaginatedAuditEvidence(props: Props) {
   return <EvidenceSession key={`${props.auditId}:${props.kind}:${props.section || ''}`} {...props} />;
 });
 
-function EvidenceSession({ auditId, kind, section, pageIssues = [], ...workflow }: Props) {
+function EvidenceSession({ auditId, kind, section, pageIssues = [], scope, ...workflow }: Props) {
   const [search, setSearch] = useUrlFilter('finding');
   const [severity, setSeverity] = useUrlFilter('priority', 'all');
   const [category, setCategory] = useUrlFilter('category', 'all');
   const [reportSection, setReportSection] = useUrlFilter('section', section || 'all');
+  const excluded = kind === 'issues' && (Boolean(section && !scopeIncludesReportSection(scope, section)) || (reportSection !== 'all' && !scopeIncludesReportSection(scope, reportSection)));
   const [cursors, setCursors] = useState<Array<string | undefined>>([undefined]);
   const [page, setPage] = useState<EvidencePage | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,6 +51,7 @@ function EvidenceSession({ auditId, kind, section, pageIssues = [], ...workflow 
   useEffect(() => { setSessionFilter(filterKey); setCursors([undefined]); }, [filterKey]);
 
   useEffect(() => {
+    if (excluded) return;
     const controller = new AbortController();
     setLoading(true); setError(''); setPage(null); setSelected(null);
     const loadPage = async () => {
@@ -73,11 +77,12 @@ function EvidenceSession({ auditId, kind, section, pageIssues = [], ...workflow 
     };
     const timer = window.setTimeout(() => { void loadPage(); }, kind === 'issues' ? 300 : 0);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [auditId, kind, activeCursor, severity, category, reportSection, search, retry]);
+  }, [auditId, kind, activeCursor, severity, category, reportSection, search, retry, excluded]);
 
+  if (excluded) return <AuditScopeNotIncluded />;
   return <section className="min-w-0 space-y-3" aria-label={`Paginated ${kind}`} aria-busy={loading}>
-    {kind === 'issues' && <FindingWorkspace auditId={auditId} issues={page?.items as ResourceAuditIssue[] || []} {...workflow} evidenceFilters={filters} />}
-    {kind === 'pages' && <><h2 className="text-lg font-semibold">Pages</h2><AuditPagesTable pages={page?.items as ResourceAuditPage[] || []} onSelect={setSelected} /><PageEvidenceDrawer page={selected} issues={pageIssues} onClose={close} /></>}
+    {kind === 'issues' && <FindingWorkspace auditId={auditId} scope={scope} issues={page?.items as ResourceAuditIssue[] || []} {...workflow} evidenceFilters={filters} />}
+    {kind === 'pages' && <><h2 className="text-lg font-semibold">Pages</h2><AuditPagesTable scope={scope} pages={page?.items as ResourceAuditPage[] || []} onSelect={setSelected} /><PageEvidenceDrawer scope={scope} page={selected} issues={pageIssues} onClose={close} /></>}
     <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
       <p role="status">{loading ? 'Loading stored evidence...' : error ? 'Evidence unavailable' : `Evidence page ${cursors.length}: ${page?.items.length || 0} records${page?.total != null ? ` of ${page.total} matching ${kind}` : ''}.`}{kind === 'issues' && ' Filters apply to all stored findings.'}</p>
       <nav className="flex flex-wrap gap-2" aria-label="Evidence pagination">

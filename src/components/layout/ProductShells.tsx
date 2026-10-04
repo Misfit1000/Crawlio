@@ -5,6 +5,7 @@ import { BRAND } from '../../lib/brand';
 import { Link, useLocation } from '../../app/router';
 import { auditWorkspacePath, parseAuditWorkspacePath, TAB_PATHS, tabForPath } from '../../app/routes';
 import { adminGroupForPath, adminSectionForPath, clientGroupForTab } from '../navigation/product-navigation';
+import { PUBLIC_NAVIGATION } from '../public/public-navigation.mjs';
 
 type Theme = 'light' | 'dark';
 
@@ -67,7 +68,6 @@ export function MarketingShell({
   onLogin,
   onSettings,
   onLogout,
-  navigationBase = '',
 }: {
   children: ReactNode;
   theme: Theme;
@@ -81,40 +81,36 @@ export function MarketingShell({
   navigationBase?: string;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const links = [
-    ['Features', `${navigationBase}#features`],
-    ['How it works', `${navigationBase}#how-it-works`],
-    ['Pricing', `${navigationBase}#pricing`],
-    ['Reports', `${navigationBase}#example-report`],
-    ['Blog', '/blog'],
-    ['Tools', '/tools'],
-  ];
-  const auditHref = `${navigationBase}#start-audit`;
+  const { pathname } = useLocation();
+  const links = PUBLIC_NAVIGATION;
+  const auditHref = '/#start-audit';
   return (
     <div className="flex min-h-screen flex-col">
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <header className="sticky top-0 z-50 border-b border-border/80 bg-card/92 backdrop-blur-xl">
         <div className="section-shell flex h-[4.5rem] items-center justify-between gap-4">
           <button type="button" onClick={onHome} className="rounded-lg" aria-label={`${BRAND.name} home`}><BrandMark /></button>
-          <nav className="hidden items-center gap-1 lg:flex" aria-label="Public navigation">
-            {links.map(([label, href]) => <a key={href} href={href} className="rounded-lg px-3 py-2 text-sm font-semibold text-muted-foreground hover:bg-muted hover:text-foreground">{label}</a>)}
+          <nav className="hidden items-center gap-1 xl:flex" aria-label="Public navigation">
+            {links.map(({ label, path }) => <Link key={path} to={path} aria-current={pathname === path || pathname.startsWith(`${path}/`) ? 'page' : undefined} className="rounded-lg px-3 py-2 text-sm font-semibold text-muted-foreground hover:bg-muted hover:text-foreground aria-[current=page]:text-foreground">{label}</Link>)}
           </nav>
           <div className="flex items-center gap-2">
             <ThemeToggle theme={theme} onToggle={onToggleTheme} />
             {authLoading ? <div className="hidden h-10 w-20 animate-pulse rounded-lg bg-muted sm:block" /> : userLabel ? (
               <>
-                <button type="button" onClick={onSettings} className="quiet-button hidden min-h-10 px-3 py-2 sm:inline-flex"><User className="h-4 w-4" />{userLabel}</button>
-                <button type="button" onClick={onLogout} className="rounded-lg p-2.5 text-muted-foreground hover:bg-red-500/10 hover:text-red-600" aria-label="Sign out"><LogOut className="h-5 w-5" /></button>
+                <Link to="/app" className="quiet-button hidden min-h-10 px-3 py-2 md:inline-flex">Workspace</Link>
+                <button type="button" onClick={onSettings} className="quiet-button min-h-10 px-3 py-2" aria-label="Account settings" title="Account settings"><User className="h-4 w-4 shrink-0" /><span className="hidden max-w-24 truncate xl:inline">{userLabel}</span></button>
+                <button type="button" onClick={onLogout} className="hidden rounded-lg p-2.5 text-muted-foreground hover:bg-red-500/10 hover:text-red-600 sm:block" aria-label="Sign out"><LogOut className="h-5 w-5" /></button>
               </>
             ) : <button type="button" onClick={onLogin} className="hidden min-h-10 rounded-lg px-3 text-sm font-semibold text-foreground hover:bg-muted sm:block">Sign in</button>}
-            <a href={auditHref} className="trust-button min-h-10 px-4 py-2 text-sm"><span className="hidden sm:inline">Start free audit</span><span className="sm:hidden">Audit</span><ArrowRight className="hidden h-4 w-4 sm:block" /></a>
-            <button type="button" onClick={() => setMenuOpen((open) => !open)} className="rounded-lg p-2.5 text-muted-foreground hover:bg-muted lg:hidden" aria-expanded={menuOpen} aria-controls="public-mobile-nav" aria-label="Toggle navigation">{menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}</button>
+            <Link to={auditHref} className="trust-button min-h-10 px-3 py-2 text-sm"><span className="hidden sm:inline">Start audit</span><span className="sm:hidden">Audit</span><ArrowRight className="hidden h-4 w-4 sm:block" /></Link>
+            <button type="button" onClick={() => setMenuOpen((open) => !open)} className="rounded-lg p-2.5 text-muted-foreground hover:bg-muted xl:hidden" aria-expanded={menuOpen} aria-controls="public-mobile-nav" aria-label="Toggle navigation">{menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}</button>
           </div>
         </div>
         {menuOpen && (
-          <nav id="public-mobile-nav" className="border-t border-border bg-[var(--surface-raised)] p-4 shadow-[0_12px_32px_var(--shadow-color)] lg:hidden" aria-label="Mobile public navigation">
+          <nav id="public-mobile-nav" className="border-t border-border bg-[var(--surface-raised)] p-4 shadow-[0_12px_32px_var(--shadow-color)] xl:hidden" aria-label="Mobile public navigation">
             <div className="mx-auto grid max-w-xl gap-1">
-              {links.map(([label, href]) => <a key={href} href={href} onClick={() => setMenuOpen(false)} className="rounded-lg border border-transparent px-4 py-3 text-base font-semibold text-foreground hover:border-border hover:bg-muted">{label}</a>)}
+              {links.map(({ label, path }) => <Link key={path} to={path} onClick={() => setMenuOpen(false)} className="rounded-lg border border-transparent px-4 py-3 text-base font-semibold text-foreground hover:border-border hover:bg-muted">{label}</Link>)}
+              {userLabel && <><Link to="/app" onClick={() => setMenuOpen(false)} className="quiet-button">Workspace</Link><button type="button" onClick={() => { setMenuOpen(false); onSettings(); }} className="quiet-button">Account settings</button><button type="button" onClick={() => { setMenuOpen(false); onLogout(); }} className="quiet-button">Sign out</button></>}
               {!userLabel && <button type="button" onClick={() => { setMenuOpen(false); onLogin(); }} className="mt-2 quiet-button w-full">Sign in</button>}
             </div>
           </nav>
@@ -190,7 +186,7 @@ function PublicFooter() {
         </div>
         <nav aria-label="Product links">
           <h2 className="text-sm font-semibold">Product</h2>
-          <div className="mt-3 grid gap-2 text-sm text-muted-foreground"><a href="/#features" className="hover:text-foreground">Features</a><a href="/#pricing" className="hover:text-foreground">Pricing</a><a href="/tools" className="hover:text-foreground">SEO tools</a><a href="/blog" className="hover:text-foreground">Blog</a><a href="/contact" className="hover:text-foreground">Contact</a></div>
+          <div className="mt-3 grid gap-2 text-sm text-muted-foreground">{PUBLIC_NAVIGATION.map(({ label, path }) => <Link key={path} to={path} className="hover:text-foreground">{label}</Link>)}<Link to="/contact" className="hover:text-foreground">Contact</Link></div>
         </nav>
         <nav aria-label="Legal links">
           <h2 className="text-sm font-semibold">Trust and legal</h2>

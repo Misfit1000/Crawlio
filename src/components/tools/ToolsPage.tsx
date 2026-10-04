@@ -13,6 +13,7 @@ import styles from './ToolsPage.module.css';
 export interface ToolsPageProps {
   initialPage?: ResourceAuditPage;
   embedded?: boolean;
+  tool?: 'metadata' | 'structured-data' | 'headers';
 }
 
 const TABS = ['SERP / social', 'Structured data', 'Headers'] as const;
@@ -294,13 +295,18 @@ function HeaderTool({ page, observed, observationError, embedded }: {
   </section>;
 }
 
-function ToolsWorkspace({ initialPage, embedded, baseline, observed, observationError }: ToolsPageProps & {
+function ToolsWorkspace({ initialPage, embedded, tool, baseline, observed, observationError }: ToolsPageProps & {
   baseline: PreviewMetadata; observed: ObservedHeaderFinding[]; observationError: string;
 }) {
   const [active, setActive] = useState(0);
   const id = useId();
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const Title = embedded ? 'h2' : 'h1';
+  if (tool) return <div className={`${styles.embedded} ${styles.root}`}>
+    {tool === 'metadata' && <PreviewTool baseline={baseline} audited={!!initialPage} />}
+    {tool === 'structured-data' && <SchemaTool />}
+    {tool === 'headers' && <HeaderTool page={initialPage} observed={observed} observationError={observationError} />}
+  </div>;
   return <div className={`${embedded ? styles.embedded : 'suite-page'} ${styles.root}`}>
     <header className={styles.row}>
       <div><Title className={embedded ? 'text-xl' : 'text-2xl'}>Low-cost tools</Title><p className={styles.note}>Browser-only tools. No saved changes, crawler requests, or audit score changes.</p></div>
@@ -318,13 +324,13 @@ function ToolsWorkspace({ initialPage, embedded, baseline, observed, observation
   </div>;
 }
 
-export default function ToolsPage({ initialPage, embedded = false }: ToolsPageProps) {
+export default function ToolsPage({ initialPage, embedded = false, tool }: ToolsPageProps) {
   const baseline = previewMetadataFromPage(initialPage);
   let observed: ObservedHeaderFinding[] = [];
   let observationError = '';
   try { observed = headerFindingsFromPage(initialPage); }
   catch (error) { observationError = error instanceof Error ? error.message : 'Invalid retained header evidence.'; }
   // New evidence resets all local overrides; ordinary parent re-renders do not.
-  const sourceKey = JSON.stringify([initialPage?.id, initialPage?.crawledAt, baseline, observed, observationError]);
-  return <ToolsWorkspace key={sourceKey} initialPage={initialPage} embedded={embedded} baseline={baseline} observed={observed} observationError={observationError} />;
+  const sourceKey = JSON.stringify([tool, initialPage?.id, initialPage?.crawledAt, baseline, observed, observationError]);
+  return <ToolsWorkspace key={sourceKey} initialPage={initialPage} embedded={embedded} tool={tool} baseline={baseline} observed={observed} observationError={observationError} />;
 }

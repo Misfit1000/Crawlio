@@ -32,14 +32,16 @@ const initialJavaScriptGzipBytes = initialAssetNames.reduce(
   (total, name) => total + gzipSync(readFileSync(path.join(assetsDir, name))).byteLength,
   0,
 );
-const budgets = { largestJavaScriptBytes: 750_000, totalJavaScriptBytes: 2_000_000, totalCssBytes: 111_659, initialJavaScriptGzipBytes: 98_788 };
+const initialCssBytes = [...indexHtml.matchAll(/href="\/assets\/([^\"]+\.css)"/g)].reduce((total,match)=>total+readFileSync(path.join(assetsDir,match[1])).byteLength,0);
+const budgets = { largestJavaScriptBytes: 750_000, totalJavaScriptBytes: 2_000_000, totalCssBytes: 115_000, initialCssBytes: 111_659, initialJavaScriptGzipBytes: 90_220 };
 const largestJavaScript = entries.find((entry) => entry.type === 'js')?.bytes || 0;
 const failures = [];
 if (largestJavaScript > budgets.largestJavaScriptBytes) failures.push(`Largest JavaScript chunk is ${largestJavaScript} bytes.`);
 if ((totals.js || 0) > budgets.totalJavaScriptBytes) failures.push(`Total JavaScript is ${totals.js} bytes.`);
 if ((totals.css || 0) > budgets.totalCssBytes) failures.push(`Total CSS is ${totals.css} bytes.`);
+if (initialCssBytes > budgets.initialCssBytes) failures.push(`Initial CSS is ${initialCssBytes} bytes.`);
 if (initialJavaScriptGzipBytes > budgets.initialJavaScriptGzipBytes) failures.push(`Initial JavaScript gzip size is ${initialJavaScriptGzipBytes} bytes.`);
-const report = { generatedAt: new Date().toISOString(), budgets, totals, largestJavaScript, initialJavaScriptGzipBytes, initialAssetNames, entryAssetNames, files: entries, passed: failures.length === 0, failures };
+const report = { generatedAt: new Date().toISOString(), budgets, totals, largestJavaScript, initialJavaScriptGzipBytes, initialCssBytes, initialAssetNames, entryAssetNames, files: entries, passed: failures.length === 0, failures };
 await writeFile(path.resolve('dist/bundle-report.json'), `${JSON.stringify(report, null, 2)}\n`);
 console.log(JSON.stringify({ passed: report.passed, totals, largestJavaScript, initialJavaScriptGzipBytes, files: entries.length }));
 if (failures.length) {

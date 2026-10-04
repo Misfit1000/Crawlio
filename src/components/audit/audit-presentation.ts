@@ -1,9 +1,10 @@
 import type { ResourceAuditDocument, ResourceAuditIssue, ResourceAuditPage, ResourceAuditReport } from '../../lib/audit/resource-types';
 import { readAuditPresentationSummary } from '../../lib/audit/audit-presentation-summary';
 import { classifyReportSection, groupRecommendations, observedPageMetrics } from '../../lib/audit/report-insights';
+import { scopePresentationSummary } from '../../lib/report/scope-presentation';
 
 export function completePresentationSummary(audit: ResourceAuditDocument | null, report?: ResourceAuditReport | null) {
-  return readAuditPresentationSummary(report?.presentationSummary) ?? readAuditPresentationSummary(audit?.presentationSummary) ?? null;
+  return scopePresentationSummary(audit?.scope || report?.scope, readAuditPresentationSummary(report?.presentationSummary) ?? readAuditPresentationSummary(audit?.presentationSummary) ?? null);
 }
 
 export function samplePresentation(pages: ResourceAuditPage[], issues: ResourceAuditIssue[]) {

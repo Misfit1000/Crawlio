@@ -29,9 +29,10 @@ function focusRouteTarget() {
   if (dialog) return false;
   const target = document.querySelector<HTMLElement>('main h1, main h2');
   if (!target) return false;
+  target.setAttribute('data-route-focus-target', '');
   if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
   target.focus({ preventScroll: true });
-  return true;
+  return target.textContent?.trim() || 'Page';
 }
 
 export default function AccessibilityLayer() {
@@ -52,11 +53,17 @@ export default function AccessibilityLayer() {
   }, [query]);
 
   useEffect(() => {
-    setAnnouncement(`Navigated to ${routeLabel(location.pathname)}`);
-    if (location.hash) return;
-    const observer = new MutationObserver(() => { if (focusRouteTarget()) observer.disconnect(); });
+    if (location.hash) { setAnnouncement(`Navigated to ${routeLabel(location.pathname)}`); return; }
+    setAnnouncement('');
+    const completeNavigation = () => {
+      const label = focusRouteTarget();
+      if (!label) return false;
+      setAnnouncement(`Navigated to ${label}`);
+      return true;
+    };
+    const observer = new MutationObserver(() => { if (completeNavigation()) observer.disconnect(); });
     const timer = window.setTimeout(() => {
-      if (!focusRouteTarget()) observer.observe(document.body, { childList: true, subtree: true });
+      if (!completeNavigation()) observer.observe(document.body, { childList: true, subtree: true });
     }, 40);
     const expiry = window.setTimeout(() => observer.disconnect(), 5000);
     return () => { window.clearTimeout(timer); window.clearTimeout(expiry); observer.disconnect(); };

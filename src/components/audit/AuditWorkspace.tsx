@@ -15,7 +15,7 @@ import { safeJsonFetch } from '../../lib/http/safe-json';
 import { EmptyState, MetricCard, StatusBadge, SurfaceCard } from '../ui/visual-system';
 import { Notice } from '../ui/page-system';
 import { AuditActivityFeed } from './AuditActivityPanel';
-import { AuditExecutiveSummary, type AuditCategoryScore } from './AuditExecutiveSummary';
+import { AuditExecutiveSummary } from './AuditExecutiveSummary';
 import { AuditOverview } from './AuditOverview';
 import { AuditWorkspaceModes, useAuditWorkspaceMode } from './AuditWorkspaceModes';
 import { AuditPagesTable, PageEvidenceDrawer } from './PageEvidenceDrawer';
@@ -24,16 +24,21 @@ import FindingWorkspace from './FindingWorkspace';
 import PaginatedAuditEvidence from './PaginatedAuditEvidence';
 import { AuditReportReadyNote, AuditTerminalState } from './AuditTerminalState';
 import { useFindingWorkflow } from './useFindingWorkflow';
+import { auditFocusLabel, auditScopesComparable, scopeIncludesSection, type AuditScope } from '../../lib/audit/audit-scope';
+import { findingMatchesReportSection, reportCategoryScores, scopeEvents, scopeFindings, scopeScoreMetadata } from '../../lib/report/scope-presentation';
+import { AuditScopeNotIncluded } from './AuditScopeNotIncluded';
 
 const sections: Array<{ id: AuditWorkspaceSection; label: string }> = [
   { id: 'seo', label: 'SEO' }, { id: 'technical', label: 'Technical' },
   { id: 'crawlability', label: 'Crawlability' }, { id: 'links', label: 'Links' },
   { id: 'performance', label: 'Performance' }, { id: 'accessibility', label: 'Accessibility' },
+  { id: 'structured-data', label: 'Structured data' },
   { id: 'security', label: 'Passive security' },
 ];
 const reportSectionForRoute: Partial<Record<AuditWorkspaceSection, ReturnType<typeof classifyReportSection>>> = {
   seo: 'on-page', technical: 'technical', crawlability: 'crawlability', links: 'internal-links',
   performance: 'performance', accessibility: 'accessibility', security: 'security',
+  'structured-data': 'structured-data',
 };
 function modeLabel(mode: AuditMode) { return mode === 'deep' ? 'Deep audit' : mode === 'standard' ? 'Standard audit' : 'Quick audit'; }
 function auditStatusLabel(status: string) { return status === 'queued' ? 'Waiting to start' : status === 'running' ? 'Checking your site' : status.replace(/_/g, ' '); }
@@ -48,22 +53,26 @@ function ComparisonPanel() {
   const hostname = data.audit?.hostname;
 
   useEffect(() => {
+    let active = true;
+    setHistory(null); setComparison(null); setBaselineId('');
     if (!hostname) return;
     getAuditAccessHeaders()
       .then((headers) => safeJsonFetch<any>(`${API_ROUTES.auditHistory}?hostname=${encodeURIComponent(hostname)}&limit=50`, { headers }))
       .then((response) => {
-        if (!response.success) return;
+        if (!active || !response.success) return;
         const next = (response.data.data || response.data) as AuditHistoryPage;
-        const completedItems = next.items.filter((item) => isCompletedAuditStatus(item.audit.status));
+        const completedItems = next.items.filter((item) => isCompletedAuditStatus(item.audit.status) && data.audit && auditScopesComparable(data.audit, item.audit));
         setHistory({ ...next, items: completedItems });
         setBaselineId(completedItems.find((item) => item.audit.id !== auditId)?.audit.id || '');
       })
       .catch(() => undefined);
-  }, [auditId, hostname]);
+    return () => { active = false; };
+  }, [auditId, hostname, data.audit?.scope, data.audit?.effectiveMode]);
 
   const compare = async () => {
-    if (!baselineId) return;
+    if (!baselineId || !data.audit || !history?.items.some(item => item.audit.id === baselineId && auditScopesComparable(data.audit!, item.audit))) return;
     setLoading(true);
+    setComparison(null);
     setError(null);
     try {
       const response = await safeJsonFetch<any>(API_ROUTES.auditCompare(auditId, baselineId), { headers: await getAuditAccessHeaders() });
@@ -96,7 +105,7 @@ function ComparisonPanel() {
 }
 
 
-function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSection; onRerun?: (url: string, mode: AuditMode) => void | Promise<void> }) {
+function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSection; onRerun?: (url: string, mode: AuditMode, scope?: AuditScope | null) => void | Promise<void> }) {
   const { auditId, data, loading, error, connection, reportPending, reportRetrying, refresh, retryFinalReport } = useAuditWorkspace();
   const audit = data.audit;
   const modes = useAuditWorkspaceMode(section === 'overview' ? 'overview' : section === 'pages' ? 'pages' : 'findings');
@@ -106,17 +115,14 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
   const closePage = useCallback(() => setSelectedPage(null), []);
   const viewFindings = useCallback(() => modes.setMode('findings'), [modes.setMode]);
   const liveScore = useMemo(() => audit ? getAuditLiveScore({ audit, events: data.latestEvents, finalReport: data.finalReport }) : null, [audit, data.latestEvents, data.finalReport]);
-  const scores = useMemo(() => extractReportScores(data.finalReport?.scores || (liveScore ? { ...liveScore.categoryScores, overall: liveScore.overallScore, seo: liveScore.categoryScores.onPage } : undefined)), [data.finalReport, liveScore]);
-  const categoryScores = useMemo(() => [
-    { label: 'On-page SEO', value: scores.seo }, { label: 'Technical SEO', value: scores.technical },
-    { label: 'Crawlability', value: scores.crawlability }, { label: 'Internal links', value: scores.internalLinks },
-    { label: 'Performance', value: scores.performance }, { label: 'Structured data', value: scores.structuredData },
-    { label: 'Passive security', value: scores.security }, { label: 'Accessibility', value: scores.accessibility },
-  ].filter((item): item is AuditCategoryScore => item.value != null), [scores]);
+  const scoreRecord = useMemo(() => scopeScoreMetadata(audit?.scope, data.finalReport?.scores || (liveScore ? { ...liveScore.categoryScores, overall: liveScore.overallScore, seo: liveScore.categoryScores.onPage } : undefined)), [audit?.scope, data.finalReport, liveScore]);
+  const scores = useMemo(() => extractReportScores(scoreRecord), [scoreRecord]);
+  const categoryScores = useMemo(() => reportCategoryScores(audit?.scope, scoreRecord), [audit?.scope, scoreRecord]);
   const issues = useMemo(() => {
     const target = reportSectionForRoute[section];
-    return target ? data.latestIssues.filter(issue => classifyReportSection(issue) === target) : data.latestIssues;
-  }, [data.latestIssues, section]);
+    const selected = scopeFindings(audit?.scope, data.latestIssues);
+    return target ? selected.filter(issue => findingMatchesReportSection(audit?.scope, issue, target)) : selected;
+  }, [data.latestIssues, section, audit?.scope]);
   const updateChecklist = useCallback((signature: string, status: ChecklistStatus) => { void workflow.update(signature, { status }).catch(() => undefined); }, [workflow.update]);
 
   const copyReportLink = async () => {
@@ -140,14 +146,15 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
   if (loading && !audit) return <SurfaceCard className="flex items-center gap-3 p-5"><Loader2 className="h-5 w-5 animate-spin text-accent" />Loading stored audit evidence...</SurfaceCard>;
   if (error && !audit) return <SurfaceCard className="p-5"><Notice tone="danger" title="Audit unavailable">{customerSafeDiagnosticText(error) || 'The stored audit could not be loaded.'}</Notice><div className="mt-4 flex flex-wrap gap-2"><button type="button" className="trust-button" onClick={() => void refresh().catch(() => undefined)}><RefreshCw className="h-4 w-4" />Try again</button><NavLink className="quiet-button" to="/app/audits/history">Audit history</NavLink></div></SurfaceCard>;
   if (!audit) return <EmptyState icon={FileDown} title="Audit not found" description="This audit is unavailable or your account does not have access." />;
-  const workflowProps = { statuses: workflow.statuses, onStatusChange: updateChecklist, workflowRecords: workflow.records, workflowStorage: workflow.storage, workflowError: workflow.error, savingKeys: workflow.savingKeys, onWorkflowSave: workflow.update };
-  const unavailableChecks = Array.isArray(data.finalReport?.scores?.unavailableChecks) ? data.finalReport.scores.unavailableChecks.length : liveScore?.unavailableCount;
+  const workflowProps = { scope: audit.scope, statuses: workflow.statuses, onStatusChange: updateChecklist, workflowRecords: workflow.records, workflowStorage: workflow.storage, workflowError: workflow.error, savingKeys: workflow.savingKeys, onWorkflowSave: workflow.update };
+  const unavailableChecks = Array.isArray(scoreRecord?.unavailableChecks) ? scoreRecord.unavailableChecks.length : liveScore?.unavailableCount;
+  const included = scopeIncludesSection(audit.scope, section);
   const statusTone = isCompletedAuditStatus(audit.status) ? audit.status === 'completed_with_warnings' ? 'warning' : 'success' : audit.status === 'failed' ? 'danger' : 'accent';
   return <div className="audit-customer-workspace w-full space-y-4">
     <header className="flex flex-col gap-3 border-b border-border pb-4 lg:flex-row lg:items-center lg:justify-between">
-      <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><StatusBadge tone={statusTone}>{auditStatusLabel(audit.status)}</StatusBadge><span className="text-xs text-muted-foreground">{modeLabel(audit.effectiveMode)}</span></div><h1 className="mt-2 break-words text-2xl font-semibold">{audit.hostname}</h1><p className="mt-1 break-all text-xs text-muted-foreground">{audit.normalizedUrl}</p></div>
+      <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><StatusBadge tone={statusTone}>{auditStatusLabel(audit.status)}</StatusBadge><span className="text-xs text-muted-foreground">{audit.scope ? `${auditFocusLabel(audit.scope)} · ${audit.scope.coverage} coverage · ` : ''}{modeLabel(audit.effectiveMode)}</span></div><h1 className="mt-2 break-words text-2xl font-semibold">{audit.hostname}</h1><p className="mt-1 break-all text-xs text-muted-foreground">{audit.normalizedUrl}</p></div>
       <div className="flex flex-wrap gap-2">
-        {onRerun && isTerminalAuditStatus(audit.status) && <button type="button" onClick={() => onRerun(audit.normalizedUrl, audit.effectiveMode)} className="quiet-button min-h-9 px-3 py-1 text-xs"><RefreshCw className="h-4 w-4" />Rerun</button>}
+        {onRerun && isTerminalAuditStatus(audit.status) && <button type="button" onClick={() => onRerun(audit.normalizedUrl, audit.effectiveMode, audit.scope)} className="quiet-button min-h-9 px-3 py-1 text-xs"><RefreshCw className="h-4 w-4" />Rerun</button>}
         <button type="button" onClick={copyReportLink} className="quiet-button min-h-9 px-3 py-1 text-xs"><Copy className="h-4 w-4" />Share report</button>
         <button type="button" onClick={() => void exportReport('pdf')} disabled={!data.finalReport} className="quiet-button min-h-9 px-3 py-1 text-xs"><FileDown className="h-4 w-4" />PDF</button>
         <button type="button" onClick={() => void exportReport('json')} disabled={!data.finalReport} className="quiet-button min-h-9 px-3 py-1 text-xs"><FileDown className="h-4 w-4" />JSON</button>
@@ -158,23 +165,24 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
     {error && <Notice tone="danger" title="Some audit data could not refresh">{customerSafeDiagnosticText(error)}</Notice>}
     {actionMessage && <Notice tone={/copied|downloaded/.test(actionMessage) ? 'success' : 'danger'}>{actionMessage}</Notice>}
     <AuditWorkspaceModes mode={modes.mode} pathFor={modes.pathFor} />
-    {modes.mode === 'overview' && <>
+    {!included && <AuditScopeNotIncluded />}
+    {included && modes.mode === 'overview' && <>
       <AuditExecutiveSummary audit={audit} score={scores.overall} scoreState={liveScore?.scoreState} scoreDetail={liveScore?.scoreState === 'provisional' ? 'Preliminary, from analysed pages so far' : 'Stored deterministic score'} categoryScores={categoryScores} progress={audit.progress} unavailableChecks={unavailableChecks} />
       {data.finalReport?.scores?.scoringVersion && <p className="text-xs text-muted-foreground">Scoring model {String(data.finalReport.scores.scoringVersion)}. Historical scores are preserved.</p>}
       <AuditOverview data={data} onViewFindings={viewFindings} />
       <ComparisonPanel />
     </>}
-    {modes.mode === 'findings' && <>
-      <nav className="no-scrollbar flex flex-wrap gap-1 border-b border-border pb-2" aria-label="Detailed report categories"><NavLink to={`${auditWorkspacePath(auditId)}?view=findings`} className="quiet-button min-h-9 px-3 py-1 text-xs">All findings</NavLink>{sections.map(item => <NavLink key={item.id} to={auditWorkspacePath(auditId, item.id)} className={({ isActive }) => `min-h-9 rounded-md px-3 py-2 text-xs font-semibold ${isActive ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted'}`}>{item.label}</NavLink>)}</nav>
+    {included && modes.mode === 'findings' && <>
+      <nav className="no-scrollbar flex flex-wrap gap-1 border-b border-border pb-2" aria-label="Detailed report categories"><NavLink to={`${auditWorkspacePath(auditId)}?view=findings`} className="quiet-button min-h-9 px-3 py-1 text-xs">All findings</NavLink>{sections.filter(item => scopeIncludesSection(audit.scope, item.id)).map(item => <NavLink key={item.id} to={auditWorkspacePath(auditId, item.id)} className={({ isActive }) => `min-h-9 rounded-md px-3 py-2 text-xs font-semibold ${isActive ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted'}`}>{item.label}</NavLink>)}</nav>
       {section === 'security' && <StatusBadge tone="accent">Passive observations only</StatusBadge>}
       {section === 'accessibility' && <StatusBadge tone="warning">Automated signals, not certification</StatusBadge>}
       {audit.processingVersion === 2 ? <PaginatedAuditEvidence auditId={auditId} kind="issues" section={reportSectionForRoute[section]} {...workflowProps} /> : <FindingWorkspace auditId={auditId} issues={issues} {...workflowProps} />}
     </>}
-    {modes.mode === 'pages' && (audit.processingVersion === 2 ? <PaginatedAuditEvidence auditId={auditId} kind="pages" pageIssues={data.latestIssues} /> : <section><h2 className="mb-3 text-lg font-semibold">Pages analysed</h2><AuditPagesTable pages={data.latestPages} onSelect={setSelectedPage} /><PageEvidenceDrawer page={selectedPage} issues={data.latestIssues} onClose={closePage} /></section>)}
-    {modes.mode === 'activity' && <><p className="flex items-center gap-2 text-xs text-muted-foreground"><Clock3 className="h-3.5 w-3.5" />{connection.message}</p><AuditActivityFeed events={data.latestEvents} /></>}
+    {included && modes.mode === 'pages' && (audit.processingVersion === 2 ? <PaginatedAuditEvidence scope={audit.scope} auditId={auditId} kind="pages" pageIssues={data.latestIssues} /> : <section><h2 className="mb-3 text-lg font-semibold">Pages analysed</h2><AuditPagesTable scope={audit.scope} pages={data.latestPages} onSelect={setSelectedPage} /><PageEvidenceDrawer scope={audit.scope} page={selectedPage} issues={data.latestIssues} onClose={closePage} /></section>)}
+    {included && modes.mode === 'activity' && <><p className="flex items-center gap-2 text-xs text-muted-foreground"><Clock3 className="h-3.5 w-3.5" />{connection.message}</p><AuditActivityFeed events={scopeEvents(audit.scope, data.latestEvents)} /></>}
   </div>;
 }
 
-export default function AuditWorkspace({ auditId, section, onRerun }: { auditId: string; section: AuditWorkspaceSection; onRerun?: (url: string, mode: AuditMode) => void | Promise<void> }) {
+export default function AuditWorkspace({ auditId, section, onRerun }: { auditId: string; section: AuditWorkspaceSection; onRerun?: (url: string, mode: AuditMode, scope?: AuditScope | null) => void | Promise<void> }) {
   return <AuditWorkspaceProvider auditId={auditId}><AuditWorkspaceContent section={section} onRerun={onRerun} /></AuditWorkspaceProvider>;
 }

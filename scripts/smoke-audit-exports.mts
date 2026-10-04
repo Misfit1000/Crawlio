@@ -29,8 +29,11 @@ for (const secretField of ['guestKeyHash', 'lockedBy', 'lockedAt', 'leaseExpires
   assert.ok(!serialized.includes(secretField), `${secretField} must not appear in the public JSON export.`);
 }
 
-const api = await readFile('src/api/index.ts', 'utf8');
-const exportRoute = api.slice(api.indexOf("apiRouter.get('/audit/export/:id/:format'"), api.indexOf("apiRouter.post('/audit/rerun/:id'"));
+const api = await readFile('src/api/exports-router.ts', 'utf8');
+const routeStart = api.indexOf("apiRouter.get('/audit/export/:id/:format'");
+assert.ok(routeStart >= 0, 'the export handler must be present');
+const exportRoute = api.slice(routeStart);
+assert.ok(exportRoute.indexOf('canAccessAudit(req, audit)') < exportRoute.indexOf('auditRepository.getLiveData(id, audit)'), 'ownership must be verified before reading evidence');
 assert.ok(exportRoute.indexOf('auditRepository.getAudit(id)') < exportRoute.indexOf('auditRepository.getLiveData(id, audit)'), 'export ownership must be checked before child evidence is loaded');
 assert.match(exportRoute, /limits\.pdfEnabled/);
 assert.match(exportRoute, /limits\.exportsEnabled/);

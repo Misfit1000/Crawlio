@@ -6,6 +6,9 @@ import { FINDING_WORKFLOW_STATUSES, type FindingWorkflowRecord, type FindingWork
 import { findingEffort, findingImpact, REPORT_SECTIONS } from '../../lib/audit/report-insights';
 import { StatusBadge } from '../ui/visual-system';
 import { useUrlFilter } from '../../app/use-url-filter';
+import type { AuditScope } from '../../lib/audit/audit-scope';
+import { isOperationalFinding, scopeFindings, scopeIncludesReportSection } from '../../lib/report/scope-presentation';
+import { AuditScopeNotIncluded } from './AuditScopeNotIncluded';
 
 const PAGE_SIZE = 20;
 const STATUSES: ChecklistStatus[] = [...FINDING_WORKFLOW_STATUSES];
@@ -31,7 +34,8 @@ function severityTone(severity: ResourceAuditIssue['severity']) {
 
 export default memo(function FindingWorkspace({
   auditId = '',
-  issues,
+  issues: allIssues,
+  scope,
   statuses = {},
   onStatusChange,
   workflowRecords = {},
@@ -43,6 +47,7 @@ export default memo(function FindingWorkspace({
 }: {
   auditId?: string;
   issues: ResourceAuditIssue[];
+  scope?: AuditScope | null;
   statuses?: Record<string, ChecklistStatus>;
   onStatusChange?: (signature: string, status: ChecklistStatus) => void;
   workflowRecords?: Record<string, FindingWorkflowRecord>;
@@ -66,6 +71,7 @@ export default memo(function FindingWorkspace({
   const [noteMessage, setNoteMessage] = useState<string | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const issues = useMemo(() => scopeFindings(scope, allIssues), [scope, allIssues]);
 
   const categories = useMemo(() => Array.from(new Set(issues.map((issue) => issue.category).filter(Boolean))).sort(), [issues]);
   const failureCodes = useMemo(() => Array.from(new Set(issues.map((issue) => issue.failureCode).filter((value): value is string => Boolean(value)))).sort(), [issues]);
@@ -154,6 +160,7 @@ export default memo(function FindingWorkspace({
     setCheckedIds(new Set());
   };
 
+  if (evidenceFilters && evidenceFilters.section !== 'all' && !scopeIncludesReportSection(scope, evidenceFilters.section)) return <AuditScopeNotIncluded />;
   return (
     <section aria-labelledby="finding-workspace-title">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 id="finding-workspace-title" className="text-lg font-semibold">Findings</h2></div><div className="flex flex-wrap gap-2"><StatusBadge tone="warning">{highPriority} high priority{evidenceFilters ? ' loaded' : ''}</StatusBadge><StatusBadge tone="neutral">{issues.length} {evidenceFilters ? 'loaded' : 'total'}</StatusBadge></div></div>
@@ -163,7 +170,7 @@ export default memo(function FindingWorkspace({
       {evidenceFilters ? <div className="mt-4 grid gap-2 border-y border-border py-3 sm:grid-cols-2 xl:grid-cols-[minmax(180px,1fr)_140px_180px_180px]" role="search" aria-label="Search all audit findings">
         <label className="relative"><span className="sr-only">Search all audit findings</span><Search className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" /><input type="search" maxLength={160} value={evidenceFilters.query} onChange={event => evidenceFilters.onChange('query', event.target.value)} placeholder="Search findings or URL" className="suite-input pl-9" /></label>
         <select value={evidenceFilters.severity} onChange={event => evidenceFilters.onChange('severity', event.target.value)} className="suite-input" aria-label="Filter all findings by severity"><option value="all">All severities</option>{Object.keys(SEVERITY_ORDER).map(value => <option key={value}>{value}</option>)}</select>
-        <select value={evidenceFilters.section} onChange={event => evidenceFilters.onChange('section', event.target.value)} className="suite-input" aria-label="Filter all findings by report section"><option value="all">All report sections</option>{REPORT_SECTIONS.map(section => <option key={section.id} value={section.id}>{section.label}</option>)}</select>
+        <select value={evidenceFilters.section} onChange={event => evidenceFilters.onChange('section', event.target.value)} className="suite-input" aria-label="Filter all findings by report section"><option value="all">All report sections</option>{REPORT_SECTIONS.filter(section => scopeIncludesReportSection(scope, section.id)).map(section => <option key={section.id} value={section.id}>{section.label}</option>)}</select>
         <label><span className="sr-only">Filter all findings by exact category</span><input maxLength={100} value={evidenceFilters.category === 'all' ? '' : evidenceFilters.category} onChange={event => evidenceFilters.onChange('category', event.target.value || 'all')} className="suite-input" placeholder="Exact category" /></label>
       </div> : <div className="mt-4 grid gap-3 rounded-lg border border-border bg-[var(--surface-inset)] p-3 sm:grid-cols-2 xl:grid-cols-[minmax(180px,1fr)_140px_160px_150px_180px_140px]">
         <label className="relative"><span className="sr-only">Search finding URLs and titles</span><Search className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search URL or finding" className="suite-input pl-9" /></label>
@@ -186,7 +193,7 @@ export default memo(function FindingWorkspace({
               <div key={issue.id} className={`grid min-w-0 gap-2 border-b border-border px-3 py-3 last:border-0 lg:grid-cols-[24px_84px_100px_minmax(0,1fr)_48px_74px_26px] lg:items-center ${selectedId === issue.id ? 'bg-muted' : 'hover:bg-muted/30'}`}>
                 <input type="checkbox" checked={checkedIds.has(issue.id)} onChange={() => toggleChecked(issue.id)} aria-label={`Select ${issue.title}`} className="h-4 w-4 accent-[var(--accent)]" />
                 <StatusBadge tone={severityTone(issue.severity)}>{issue.severity}</StatusBadge>
-                <span className="truncate text-xs font-semibold text-muted-foreground">{issue.category}</span>
+                <span className="truncate text-xs font-semibold text-muted-foreground">{scope && isOperationalFinding(issue) ? 'Retrieval failure' : issue.category}</span>
                 <button type="button" onClick={(event) => openInspector(issue, event.currentTarget)} className="min-w-0 text-left"><span className="block truncate text-sm font-semibold">{issue.title}</span><span className="mt-1 block truncate text-xs text-muted-foreground">{issue.affectedUrl || 'No affected page stored'}</span><span className="mt-1 block text-[11px] capitalize text-muted-foreground">{statusLabel(workflowStatus)}</span></button>
                 <span className="text-sm tabular-nums">{issue.affectedPageCount || 1}</span>
                 <span className={`inline-flex w-fit items-center gap-1 text-xs ${issue.evidence ? 'text-emerald-700 dark:text-emerald-300' : 'text-muted-foreground'}`}><FileText className="h-3.5 w-3.5" />{issue.evidence ? 'Available' : 'Limited'}</span>
