@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { requireSupabaseAdminClient } from '../lib/supabase/server';
 import { auditRepository } from '../lib/supabase/audit-repository';
 import { readEvidencePage } from '../lib/supabase/scalable-audit-repository';
+import type { AuditScope } from '../lib/audit/audit-scope';
 import {
   EXPORT_BUCKET, EXPORT_CHUNK_SIZE, EXPORT_LEASE_MS, exportJsonHeader, exportPartPath, exportSitemapHeader, exportSitemapOrigin,
   formatExportChunk, type ExportJob, type ExportChunk,
@@ -70,6 +71,7 @@ async function commitPart(job: ExportJob, chunk: ExportChunk) {
 }
 
 export interface ExportChunkDependencies {
+  scope?: AuditScope | null;
   read: (job: ExportJob) => Promise<{ items: unknown[]; nextCursor: string | null }>;
   header: (job: ExportJob) => Promise<string>;
   origin?: (job: ExportJob) => Promise<string>;
@@ -95,7 +97,7 @@ export async function processExportChunk(job: ExportJob, dependencies: ExportChu
   ensureMaintenanceIdle(dependencies.shouldContinue);
   const page = await dependencies.read(job);
   ensureMaintenanceIdle(dependencies.shouldContinue);
-  const chunk = formatExportChunk(job, page, header, origin);
+  const chunk = formatExportChunk(job, page, header, origin, dependencies.scope);
   await dependencies.check(job);
   ensureMaintenanceIdle(dependencies.shouldContinue);
   await dependencies.upload(job, chunk.text);
@@ -109,7 +111,10 @@ export async function runScalableExportWorkerOnce(workerId: string, shouldContin
   const job = await claimExportJob(workerId, shouldContinue);
   if (!job) return false;
   try {
+    const audit = await auditRepository.getAudit(job.audit_id);
+    if (!audit || ['queued', 'running'].includes(audit.status)) throw new Error('EXPORT_AUDIT_NOT_TERMINAL');
     await processExportChunk(job, {
+      scope: audit.scope,
       shouldContinue,
       check: checkLease,
       read: item => readEvidencePage(item.audit_id, item.section as 'pages' | 'issues' | 'events', {
@@ -117,16 +122,10 @@ export async function runScalableExportWorkerOnce(workerId: string, shouldContin
       }),
       header: async item => {
         if (item.format === 'sitemap.xml') return exportSitemapHeader();
-        const audit = await auditRepository.getAudit(item.audit_id);
-        if (!audit || ['queued', 'running'].includes(audit.status)) throw new Error('EXPORT_AUDIT_NOT_TERMINAL');
         ensureMaintenanceIdle(shouldContinue);
         return exportJsonHeader(audit, await auditRepository.getFinalReport(item.audit_id));
       },
-      origin: async item => {
-        const audit = await auditRepository.getAudit(item.audit_id);
-        if (!audit || ['queued', 'running'].includes(audit.status)) throw new Error('EXPORT_AUDIT_NOT_TERMINAL');
-        return exportSitemapOrigin(audit);
-      },
+      origin: async () => exportSitemapOrigin(audit),
       upload: async (item, text) => {
         ensureMaintenanceIdle(shouldContinue);
         await uploadPart(item, text, shouldContinue);

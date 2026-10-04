@@ -4,6 +4,7 @@ import { load } from 'cheerio';
 import type { ResourceAuditPage } from '../lib/audit/resource-types';
 import { exportPartPath, exportSitemapHeader, exportSitemapOrigin, type ExportJob } from '../lib/report/scalable-exports';
 import { processExportChunk, type ExportChunkDependencies } from './scalable-export-worker';
+import { makeAuditScope } from '../lib/audit/audit-scope';
 
 const origin = 'https://example.com';
 const initial: ExportJob = {
@@ -188,4 +189,21 @@ test('existing JSON and CSV dependency contracts need no origin and preserve hea
   await processExportChunk({ ...initial, format: 'pages.csv' }, dependencies);
   await processExportChunk({ ...initial, format: 'issues.csv', section: 'issues' }, dependencies);
   assert.equal(headers, 1);
+});
+
+test('resumable security exports exclude unrelated page fields in JSON and CSV', async () => {
+  const dependencies: ExportChunkDependencies = {
+    scope: makeAuditScope('security'),
+    header: async () => '{"pages":[',
+    check: async () => {}, read: async () => ({ items: [page(0)], nextCursor: null }),
+    upload: async () => {}, commit: async () => {},
+  };
+  const json = await processExportChunk({ ...initial, format: 'json' }, dependencies);
+  const row = JSON.parse(json.text.replace(/,"issues":\[$/, '}')).pages[0];
+  assert.equal(row.url, 'https://example.com/0');
+  for (const key of ['title', 'metaDescription', 'h1', 'wordCount', 'responseTimeMs', 'pageSizeBytes']) assert.equal(key in row, false);
+  assert.deepEqual(Object.keys(row.toolEvidence).sort(), ['securityHeaders', 'version']);
+  const csv = await processExportChunk({ ...initial, format: 'pages.csv' }, dependencies);
+  assert.equal(csv.text.includes('title'), false);
+  assert.equal(csv.text.includes('responseTimeMs'), false);
 });
