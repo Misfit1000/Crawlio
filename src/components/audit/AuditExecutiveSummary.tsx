@@ -46,7 +46,7 @@ export const AuditExecutiveSummary = memo(function AuditExecutiveSummary({
     <div className="min-w-0 py-4">
       <h2 className="mb-3 text-sm font-semibold">Coverage</h2>
       <dl className="grid grid-cols-2 gap-x-3 gap-y-3">
-        {[[coverage.analysed.toLocaleString(), 'Pages analysed'], [coverage.discovered.toLocaleString(), 'URLs discovered'], [audit.checksCompleted.toLocaleString(), 'Check groups'], [limitationCount.toLocaleString(), unavailableChecks == null ? 'Warnings' : 'Unavailable checks']].map(([value, label]) => <div key={label}><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{value}</dd></div>)}
+        {[[coverage.analysed.toLocaleString(), 'Pages analysed'], [coverage.discovered.toLocaleString(), 'URLs discovered'], [audit.scope ? categoryScores.length.toLocaleString() : audit.checksCompleted.toLocaleString(), audit.scope ? 'Groups measured' : 'Check groups'], [limitationCount.toLocaleString(), unavailableChecks == null ? 'Warnings' : 'Unavailable checks']].map(([value, label]) => <div key={label}><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{value}</dd></div>)}
       </dl>
       <p className="mt-3 text-xs text-muted-foreground">{audit.scope?.coverage === 'page' ? `Single-page coverage. ${(audit.planPageLimit ?? coverage.allowance).toLocaleString()} pages in your plan allowance.` : `${(audit.planPageLimit ?? coverage.allowance).toLocaleString()} page allowance. Discovered URLs are not total site size.`}</p>
       {coverage.discoveredPercent != null && <div className="mt-3"><ProgressBar label="Discovered pages analysed" value={coverage.discoveredPercent} tone="green" /></div>}

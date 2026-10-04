@@ -110,10 +110,11 @@ export function mapAuditIssue(issue: AuditIssue, fallbackUrl: string): Omit<Reso
   };
 }
 
-export function buildSecurityIssues(page: FetchedPage): Omit<ResourceAuditIssue, 'id' | 'detectedAt'>[] {
+export function buildSecurityIssues(page: FetchedPage, registeredChecks?: ReadonlySet<string>): Omit<ResourceAuditIssue, 'id' | 'detectedAt'>[] {
   const issues: Omit<ResourceAuditIssue, 'id' | 'detectedAt'>[] = [];
   const headers = page.headers;
-  const add = (severity: AuditSeverity, title: string, evidence: string, recommendation: string) => {
+  const add = (severity: AuditSeverity, title: string, evidence: string, recommendation: string, checkId?: string) => {
+    if (checkId && registeredChecks?.has(checkId)) return;
     issues.push({
       severity,
       category: 'security',
@@ -122,6 +123,7 @@ export function buildSecurityIssues(page: FetchedPage): Omit<ResourceAuditIssue,
       affectedUrl: page.finalUrl,
       evidence,
       recommendation,
+      ...(registeredChecks && checkId ? { checkId } : {}),
     });
   };
 
@@ -129,7 +131,7 @@ export function buildSecurityIssues(page: FetchedPage): Omit<ResourceAuditIssue,
     add('high', 'Page is not served over HTTPS', page.finalUrl, 'Serve all public pages over HTTPS and redirect HTTP to HTTPS.');
   }
   if (!headers['strict-transport-security'] && page.finalUrl.startsWith('https://')) {
-    add('medium', 'Missing HSTS header', 'strict-transport-security header not present', 'Add a Strict-Transport-Security header after HTTPS is stable.');
+    add('medium', 'Missing HSTS header', 'strict-transport-security header not present', 'Add a Strict-Transport-Security header after HTTPS is stable.', 'missing-hsts');
   }
   if (!headers['content-security-policy']) {
     add('medium', 'Missing Content-Security-Policy header', 'content-security-policy header not present', 'Add a CSP that restricts scripts, frames, images, and form targets.');

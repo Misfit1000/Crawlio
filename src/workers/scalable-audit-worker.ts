@@ -119,7 +119,8 @@ export async function analyseScalableItem(audit: ResourceAuditDocument, run: Cra
       ...(audit.scope ? { blockedByRobots: false, inSitemap: run.metadata.sitemapContainsTarget === true,
         isIndexable: !/noindex|none/i.test(`${fetched.parsed?.metaRobots || ''},${fetched.headers['x-robots-tag'] || ''}`) } : {}) });
     const now = new Date().toISOString();
-    const passiveIssues = scopeIncludesGroup(audit.scope, 'security') ? buildSecurityIssues(fetched) : [];
+    const passiveIssues = scopeIncludesGroup(audit.scope, 'security')
+      ? buildSecurityIssues(fetched, audit.scope ? new Set(checks.issues.map(issue => issue.id)) : undefined) : [];
     const recordedIssues: ResourceAuditIssue[] = [ ...checks.issues.filter(issue=>isFocusedAudit(audit) || isSeoIssueAllowedForProfile(profile,issue)).map(issue=>mapAuditIssue(issue,fetched.finalUrl)), ...passiveIssues ]
       .filter(issue => !audit.scope || scopeScoreCategories(audit.scope).includes(categoryForIssue(issue)) || (scopeIncludesGroup(audit.scope,'technical') && categoryForIssue(issue)==='mobile'))
       .map(issue=>({ ...issue, id:stableId(`${audit.id}:${fetched.finalUrl}:${issue.checkId || issue.title}:${issue.category}`),detectedAt:now }));

@@ -5,7 +5,9 @@ import { randomUUID } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
 import { AUDIT_CHECK_GROUPS, AUDIT_GROUP_DETAILS, auditScopeFingerprint, auditScopesComparable, makeAuditScope, normalizeAuditScope, scopeScoreCategories } from '../src/lib/audit/audit-scope';
 import { selectedCheckModules, analyseScalableItem } from '../src/workers/scalable-audit-worker';
-import { CHECKS } from '../src/lib/seo/checks/runner';
+import { CHECKS, runCheckSetSafely } from '../src/lib/seo/checks/runner';
+import { buildSecurityIssues, mapAuditIssue } from '../src/workers/audit-worker';
+import { parseHtml } from '../src/lib/seo/html-parser';
 import { calculateTransparentAuditScore } from '../src/lib/audit/audit-scoring';
 import { HostRequestScheduler } from '../src/workers/host-request-scheduler';
 import { frontierItem, type CrawlRun } from '../src/lib/supabase/scalable-audit-repository';
@@ -27,6 +29,19 @@ assert.throws(() => normalizeAuditScope({ ...makeAuditScope('security'), checkGr
 assert.notEqual(auditScopeFingerprint(makeAuditScope('custom')),auditScopeFingerprint(makeAuditScope()),'full Quick and explicit custom checks have different execution semantics');
 assert.equal(auditScopeFingerprint(makeAuditScope('custom','page',['security'])),auditScopeFingerprint(makeAuditScope('security')));
 assert.equal(auditScopesComparable(fixture('https://example.com'),fixture('https://example.com',makeAuditScope('security','site'))),false);
+
+const httpsUrl = 'https://example.com/';
+const httpsHtml = '<!doctype html><html><head><title>Security fixture</title></head><body><h1>Security fixture</h1></body></html>';
+const httpsPage = { url: httpsUrl, finalUrl: httpsUrl, statusCode: 200, responseTimeMs: 100, pageSizeBytes: httpsHtml.length,
+  headers: {}, contentType: 'text/html', html: httpsHtml, parsed: parseHtml(httpsHtml, httpsUrl) };
+const securityChecks = runCheckSetSafely(selectedCheckModules(fixture(httpsUrl), '2.2'), { ...httpsPage.parsed, url: httpsUrl, headers: {} });
+const scopedSecurityIssues = [...securityChecks.issues.map(issue => mapAuditIssue(issue, httpsUrl)),
+  ...buildSecurityIssues(httpsPage, new Set(securityChecks.issues.map(issue => issue.id)))];
+assert.equal(scopedSecurityIssues.filter(issue => issue.checkId === 'missing-hsts' || issue.title === 'Missing HSTS header').length, 1,
+  'a missing HSTS header must produce one finding and one deduction');
+assert.ok(scopedSecurityIssues.some(issue => issue.title === 'Missing Content-Security-Policy header'), 'distinct passive checks must remain');
+assert.ok(buildSecurityIssues(httpsPage).some(issue => issue.title === 'Missing HSTS header' && !issue.checkId), 'legacy security findings retain their identities');
+assert.ok(!buildSecurityIssues({ ...httpsPage, headers: { 'strict-transport-security': 'max-age=31536000' } }, new Set()).some(issue => issue.checkId === 'missing-hsts'));
 
 const requests: string[] = [];
 const server = createServer((req,res) => {
