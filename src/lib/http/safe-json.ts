@@ -1,7 +1,7 @@
 export async function safeJsonFetch<T>(
   input: RequestInfo | URL,
   init?: RequestInit
-): Promise<{ success: true; data: T } | { success: false; error: string; status?: number; raw?: string }> {
+): Promise<{ success: true; data: T } | { success: false; error: string; status?: number; raw?: string; code?: string; activeAuditId?: string }> {
   try {
     const response = await fetch(input, init);
     const contentType = response.headers.get("content-type") || "";
@@ -44,6 +44,8 @@ export async function safeJsonFetch<T>(
           success: false,
           status: response.status,
           error: parsedError,
+          ...(typeof parsed?.error?.code === 'string' ? { code: parsed.error.code } : {}),
+          ...(typeof parsed?.error?.activeAuditId === 'string' && /^[0-9a-f-]{36}$/i.test(parsed.error.activeAuditId) ? { activeAuditId: parsed.error.activeAuditId } : {}),
           raw,
         };
       }

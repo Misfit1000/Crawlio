@@ -5,6 +5,9 @@ import type { ResourceAuditDocument, ResourceAuditPage, ResourceAuditReport } fr
 import { requireSupabaseAdminClient } from '../supabase/server';
 import { readToolEvidence, sitemapEntry } from '../tools/audit-tools';
 import { buildPublicAuditExport, csvRow } from './export';
+import { type AuditScope, scopeIncludesGroup } from '../audit/audit-scope';
+import { pageCsvFields, scopeEvents, scopeFindings, scopePageEvidence } from './scope-presentation';
+import type { ResourceAuditEvent, ResourceAuditIssue } from '../audit/resource-types';
 
 export const EXPORT_BUCKET = 'audit-exports';
 export const EXPORT_CHUNK_SIZE = 50;
@@ -40,7 +43,7 @@ export function isScalableExportFormat(value: string): value is ExportFormat {
 }
 
 // Pick only public scalar evidence. Never serialize arbitrary row metadata or event data.
-export function publicExportEvidence(section: Exclude<ExportSection, 'done'>, item: unknown) {
+export function publicExportEvidence(section: Exclude<ExportSection, 'done'>, item: unknown, scope?: AuditScope | null) {
   const source = item as Record<string, unknown>;
   const fields = section === 'pages' ? PAGE_FIELDS : section === 'issues' ? ISSUE_FIELDS : EVENT_FIELDS;
   const evidence = Object.fromEntries(fields.flatMap(key => {
@@ -51,7 +54,7 @@ export function publicExportEvidence(section: Exclude<ExportSection, 'done'>, it
   }));
   const toolEvidence = section === 'pages' ? readToolEvidence(source.toolEvidence) : undefined;
   if (toolEvidence) evidence.toolEvidence = toolEvidence;
-  return evidence;
+  return section === 'pages' ? scopePageEvidence(scope, evidence) : evidence;
 }
 
 export function exportPartPath(prefix: string, part: number) {
@@ -66,9 +69,9 @@ export function exportDisposition(hostname: string, format: ExportFormat) {
 }
 
 export function exportJsonHeader(audit: ResourceAuditDocument, finalReport?: ResourceAuditReport | null) {
-  const value = buildPublicAuditExport({ audit, latestPages: [], latestIssues: [], latestEvents: [], finalReport: null })!;
+  const value = buildPublicAuditExport({ audit, latestPages: [], latestIssues: [], latestEvents: [], finalReport })!;
   // Keep canonical scores, but place complete evidence only in the streamed arrays.
-  const report = finalReport ? { scores: finalReport.scores, summary: finalReport.summary, generatedAt: finalReport.generatedAt } : null;
+  const report = value.report ? { ...(audit.scope ? { scope: audit.scope } : {}), scores: value.report.scores, summary: value.report.summary, generatedAt: value.report.generatedAt } : null;
   return `{"success":true,"data":${JSON.stringify({ generator: value.generator, audit: value.audit, report }).slice(0, -1)},"pages":[`;
 }
 
@@ -96,13 +99,18 @@ export function formatExportChunk(
   page: { items: unknown[]; nextCursor: string | null },
   header = '',
   origin?: string,
+  scope?: AuditScope | null,
 ): ExportChunk {
   if (job.section === 'done' || page.items.length > EXPORT_CHUNK_SIZE) throw new Error('Invalid export chunk');
   if (page.nextCursor && (!page.items.length || page.nextCursor === job.cursor)) throw new Error('Export cursor did not advance');
   let section: ExportSection = job.section;
   let text: string;
   let ready = false;
+  // Findings are selected at persistence; retain retrieval failures when defending export output.
+  const items = job.section === 'issues' ? scopeFindings(scope, page.items as ResourceAuditIssue[])
+    : job.section === 'events' ? scopeEvents(scope, page.items as ResourceAuditEvent[]) : page.items;
   if (job.format === 'sitemap.xml') {
+    if (!scopeIncludesGroup(scope, 'crawlability')) throw new Error('EXPORT_SCOPE_NOT_INCLUDED');
     if (job.section !== 'pages') throw new Error('Sitemap export requires pages');
     if (!origin) throw new Error('Sitemap export requires an origin');
     const selectedOrigin = exportSitemapOrigin({ normalizedUrl: origin });
@@ -111,15 +119,16 @@ export function formatExportChunk(
     ready = page.nextCursor === null;
     if (ready) { text += '</urlset>\n'; section = 'done'; }
   } else if (job.format !== 'json') {
-    const fields = CSV_FIELDS[job.format];
+    const fields = job.format === 'pages.csv' ? pageCsvFields(scope) : CSV_FIELDS[job.format];
     text = (job.part === 0 ? `${fields.join(',')}\n` : '')
-      + page.items.map(item => csvRow(fields.map(key => (item as Record<string, unknown>)[key])) + '\n').join('');
+      + items.map(item => csvRow(fields.map(key => (item as Record<string, unknown>)[key])) + '\n').join('');
     ready = page.nextCursor === null;
     if (ready) section = 'done';
   } else {
     if (job.part === 0 && !header) throw new Error('JSON export requires a header');
+    // Persisted findings/events are already selected. Do not drop rows here: the cursor is also the JSON comma checkpoint.
     text = (job.part === 0 ? header : '') + (job.cursor && page.items.length ? ',' : '')
-      + page.items.map(item => JSON.stringify(publicExportEvidence(job.section as Exclude<ExportSection, 'done'>, item))).join(',');
+      + page.items.map(item => JSON.stringify(publicExportEvidence(job.section as Exclude<ExportSection, 'done'>, item, scope))).join(',');
     if (page.nextCursor === null) {
       if (section === 'pages') { text += '],"issues":['; section = 'issues'; }
       else if (section === 'issues') { text += '],"events":['; section = 'events'; }

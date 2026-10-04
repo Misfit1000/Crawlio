@@ -1,7 +1,7 @@
 import type { ResourceAuditDocument, ResourceAuditLiveData } from './resource-types';
 
 const ADMISSION_FIELDS = [
-  'id', 'processingVersion', 'userId', 'projectId', 'submittedInput', 'normalizedUrl', 'finalUrl',
+  'id', 'processingVersion', 'scope', 'scopeFingerprint', 'planPageLimit', 'userId', 'projectId', 'submittedInput', 'normalizedUrl', 'finalUrl',
   'hostname', 'mode', 'plan', 'requestedMode', 'effectiveMode', 'queuePriority', 'processingTier',
   'quotaCounted', 'workerRuntime', 'estimatedWaitSeconds', 'status', 'progress', 'currentPhase',
   'currentUrl', 'currentCheck', 'pageLimit', 'pagesDiscovered', 'pagesCrawled', 'checksTotal',

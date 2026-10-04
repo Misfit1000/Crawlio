@@ -55,28 +55,45 @@ export async function scalableRpc<T>(name: string, args: Record<string, unknown>
   return data as T;
 }
 
-let readinessCache: { until: number; ready: boolean; deepReady: boolean } | undefined;
-export async function scalableReadiness(): Promise<{ ready: boolean; deepReady: boolean }> {
+let readinessCache: { until: number; ready: boolean; deepReady: boolean; scopeReady?: boolean; scopeDeepReady?: boolean } | undefined;
+export async function scalableReadiness(): Promise<{ ready: boolean; deepReady: boolean; scopeReady?: boolean; scopeDeepReady?: boolean }> {
   if (process.env.SCALABLE_AUDITS_ENABLED !== 'true') return { ready: false, deepReady: false };
   if (readinessCache && readinessCache.until > Date.now()) return readinessCache;
-  const { data, error } = await requireSupabaseAdminClient().from('audit_scalable_workers')
-    .select('worker_id,deep_enabled').eq('processing_version', 2).gte('seen_at', new Date(Date.now() - 90_000).toISOString()).limit(20);
-  if (error) return { ready: false, deepReady: false };
-  readinessCache = { ready: !!data?.length, deepReady: !!data?.some(row => row.deep_enabled), until: Date.now() + 10_000 };
+  const client = requireSupabaseAdminClient();
+  let result = await client.from('audit_scalable_workers')
+    .select('worker_id,deep_enabled,scope_version,scope_commit_id,commit_id').eq('processing_version', 2).gte('seen_at', new Date(Date.now() - 90_000).toISOString()).limit(20);
+  if (result.error && /scope_version|scope_commit_id/.test(result.error.message)) {
+    const legacy = await client.from('audit_scalable_workers').select('worker_id,deep_enabled').eq('processing_version', 2).gte('seen_at', new Date(Date.now() - 90_000).toISOString()).limit(20);
+    if (legacy.error) return { ready: false, deepReady: false, scopeReady: false };
+    readinessCache = { ready: !!legacy.data?.length, deepReady: !!legacy.data?.some(row => row.deep_enabled), scopeReady: false, until: Date.now()+10_000 };
+    return readinessCache;
+  }
+  if (result.error) return { ready: false, deepReady: false, scopeReady: false };
+  const scoped = result.data?.filter(row => row.scope_version === 1 && row.scope_commit_id === row.commit_id) || [];
+  readinessCache = { ready: !!result.data?.length, deepReady: !!result.data?.some(row => row.deep_enabled), scopeReady: !!scoped.length, scopeDeepReady: scoped.some(row => row.deep_enabled), until: Date.now() + 10_000 };
   return readinessCache;
 }
 
 export async function registerScalableWorker(workerId: string) {
-  const { error } = await requireSupabaseAdminClient().from('audit_scalable_workers').upsert({
+  const client = requireSupabaseAdminClient();
+  const commit = process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT_SHA || 'local';
+  const row = {
     worker_id: workerId, seen_at: new Date().toISOString(), processing_version: 2,
-    commit_id: process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT_SHA || 'local',
+    commit_id: commit,
     deep_enabled: process.env.DEEP_AUDIT_ENABLED === 'true',
-  });
+  };
+  let { error } = await client.from('audit_scalable_workers').upsert({ ...row, scope_version: 1, scope_commit_id: commit });
+  if (error && /scope_version|scope_commit_id/.test(error.message)) ({ error } = await client.from('audit_scalable_workers').upsert(row));
   if (error) throw new Error(`Scalable audit schema is unavailable: ${error.message}`);
 }
 
 export async function claimScalableAudit(worker: string): Promise<{ audit: ResourceAuditDocument; run: CrawlRun } | null> {
-  const result = await scalableRpc<{ audit: Record<string, unknown>; run: CrawlRun } | null>('claim_scalable_audit', { p_worker: worker, p_deep: process.env.DEEP_AUDIT_ENABLED === 'true' });
+  const client = requireSupabaseAdminClient();
+  const parameters = { p_worker: worker, p_deep: process.env.DEEP_AUDIT_ENABLED === 'true' };
+  let response = await client.rpc('claim_scoped_audit', parameters);
+  if (response.error?.code === 'PGRST202' && /claim_scoped_audit/.test(response.error.message)) response = await client.rpc('claim_scalable_audit', parameters);
+  if (response.error) throw new Error(`Claim audit: ${response.error.message}`);
+  const result = response.data as { audit: Record<string, unknown>; run: CrawlRun } | null;
   const audit = result && toAuditDocument(result.audit);
   return result && audit ? { audit, run: result.run } : null;
 }
@@ -84,8 +101,9 @@ export async function claimScalableAudit(worker: string): Promise<{ audit: Resou
 const FRONTIER_RPC = 'read_scalable_audit_frontier';
 const missingFrontierRpcUntil = new WeakMap<ReturnType<typeof requireSupabaseAdminClient>, number>();
 
-export async function readFrontier(auditId: string, limit = 2): Promise<FrontierItem[]> {
+export async function readFrontier(auditId: string, limit = 2, documentsFirst = false): Promise<FrontierItem[]> {
   const client = requireSupabaseAdminClient();
+  if (documentsFirst) return scalableRpc<FrontierItem[]>('read_scoped_audit_frontier', { p_audit: auditId, p_limit: Math.min(2,limit) });
   if ((missingFrontierRpcUntil.get(client) || 0) <= Date.now()) {
     const { data, error } = await client.rpc(FRONTIER_RPC, { p_audit: auditId, p_limit: Math.min(2, limit) });
     if (!error) {

@@ -21,10 +21,12 @@ import {
 import { deploymentVersionRow } from '../platform/version';
 import { readAuditPresentationSummary } from '../audit/audit-presentation-summary';
 import { readToolEvidence } from '../tools/audit-tools';
+import { auditScopeFingerprint, auditScopesComparable, normalizeAuditScope, type AuditScope } from '../audit/audit-scope';
+import { ApiError } from '../api/errors';
 
 type DbRow = Record<string, any>;
 const AUDIT_HISTORY_SUMMARY_SELECT = [
-  'id', 'processing_version', 'presentation_summary', 'user_id', 'project_id',
+  'id', 'processing_version', 'audit_scope', 'scope_fingerprint', 'plan_page_limit', 'presentation_summary', 'user_id', 'project_id',
   'submitted_input', 'normalized_url', 'final_url', 'hostname', 'mode', 'plan',
   'requested_mode', 'effective_mode', 'queue_priority', 'processing_tier',
   'quota_counted', 'worker_runtime', 'estimated_wait_seconds', 'status', 'progress',
@@ -174,6 +176,9 @@ export function toAuditDocument(row: DbRow | null | undefined): ResourceAuditDoc
   return {
     id: row.id,
     processingVersion: row.processing_version === 2 ? 2 : 1,
+    scope: normalizeAuditScope(row.audit_scope) || null,
+    scopeFingerprint: row.scope_fingerprint || auditScopeFingerprint(normalizeAuditScope(row.audit_scope)),
+    planPageLimit: row.plan_page_limit ?? row.page_limit,
     presentationSummary: readAuditPresentationSummary(row.presentation_summary),
     userId: row.user_id ?? null,
     guestKeyHash: row.guest_key_hash ?? null,
@@ -233,6 +238,7 @@ function auditToRow(audit: ResourceAuditDocument) {
   return {
     id: audit.id,
     ...(audit.processingVersion === 2 ? { processing_version: 2 } : {}),
+    ...(audit.scope ? { audit_scope: audit.scope, plan_page_limit: audit.planPageLimit || audit.pageLimit } : {}),
     user_id: audit.userId,
     guest_key_hash: audit.guestKeyHash,
     project_id: audit.projectId,
@@ -562,6 +568,7 @@ async function insertAuditIssues(
 function toAuditReport(row: DbRow | null | undefined): ResourceAuditReport | null {
   if (!row) return null;
   return {
+    scope: normalizeAuditScope(row.scores?.scope) || null,
     presentationSummary: readAuditPresentationSummary(row.presentation_summary),
     scores: row.scores ?? {},
     summary: typeof row.summary === 'string' ? row.summary : row.summary?.text ?? '',
@@ -576,7 +583,7 @@ export function reportToRow(auditId: string, report: ResourceAuditReport) {
   return {
     audit_id: auditId,
     ...(report.presentationSummary ? { presentation_summary: report.presentationSummary } : {}),
-    scores: report.scores,
+    scores: { ...report.scores, ...(report.scope ? { scope: report.scope } : {}) },
     summary: { text: report.summary },
     top_issues: report.topIssues,
     pages: report.pages,
@@ -715,6 +722,8 @@ export const auditRepository = {
   async createAuditJob(input: {
     id?: string;
     processingVersion?: 1 | 2;
+    scope?: AuditScope;
+    planPageLimit?: number;
     submittedInput: string;
     normalizedUrl: string;
     hostname: string;
@@ -739,6 +748,9 @@ export const auditRepository = {
     const audit: ResourceAuditDocument = {
       id,
       processingVersion: input.processingVersion || 1,
+      scope: input.scope || null,
+      scopeFingerprint: auditScopeFingerprint(input.scope),
+      planPageLimit: input.planPageLimit ?? input.pageLimit ?? config.pageLimit,
       userId: input.userId ?? null,
       guestKeyHash: input.guestKeyHash ?? null,
       projectId: input.projectId ?? null,
@@ -814,6 +826,8 @@ export const auditRepository = {
     guestKeyHash?: string | null;
     normalizedUrl: string;
     createdAfterIso: string;
+    mode?: AuditMode;
+    scopeFingerprint?: string;
   }): Promise<ResourceAuditDocument | null> {
     const client = getSupabaseAdminClient();
     if (client) {
@@ -823,6 +837,8 @@ export const auditRepository = {
         .eq('normalized_url', input.normalizedUrl)
         .in('status', ['queued', 'running'])
         .gte('created_at', input.createdAfterIso);
+      if (input.mode) query = query.eq('effective_mode', input.mode);
+      if (input.scopeFingerprint) query = query.eq('scope_fingerprint', input.scopeFingerprint);
 
       if (input.userId) {
         query = query.eq('user_id', input.userId);
@@ -839,6 +855,8 @@ export const auditRepository = {
 
     return Array.from(memory.audits.values())
       .filter((audit) => audit.normalizedUrl === input.normalizedUrl)
+      .filter((audit) => !input.mode || audit.effectiveMode === input.mode)
+      .filter((audit) => !input.scopeFingerprint || auditScopeFingerprint(audit.scope) === input.scopeFingerprint)
       .filter((audit) => audit.status === 'queued' || audit.status === 'running')
       .filter((audit) => audit.createdAt >= input.createdAfterIso)
       .filter((audit) => {
@@ -1453,6 +1471,7 @@ export const auditRepository = {
       this.getAuditJob(baselineAuditId),
     ]);
     if (!currentAudit || !baselineAudit) return null;
+    if (!auditScopesComparable(currentAudit, baselineAudit)) throw new ApiError('AUDIT_COMPARISON_SCOPE_MISMATCH', 'Compare audits with the same checks, coverage and depth. These scores are not directly comparable.', 409);
     if (currentAudit.processingVersion === 2 || baselineAudit.processingVersion === 2) {
       const client = getSupabaseAdminClient();
       if (!client) return null;

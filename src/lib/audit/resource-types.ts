@@ -10,6 +10,7 @@ import {
   type AuditMode,
   type AuditRuntimeCapabilities,
 } from './audit-config';
+import type { AuditScope } from './audit-scope';
 
 export {
   AUDIT_LIMITS,
@@ -60,6 +61,9 @@ export interface AuditPresentationSummary {
 
 export interface ResourceAuditDocument {
   id: string;
+  scope?: AuditScope | null;
+  scopeFingerprint?: string;
+  planPageLimit?: number;
   processingVersion?: 1 | 2;
   presentationSummary?: AuditPresentationSummary;
   userId: string | null;
@@ -196,6 +200,7 @@ export interface ResourceAuditIssue {
 }
 
 export interface ResourceAuditReport {
+  scope?: AuditScope | null;
   presentationSummary?: AuditPresentationSummary;
   scores: Record<string, unknown>;
   summary: string;

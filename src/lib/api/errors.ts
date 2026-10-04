@@ -9,6 +9,7 @@ export type SafeApiErrorShape = {
   message: string;
   requestId: string;
   retryAfterSeconds?: number;
+  activeAuditId?: string;
 };
 
 export class ApiError extends Error {
@@ -16,14 +17,16 @@ export class ApiError extends Error {
   readonly code: string;
   readonly retryAfterSeconds?: number;
   readonly expose: boolean;
+  readonly activeAuditId?: string;
 
-  constructor(code: string, message: string, status = 400, options: { retryAfterSeconds?: number; expose?: boolean } = {}) {
+  constructor(code: string, message: string, status = 400, options: { retryAfterSeconds?: number; expose?: boolean; activeAuditId?: string } = {}) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
     this.retryAfterSeconds = options.retryAfterSeconds;
     this.expose = options.expose ?? true;
+    this.activeAuditId = options.activeAuditId;
   }
 }
 
@@ -50,6 +53,7 @@ export function safeApiError(error: unknown, requestId: string): { status: numbe
           message: error.message,
           requestId,
           ...(error.retryAfterSeconds ? { retryAfterSeconds: error.retryAfterSeconds } : {}),
+          ...(error.activeAuditId ? { activeAuditId: error.activeAuditId } : {}),
         },
       },
     };

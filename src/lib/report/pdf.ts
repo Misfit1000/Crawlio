@@ -1,6 +1,8 @@
 import type { ResourceAuditIssue, ResourceAuditLiveData, ResourceAuditPage } from '../audit/resource-types';
 import { groupRecommendations, scoreToGrade } from '../audit/report-insights';
 import { BRAND } from '../brand';
+import { auditFocusLabel, auditScopeScoreLabel, isFocusedAudit, scopeIncludesGroup } from '../audit/audit-scope';
+import { reportCategoryScores, scopeEvents, scopeFindings, scopeScoreMetadata } from './scope-presentation';
 
 const COLORS = {
   ink: '#10243a',
@@ -37,6 +39,8 @@ function formatBytes(bytes: number) {
 export async function renderAuditPdf(data: ResourceAuditLiveData): Promise<Buffer> {
   if (!data.audit) throw new Error('Audit data is required to build a PDF report.');
   const audit = data.audit;
+  const scope = audit.scope || data.finalReport?.scope;
+  const issues = scopeFindings(scope, data.latestIssues);
   const { default: PDFDocument } = await import('pdfkit');
 
   return new Promise((resolve, reject) => {
@@ -48,7 +52,7 @@ export async function renderAuditPdf(data: ResourceAuditLiveData): Promise<Buffe
         Title: `${BRAND.name} audit report - ${audit.hostname}`,
         Author: BRAND.name,
         Creator: BRAND.name,
-        Subject: 'SEO, website health, and Passive Security Review',
+        Subject: scope ? `${auditFocusLabel(scope)} - ${scope.coverage} coverage` : 'SEO, website health, and Passive Security Review',
       },
     });
     const chunks: Buffer[] = [];
@@ -62,7 +66,7 @@ export async function renderAuditPdf(data: ResourceAuditLiveData): Promise<Buffe
 
     const drawHeader = () => {
       doc.fillColor(COLORS.blue).font('Helvetica-Bold').fontSize(16).text(BRAND.name, margin, 28, { lineBreak: false });
-      doc.fillColor(COLORS.muted).font('Helvetica').fontSize(8).text('SEO AUDIT REPORT', margin + 76, 34, { lineBreak: false });
+      doc.fillColor(COLORS.muted).font('Helvetica').fontSize(8).text(scope ? 'AUDIT REPORT' : 'SEO AUDIT REPORT', margin + 76, 34, { lineBreak: false });
       doc.moveTo(margin, 52).lineTo(doc.page.width - margin, 52).strokeColor(COLORS.line).lineWidth(1).stroke();
       doc.y = 66;
     };
@@ -130,9 +134,8 @@ export async function renderAuditPdf(data: ResourceAuditLiveData): Promise<Buffe
 
     const pageColumns = [
       { label: 'Code', width: 38 },
-      { label: 'Page URL', width: 260 },
-      { label: 'Response', width: 62 },
-      { label: 'Size', width: 62 },
+      { label: 'Page URL', width: scopeIncludesGroup(scope, 'performance') ? 260 : 384 },
+      ...(scopeIncludesGroup(scope, 'performance') ? [{ label: 'Response', width: 62 }, { label: 'Size', width: 62 }] : []),
       { label: 'Fixes', width: 45 },
     ];
 
@@ -160,7 +163,9 @@ export async function renderAuditPdf(data: ResourceAuditLiveData): Promise<Buffe
       const y = doc.y;
       doc.fillColor(index % 2 === 0 ? '#ffffff' : COLORS.panel).rect(margin, y, contentWidth, rowHeight).fill();
       let x = margin;
-      const values = [String(page.statusCode), page.url, `${page.responseTimeMs}ms`, formatBytes(page.pageSizeBytes), String(page.issueCount)];
+      const delivered = page.fetchStatus === 'success' || (!page.fetchStatus && page.statusCode >= 200 && page.statusCode < 400);
+      const values = [String(page.statusCode || 'N/M'), page.url,
+        ...(scopeIncludesGroup(scope, 'performance') ? [delivered && Number.isFinite(page.responseTimeMs) ? `${page.responseTimeMs}ms` : 'N/M', delivered && Number.isFinite(page.pageSizeBytes) ? formatBytes(page.pageSizeBytes) : 'N/M'] : []), String(page.issueCount)];
       values.forEach((value, valueIndex) => {
         doc.fillColor(valueIndex === 0 && page.statusCode >= 400 ? COLORS.red : COLORS.ink).font(valueIndex === 0 ? 'Helvetica-Bold' : 'Helvetica').fontSize(7.5).text(value, x + 5, y + 7, { width: pageColumns[valueIndex].width - 10, lineGap: 1 });
         x += pageColumns[valueIndex].width;
@@ -170,30 +175,34 @@ export async function renderAuditPdf(data: ResourceAuditLiveData): Promise<Buffe
     };
 
     drawHeader();
-    doc.fillColor(COLORS.ink).font('Helvetica-Bold').fontSize(25).text('Website audit report', margin, doc.y, { width: contentWidth });
+    doc.fillColor(COLORS.ink).font('Helvetica-Bold').fontSize(25).text(scope ? auditFocusLabel(scope) : 'Website audit report', margin, doc.y, { width: contentWidth });
     doc.moveDown(0.25).fillColor(COLORS.blue).font('Helvetica-Bold').fontSize(11).text(audit.normalizedUrl, margin, doc.y, { width: contentWidth });
     doc.moveDown(0.55).fillColor(COLORS.muted).font('Helvetica').fontSize(8.5).text(`Audit type: ${audit.processingTier}  |  Status: ${audit.status}  |  Pages checked: ${audit.pagesCrawled}/${audit.pageLimit}  |  Generated: ${new Date().toLocaleString()}`, margin, doc.y, { width: contentWidth });
+    if (scope) doc.moveDown(0.4).text(`${scope.coverage === 'page' ? 'Single-page' : 'Site crawl'} coverage | Plan allowance: ${audit.planPageLimit ?? audit.pageLimit} pages | Only selected checks contribute to the score. Retrieval failures are separate operational evidence.`, margin, doc.y, { width: contentWidth });
     doc.moveDown(1);
 
-    const scores = (data.finalReport?.scores || {}) as Record<string, unknown>;
+    const scores = scopeScoreMetadata(scope, data.finalReport?.scores) || {};
     const overall = optionalScore(scores.overall);
     const overallGrade = scoreToGrade(overall) || 'N/M';
     const metricGap = 10;
     const metricWidth = (contentWidth - metricGap * 3) / 4;
     const metricY = doc.y;
-    drawMetric(margin, metricY, metricWidth, 'Overall grade', overall == null ? 'N/M' : `${overallGrade}  ${Math.round(overall)}`, overall == null ? COLORS.muted : overall >= 80 ? COLORS.green : overall >= 60 ? COLORS.blue : COLORS.amber);
+    drawMetric(margin, metricY, metricWidth, scope ? auditScopeScoreLabel(scope) : 'Overall grade', overall == null ? 'N/M' : `${overallGrade}  ${Math.round(overall)}`, overall == null ? COLORS.muted : overall >= 80 ? COLORS.green : overall >= 60 ? COLORS.blue : COLORS.amber);
     drawMetric(margin + (metricWidth + metricGap), metricY, metricWidth, 'Pages checked', String(audit.pagesCrawled), COLORS.blue);
     drawMetric(margin + (metricWidth + metricGap) * 2, metricY, metricWidth, 'Open fixes', String(audit.issuesFound), COLORS.amber);
     drawMetric(margin + (metricWidth + metricGap) * 3, metricY, metricWidth, 'Fix now', String(audit.criticalCount), audit.criticalCount ? COLORS.red : COLORS.green);
     doc.y = metricY + 76;
 
     sectionTitle('Executive summary', `${data.finalReport?.summary || `${BRAND.name} checked ${audit.pagesCrawled} page(s) and found ${audit.issuesFound} issue(s).`} Grade ranges: A 90-100, B 80-89, C 70-79, D 60-69, E 50-59, F below 50. N/M means not measured.`);
+    if (scope) reportCategoryScores(scope, scores).forEach(category => drawScoreBar(category.label, category.value, COLORS.blue));
+    else {
     drawScoreBar('On-page SEO', optionalScore(scores.seo), COLORS.blue);
     drawScoreBar('Technical SEO', optionalScore(scores.technical), COLORS.blue);
     drawScoreBar('Performance', optionalScore(scores.performance), COLORS.amber);
     drawScoreBar('Crawlability', optionalScore(scores.crawlability), COLORS.green);
     drawScoreBar('Passive security', optionalScore(scores.security), COLORS.green);
     drawScoreBar('Accessibility signals', optionalScore(scores.accessibility), COLORS.blue);
+    }
 
     sectionTitle('Fix priority', 'Use this distribution to decide what to handle first.');
     const severities = [
@@ -216,9 +225,9 @@ export async function renderAuditPdf(data: ResourceAuditLiveData): Promise<Buffe
     sectionTitle('Prioritized recommendations', audit.processingVersion === 2
       ? 'Sample of retained findings. Use the full evidence export for every finding; scores and severity totals cover the complete audit.'
       : 'Repeated findings are grouped by issue type and ordered by priority and affected-page count.');
-    const groupedIssues = groupRecommendations(data.latestIssues);
+    const groupedIssues = groupRecommendations(issues);
     groupedIssues.slice(0, 30).forEach((group, index) => {
-      const representative = data.latestIssues.find((issue) => issue.title === group.title && issue.category === group.category);
+      const representative = issues.find((issue) => issue.title === group.title && issue.category === group.category);
       const groupedIssue: ResourceAuditIssue = {
         id: representative?.id || group.id,
         severity: group.severity,
@@ -251,6 +260,7 @@ export async function renderAuditPdf(data: ResourceAuditLiveData): Promise<Buffe
     }
 
     const firstPage = data.latestPages.find((page) => page.title || page.metaDescription) || data.latestPages[0];
+    if (!isFocusedAudit({ scope })) {
     sectionTitle('Search and page preview', 'A safe metadata-based preview is included because live external pages cannot be embedded inside a PDF.');
     const fullPreviewUrl = firstPage?.url || audit.finalUrl || audit.normalizedUrl;
     const previewUrl = fullPreviewUrl.length > 108 ? `${fullPreviewUrl.slice(0, 105)}...` : fullPreviewUrl;
@@ -273,9 +283,10 @@ export async function renderAuditPdf(data: ResourceAuditLiveData): Promise<Buffe
     const previewDescriptionY = previewTitleY + previewTitleHeight + 8;
     doc.fillColor(COLORS.muted).font('Helvetica').fontSize(8.5).text(previewDescription, margin + 14, previewDescriptionY, { width: contentWidth - 28, height: previewDescriptionHeight, ellipsis: true });
     doc.y = previewY + previewHeight + 14;
+    }
 
     sectionTitle('Audit activity', 'Recent audit events show how the report was produced.');
-    data.latestEvents.slice(-20).forEach((event) => {
+    scopeEvents(scope, data.latestEvents).slice(-20).forEach((event) => {
       const label = `${new Date(event.timestamp).toLocaleTimeString()}  ${event.message || event.type}`;
       const height = doc.heightOfString(label, { width: contentWidth - 18, lineGap: 1 }) + 8;
       ensureSpace(height);

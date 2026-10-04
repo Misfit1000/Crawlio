@@ -33,6 +33,7 @@ import { publicVersionPayload } from '../lib/platform/version';
 import { findingWorkflowKey, isFindingPriorityOverride, isFindingWorkflowStatus } from '../lib/audit/finding-workflow';
 
 import { createPublicPlanProjection } from '../lib/plans/public-plan-presentation';
+import { auditScopeFingerprint, normalizeAuditScope } from '../lib/audit/audit-scope';
 
 
 export const apiRouter = Router();
@@ -199,6 +200,9 @@ function auditStartResponseData(audit: ResourceAuditDocument, extras: Record<str
     effectiveMode: audit.effectiveMode,
     plan: audit.plan,
     pageLimit: audit.pageLimit,
+    planPageLimit: audit.planPageLimit || audit.pageLimit,
+    scope: audit.scope || null,
+    scopeFingerprint: auditScopeFingerprint(audit.scope),
     queuePriority: audit.queuePriority,
     ...extras,
   };
@@ -213,7 +217,7 @@ apiRouter.get('/me/profile', asyncJsonRoute(async (req, res) => {
   }
   const profile = await ensureUserProfileFromAuthUser(authUser);
   const limits = await getPlanLimits(profile.plan);
-  const readiness = await scalableReadiness().catch(() => ({ ready: false, deepReady: false }));
+  const readiness = await scalableReadiness().catch(() => ({ ready: false, deepReady: false, scopeReady: false, scopeDeepReady: false }));
   const auditCapabilities = createAuditRuntimeCapabilities(isDeepAuditEnabled() || (readiness.ready && readiness.deepReady), readiness, profile.plan);
   res.json({ success: true, data: {
     profile,
@@ -265,7 +269,7 @@ apiRouter.get('/plans/public', asyncJsonRoute(async (req, res) => {
     .filter(Boolean)
     .sort()
     .at(-1) || new Date().toISOString();
-  const readiness = await scalableReadiness().catch(() => ({ ready: false, deepReady: false }));
+  const readiness = await scalableReadiness().catch(() => ({ ready: false, deepReady: false, scopeReady: false, scopeDeepReady: false }));
   const capabilities = createAuditRuntimeCapabilities(isDeepAuditEnabled() || (readiness.ready && readiness.deepReady), readiness);
   const projection = createPublicPlanProjection(
     data || [],
@@ -283,6 +287,10 @@ apiRouter.get('/plans/public', asyncJsonRoute(async (req, res) => {
 
 async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'quick') {
   const { url, mode = defaultMode, projectId = null } = req.body || {};
+  let scope;
+  try { scope = normalizeAuditScope(req.body?.scope, req.body?.type); }
+  catch (error) { throw new ApiError('INVALID_AUDIT_SCOPE', error instanceof Error ? error.message : 'Choose supported audit checks.', 400); }
+  const fingerprint = auditScopeFingerprint(scope);
   const normalized = normalizeUserUrl(String(url || ''), {
     allowPrivateForTesting: process.env.SEOINTEL_ALLOW_PRIVATE_TEST_TARGETS === 'true',
   });
@@ -294,6 +302,12 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
     throw new ApiError('INVALID_AUDIT_MODE', 'Choose Quick, Standard, or Deep audit mode.', 400);
   }
   const requestedMode = mode;
+  const reuseOrConflict = (existing: ResourceAuditDocument) => {
+    if (existing.normalizedUrl !== normalized.normalizedUrl || existing.effectiveMode !== requestedMode || auditScopeFingerprint(existing.scope) !== fingerprint) {
+      throw new ApiError('ACTIVE_AUDIT_CONFLICT', 'Another audit is active with different checks, coverage, depth or website. Open it or wait for it to finish before starting this request.', 409, { activeAuditId: existing.id });
+    }
+    return res.json({ success: true, data: auditStartResponseData(existing, { reusedExistingAudit: true }) });
+  };
   const { userId } = await getRequester(req);
   let validatedProjectId: string | null = null;
   if (projectId != null) {
@@ -312,7 +326,7 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
     : { userId: null, guestKeyHash: guestIdentity.guestKeyHash };
   const createdAfterIso = new Date(Date.now() - DUPLICATE_AUDIT_WINDOW_MS).toISOString();
 
-  const readiness = await scalableReadiness().catch(() => ({ ready: false, deepReady: false }));
+  const readiness = await scalableReadiness().catch(() => ({ ready: false, deepReady: false, scopeReady: false, scopeDeepReady: false }));
   let decision;
   try {
     decision = await canStartAudit(userId, requestedMode, {
@@ -324,17 +338,17 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
     if (error instanceof EntitlementError && /already have an audit in progress/i.test(error.message)) {
       const activeAudit = await auditRepository.findActiveAuditForOwner(ownerLookup);
       if (activeAudit) {
-        return res.json({
-          success: true,
-          message: 'You already have an audit in progress.',
-          data: auditStartResponseData(activeAudit, { reusedExistingAudit: true }),
-        });
+        return reuseOrConflict(activeAudit);
       }
     }
     return sendEntitlementError(res, error);
   }
 
   const processingVersion = readiness.ready && (decision.effectiveMode !== 'deep' || readiness.deepReady) ? 2 : 1;
+  if (scope && (!readiness.scopeReady || (decision.effectiveMode === 'deep' && !readiness.scopeDeepReady))) {
+    throw new ApiError('FOCUSED_AUDIT_UNAVAILABLE', 'Selected-check audits require migration 034 and a live compatible worker. Your request was not changed into a full audit.', 503, { retryAfterSeconds: 60 });
+  }
+  const effectivePageLimit = scope?.coverage === 'page' ? 1 : decision.pageLimit;
   const legacyPageCeiling = AUDIT_MODE_PAGE_CEILINGS[decision.effectiveMode];
   if (processingVersion === 1 && decision.pageLimit > legacyPageCeiling) {
     throw new ApiError('SCALABLE_AUDIT_UNAVAILABLE', `The requested ${decision.pageLimit} pages exceed the legacy ${legacyPageCeiling}-page limit. The scalable audit migration or a live compatible v2 worker is unavailable, or scalable audits are disabled.`, 503, {
@@ -361,6 +375,7 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
       activeLimit: decision.plan === 'free' ? 1 : Math.max(1, decision.limits.concurrency),
       globalActiveLimit: Number(process.env.GLOBAL_ACTIVE_AUDIT_LIMIT || 50),
       botVerified: await verifyBotToken(String(req.body?.botToken || '')),
+      ...(readiness.scopeReady ? { scopeFingerprint: fingerprint } : {}),
     });
 
     if (admission.reusedExistingAudit) {
@@ -369,7 +384,7 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
         existing = await auditRepository.getAudit(admission.auditId);
         if (!existing) await new Promise((resolve) => setTimeout(resolve, 100));
       }
-      if (existing) return res.json({ success: true, data: auditStartResponseData(existing, { reusedExistingAudit: true }) });
+      if (existing) return reuseOrConflict(existing);
       return res.status(202).json({ success: true, data: {
         auditId: admission.auditId,
         status: 'queued',
@@ -379,7 +394,10 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
         requestedMode: decision.requestedMode,
         effectiveMode: decision.effectiveMode,
         plan: decision.plan,
-        pageLimit: decision.pageLimit,
+        pageLimit: effectivePageLimit,
+        planPageLimit: decision.pageLimit,
+        scope: scope || null,
+        scopeFingerprint: fingerprint,
         queuePriority: decision.queuePriority,
         reusedExistingAudit: true,
       }});
@@ -388,18 +406,19 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
       if (admission.code === 'ACTIVE_AUDIT_EXISTS' && admission.auditId) {
         const existing = await auditRepository.getAudit(admission.auditId);
         if (existing) {
-          return res.json({ success: true, message: 'You already have an audit in progress.', data: auditStartResponseData(existing, { reusedExistingAudit: true }) });
+          return reuseOrConflict(existing);
         }
+        throw new ApiError('ACTIVE_AUDIT_CONFLICT', 'Another audit submission is being accepted. Wait a moment and try again.', 409);
       }
       throw admissionError(admission);
     }
   } else if (process.env.NODE_ENV === 'production') {
     throw new ApiError('AUDIT_ADMISSION_UNAVAILABLE', 'The audit service is being updated. Please try again shortly.', 503, { retryAfterSeconds: 120 });
   } else {
-    const duplicateAudit = await auditRepository.findActiveDuplicateAudit({ ...ownerLookup, normalizedUrl: normalized.normalizedUrl, createdAfterIso });
-    if (duplicateAudit) return res.json({ success: true, data: auditStartResponseData(duplicateAudit, { reusedExistingAudit: true }) });
+    const duplicateAudit = await auditRepository.findActiveDuplicateAudit({ ...ownerLookup, normalizedUrl: normalized.normalizedUrl, createdAfterIso, mode: requestedMode, scopeFingerprint: fingerprint });
+    if (duplicateAudit) return reuseOrConflict(duplicateAudit);
     const activeAudit = await auditRepository.findActiveAuditForOwner(ownerLookup);
-    if (activeAudit) return res.json({ success: true, message: 'You already have an audit in progress.', data: auditStartResponseData(activeAudit, { reusedExistingAudit: true }) });
+    if (activeAudit) return reuseOrConflict(activeAudit);
   }
 
   let audit: ResourceAuditDocument;
@@ -407,6 +426,8 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
     audit = await auditRepository.createAuditJob({
       id: admission?.auditId,
       processingVersion,
+      scope,
+      planPageLimit: decision.pageLimit,
       submittedInput: String(url || '').trim(),
       normalizedUrl: normalized.normalizedUrl,
       hostname: normalized.hostname,
@@ -415,7 +436,7 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
       effectiveMode: decision.effectiveMode,
       plan: decision.plan,
       processingTier: decision.processingTier,
-      pageLimit: decision.pageLimit,
+      pageLimit: effectivePageLimit,
       queuePriority: decision.queuePriority,
       estimatedWaitSeconds: admission?.queueDepth ? Math.max(0, admission.queueDepth - 1) * 45 : null,
       userId: decision.userId,

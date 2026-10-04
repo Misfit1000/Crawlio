@@ -17,6 +17,8 @@ import { ApiError } from '../lib/api/errors';
 import { durableRateLimit } from '../lib/api/production-controls';
 
 import { buildPublicAuditExport, csvRow } from '../lib/report/export';
+import { pageCsvFields, scopeFindings } from '../lib/report/scope-presentation';
+import { scopeIncludesGroup } from '../lib/audit/audit-scope';
 
 import { BRAND } from '../lib/brand';
 
@@ -131,6 +133,9 @@ apiRouter.get('/audit/export/:id/:format', asyncJsonRoute(async (req, res) => {
   if (!audit || !(await canAccessAudit(req, audit))) return res.status(404).json({ success: false, error: 'Audit not found' });
   const limits = await getPlanLimits(audit.plan);
   res.setHeader('Cache-Control', 'private, no-store');
+  if (format === 'sitemap.xml' && !scopeIncludesGroup(audit.scope, 'crawlability')) {
+    return res.status(409).json({ success: false, error: 'Crawlability checks were not included in this audit. Start an audit with crawlability checks to export a sitemap.' });
+  }
 
   if (format === 'pdf') {
     if (!isCompletedAuditStatus(audit.status)) {
@@ -174,14 +179,15 @@ apiRouter.get('/audit/export/:id/:format', asyncJsonRoute(async (req, res) => {
 
   if (format === 'issues.csv') {
     const header = 'severity,category,title,affectedUrl,evidence,recommendation\n';
-    const rows = liveData.latestIssues.map((issue) => csvRow([issue.severity, issue.category, issue.title, issue.affectedUrl, issue.evidence, issue.recommendation])).join('\n');
+    const rows = scopeFindings(audit.scope, liveData.latestIssues).map((issue) => csvRow([issue.severity, issue.category, issue.title, issue.affectedUrl, issue.evidence, issue.recommendation])).join('\n');
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     return res.send(header + rows);
   }
 
   if (format === 'pages.csv') {
-    const header = 'statusCode,url,responseTimeMs,pageSizeBytes,title,wordCount,crawlDepth,issueCount\n';
-    const rows = liveData.latestPages.map((page) => csvRow([page.statusCode, page.url, page.responseTimeMs, page.pageSizeBytes, page.title, page.wordCount, page.crawlDepth, page.issueCount])).join('\n');
+    const fields = pageCsvFields(audit.scope);
+    const header = `${fields.join(',')}\n`;
+    const rows = liveData.latestPages.map((page) => csvRow(fields.map(field => page[field as keyof typeof page]))).join('\n');
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     return res.send(header + rows);
   }

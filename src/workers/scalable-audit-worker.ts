@@ -21,17 +21,19 @@ import { HostRequestScheduler } from './host-request-scheduler';
 import { isScalableWorkerStopRequested } from './scalable-worker-lifecycle';
 import { recordProjectAuditCompletion, recordProjectAuditFailure } from '../lib/projects/completion';
 import { buildSecurityIssues, fetchHtmlPage, mapAuditIssue, normalizeCrawlUrl, workerFetchOptions } from './audit-worker';
+import { AUDIT_GROUP_DETAILS, auditFocusLabel, isFocusedAudit, scopeIncludesGroup, scopeScoreCategories } from '../lib/audit/audit-scope';
 
 const severityRanks = { critical: 5, high: 4, medium: 3, low: 2, info: 1 };
 const stableId = (value: string) => createHash('sha256').update(value).digest('hex').slice(0, 40);
 const QUICK_CHECK_MODULES = new Set(['images', 'indexability', 'robots', 'sitemap', 'security', 'on-page', 'content', 'accessibility']);
 
-function scoreOptions(run: CrawlRun): { scoringVersion: '2.1' | '2.2'; measuredCategories?: ReturnType<typeof measuredAuditCategories> } {
+function scoreOptions(run: CrawlRun, audit: ResourceAuditDocument): { scoringVersion: '2.1' | '2.2'; measuredCategories?: ReturnType<typeof measuredAuditCategories>; selectedCategories?: ReturnType<typeof scopeScoreCategories> } {
   const scoringVersion = run.metadata.scoringVersion === SCORING_VERSION ? SCORING_VERSION : LEGACY_SCORING_VERSION;
   return {
     scoringVersion,
     measuredCategories: !run.analysed ? [] : scoringVersion === SCORING_VERSION
-      ? storedMeasuredAuditCategories(run.metadata.measuredCategories) : undefined,
+      ? storedMeasuredAuditCategories(run.metadata.measuredCategories).filter(category => !audit.scope || scopeScoreCategories(audit.scope).includes(category)) : undefined,
+    ...(audit.scope ? { selectedCategories: scopeScoreCategories(audit.scope) } : {}),
   };
 }
 
@@ -47,6 +49,7 @@ export function scoreGroups(issues: ResourceAuditIssue[]) {
 }
 
 function eligibleChild(audit: ResourceAuditDocument, url: string, kind: FrontierItem['kind'], depth: number, source?: string, anchor?: string) {
+  if (audit.scope?.coverage === 'page' && kind === 'page') return null;
   const clean = normalizeCrawlUrl(url, source || audit.normalizedUrl);
   if (!clean || Buffer.byteLength(clean) > 2048 || depth > 100 || !isSameDomain(clean, audit.normalizedUrl)) return null;
   return frontierItem(clean, kind, depth, source, anchor);
@@ -63,7 +66,17 @@ function failurePage(audit: ResourceAuditDocument, item: FrontierItem, failure: 
     category: 'crawlability', title: failure.safeTitle, description: failure.safeExplanation, affectedUrl: item.url,
     evidence: failure.httpStatus ? `HTTP ${failure.httpStatus}` : failure.safeTitle, recommendation: failure.suggestedAction,
     checkId: failure.code, failureCode: failure.code, findingKey: `${failure.code}|${item.url}`.toLowerCase(), detectedAt: now };
-  return { key: item.key, page: pageToRow(audit.id, page), issues: [issueToRow(audit.id, issue)], groups: scoreGroups([issue]), checks: 1, children: [] };
+  return { key: item.key, page: pageToRow(audit.id, page), issues: [issueToRow(audit.id, issue)], groups: audit.scope ? [] : scoreGroups([issue]), checks: audit.scope ? 0 : 1, children: [] };
+}
+
+export function selectedCheckModules(audit: ResourceAuditDocument, scoringVersion: unknown) {
+  const profile = getAuditProfileForDocument(audit);
+  const planModules = scoringVersion === SCORING_VERSION && profile.processingTier === 'free'
+    ? CHECKS.filter(check => QUICK_CHECK_MODULES.has(check.id)) : CHECKS;
+  if (!audit.scope) return planModules;
+  const selected = new Set(audit.scope.checkGroups.flatMap(group => AUDIT_GROUP_DETAILS[group].modules));
+  // Focused tools use the selected local checks; depth still controls admission and discovery.
+  return (isFocusedAudit(audit) ? CHECKS : planModules).filter(check => selected.has(check.id));
 }
 
 export async function analyseScalableItem(audit: ResourceAuditDocument, run: CrawlRun, item: FrontierItem, scheduler: HostRequestScheduler): Promise<Record<string, unknown>> {
@@ -82,11 +95,14 @@ export async function analyseScalableItem(audit: ResourceAuditDocument, run: Cra
         const { document, ...robotsEvidence } = createRobotsFetchEvidence({ status: response.status, body: response.body, url: item.url });
         if (robotsEvidence.policy === 'disallow-all') return { key: item.key, children: [], robotsUnavailable: true, robotsEvidence };
         const rules = document || parseRobotsTxt('');
-        return { key: item.key, children: rules.sitemaps.map(url => eligibleChild(audit,url,'sitemap',0,item.url)).filter(Boolean), robots: rules, robotsEvidence };
+        const needsSitemap = audit.scope?.coverage !== 'page' || scopeIncludesGroup(audit.scope, 'crawlability');
+        return { key: item.key, children: needsSitemap ? rules.sitemaps.map(url => eligibleChild(audit,url,'sitemap',0,item.url)).filter(Boolean) : [], robots: rules, robotsEvidence };
       }
       const parsed = response.status >= 200 && response.status < 300 ? parseSitemapXml(response.body) : { urls: [], sitemaps: [], errors: [`HTTP ${response.status}`] };
       const children = [ ...parsed.urls.map(url => eligibleChild(audit,url,'page',1,item.url)), ...parsed.sitemaps.map(url => eligibleChild(audit,url,'sitemap',0,item.url)) ].filter(Boolean);
-      return { key: item.key, children, discoveryErrors: parsed.errors };
+      return { key: item.key, children, discoveryErrors: parsed.errors,
+        sitemapInspected: parsed.errors.length === 0,
+        sitemapContainsTarget: parsed.urls.some(url => normalizeCrawlUrl(url, item.url) === audit.normalizedUrl) };
     }
     if (run.metadata.robotsUnavailable || (run.metadata.robots && isBlockedByRobots(item.url, run.metadata.robots))) return failurePage(audit,item,failureForCode('ROBOTS_BLOCKED',{ affectedUrl: item.url }));
     const fetched = await scheduler.schedule(item.url, () => fetchHtmlPage(item.url,config.timeoutMs));
@@ -97,12 +113,15 @@ export async function analyseScalableItem(audit: ResourceAuditDocument, run: Cra
     if (fetched.statusCode>=400) return failurePage(audit,item,failureForHttpStatus(fetched.statusCode,{ affectedUrl:item.url,attemptCount:item.attempts+1 }));
     if (!fetched.html.trim()) return failurePage(audit,item,failureForCode('EMPTY_RESPONSE',{ affectedUrl:item.url }));
     const profile = getAuditProfileForDocument(audit);
-    const checkModules = run.metadata.scoringVersion === SCORING_VERSION && profile.processingTier === 'free'
-      ? CHECKS.filter(check => QUICK_CHECK_MODULES.has(check.id)) : CHECKS;
+    const checkModules = selectedCheckModules(audit, run.metadata.scoringVersion).filter(check => check.id !== 'sitemap' || !audit.scope || run.metadata.sitemapInspected);
     const checks = runCheckSetSafely(checkModules, { ...fetched.parsed, url:fetched.finalUrl,finalUrl:fetched.finalUrl,status:fetched.statusCode,
-      headers:fetched.headers,loadTimeMs:fetched.responseTimeMs,pageSizeBytes:fetched.pageSizeBytes,contentType:fetched.contentType,depth:item.depth });
+      headers:fetched.headers,loadTimeMs:fetched.responseTimeMs,pageSizeBytes:fetched.pageSizeBytes,contentType:fetched.contentType,depth:item.depth,
+      ...(audit.scope ? { blockedByRobots: false, inSitemap: run.metadata.sitemapContainsTarget === true,
+        isIndexable: !/noindex|none/i.test(`${fetched.parsed?.metaRobots || ''},${fetched.headers['x-robots-tag'] || ''}`) } : {}) });
     const now = new Date().toISOString();
-    const recordedIssues: ResourceAuditIssue[] = [ ...checks.issues.filter(issue=>isSeoIssueAllowedForProfile(profile,issue)).map(issue=>mapAuditIssue(issue,fetched.finalUrl)), ...buildSecurityIssues(fetched) ]
+    const passiveIssues = scopeIncludesGroup(audit.scope, 'security') ? buildSecurityIssues(fetched) : [];
+    const recordedIssues: ResourceAuditIssue[] = [ ...checks.issues.filter(issue=>isFocusedAudit(audit) || isSeoIssueAllowedForProfile(profile,issue)).map(issue=>mapAuditIssue(issue,fetched.finalUrl)), ...passiveIssues ]
+      .filter(issue => !audit.scope || scopeScoreCategories(audit.scope).includes(categoryForIssue(issue)) || (scopeIncludesGroup(audit.scope,'technical') && categoryForIssue(issue)==='mobile'))
       .map(issue=>({ ...issue, id:stableId(`${audit.id}:${fetched.finalUrl}:${issue.checkId || issue.title}:${issue.category}`),detectedAt:now }));
     const issues = run.metadata.scoringVersion === SCORING_VERSION ? deduplicatePageIssues(recordedIssues) : recordedIssues;
     const page: ResourceAuditPage = { id:stableId(`${audit.id}:${fetched.finalUrl}`),url:fetched.finalUrl,statusCode:fetched.statusCode,
@@ -113,8 +132,8 @@ export async function analyseScalableItem(audit: ResourceAuditDocument, run: Cra
     page.toolEvidence = collectToolEvidence({ ...fetched, requestedUrl: item.url,
       robotsAllowed: run.metadata.robots && run.metadata.robotsState !== 'malformed' ? !isBlockedByRobots(item.url, run.metadata.robots) : null });
     const children = (fetched.parsed?.internalLinks || []).map(link=>eligibleChild(audit,link.href,'page',item.depth+1,fetched.finalUrl,link.text)).filter(Boolean);
-    return { key:item.key,page:pageToRow(audit.id,page),issues:issues.map(issue=>issueToRow(audit.id,issue)),groups:scoreGroups(issues),checks:checks.completedChecks+2,unavailable:checks.unavailableChecks.length,children,
-      measuredCategories: measuredAuditCategories(checks.completedCheckIds) };
+    return { key:item.key,page:pageToRow(audit.id,page),issues:issues.map(issue=>issueToRow(audit.id,issue)),groups:scoreGroups(issues),checks:checks.completedChecks+(audit.scope ? scopeIncludesGroup(audit.scope,'security') ? 1 : 0 : 2),unavailable:checks.unavailableChecks.length,children,
+      measuredCategories: measuredAuditCategories([...checks.completedCheckIds, ...(passiveIssues.length || scopeIncludesGroup(audit.scope,'security') ? ['security'] : [])], audit.scope) };
   } catch (error) {
     if (item.kind === 'robots') return item.attempts < 2
       ? { key: item.key, retryAt: new Date(Date.now() + retryDelayMs(undefined, item.attempts)).toISOString() }
@@ -141,7 +160,7 @@ export async function runScalableSlice(workerId: string, onActivity?: (auditId: 
   const commit = (payload: Record<string,unknown>) => {
     const task = writeChain.then(async () => {
       if (leaseError) throw leaseError;
-      run = await scalableRpc<CrawlRun>('scalable_audit_commit',{p_audit:audit.id,p_worker:workerId,p_generation:run.generation,p_payload:{...payload,rss:process.memoryUsage().rss}});
+      run = await scalableRpc<CrawlRun>('scalable_audit_commit',{p_audit:audit.id,p_worker:workerId,p_generation:run.generation,p_payload:{...payload,phase:audit.scope ? `Running ${auditFocusLabel(audit.scope).toLowerCase()}` : 'Checking pages',rss:process.memoryUsage().rss}});
     });
     writeChain = task.catch(error=>{leaseError=error;});
     return task;
@@ -163,7 +182,7 @@ export async function runScalableSlice(workerId: string, onActivity?: (auditId: 
   };
   const publishScore = async (force = false) => {
     if (!shouldPublishProvisionalScore({ pagesAnalysed:run.analysed,lastPublishedPages:run.last_score_pages,nowMs:Date.now(),lastPublishedAtMs:run.last_score_at ? Date.parse(run.last_score_at) : 0,force })) return;
-    const result = calculateTransparentAuditScore({issues:[],pages:[],aggregate:await readScoreAggregate(run),...scoreOptions(run)});
+    const result = calculateTransparentAuditScore({issues:[],pages:[],aggregate:await readScoreAggregate(run),...scoreOptions(run,audit)});
     await commit({score:{ overallScore:result.overall,categoryScores:Object.fromEntries(Object.entries(result.categories).map(([key,value])=>[key,value.score])),
       scoreState:'provisional',pagesAnalysed:run.analysed,pagesDiscovered:run.discovered,pageLimit:audit.pageLimit,unavailableCount:run.unavailable_count,updatedAt:new Date().toISOString() }});
   };
@@ -176,14 +195,15 @@ export async function runScalableSlice(workerId: string, onActivity?: (auditId: 
     if (!run.metadata.initialized) {
       const origin = new URL(audit.normalizedUrl).origin;
       const sitemapPaths = audit.effectiveMode==='deep' ? ['/sitemap.xml','/sitemap_index.xml','/page-sitemap.xml','/post-sitemap.xml','/product-sitemap.xml'] : ['/sitemap.xml'];
-      await commit({seed:[frontierItem(new URL('/robots.txt',origin).href,'robots'), ...sitemapPaths.map(path=>frontierItem(new URL(path,origin).href,'sitemap'))],metadata:{initialized:true,scoringVersion:SCORING_VERSION,measuredCategories:[]}});
+      const needsSitemap = audit.scope?.coverage !== 'page' || scopeIncludesGroup(audit.scope,'crawlability');
+      await commit({seed:[frontierItem(new URL('/robots.txt',origin).href,'robots'), ...(needsSitemap ? sitemapPaths.map(path=>frontierItem(new URL(path,origin).href,'sitemap')) : [])],metadata:{initialized:true,scoringVersion:SCORING_VERSION,measuredCategories:[]}});
     }
     let pauseReason: string | undefined;
     crawl: while (!isScalableWorkerStopRequested(workerId) && processed<CRAWL_SLICE_PAGES && Date.now()-started<CRAWL_SLICE_MS && run.analysed<audit.pageLimit && run.active_ms+Date.now()-started<run.budget_ms) {
       if (leaseError) throw leaseError;
       const memoryLimit = Math.max(128,Number(process.env.AUDIT_WORKER_RSS_LIMIT_MB || 384))*1024*1024;
       if (process.memoryUsage().rss>memoryLimit) { pauseReason='Worker memory pressure; waiting to resume'; break; }
-      const items = await readFrontier(audit.id,Math.min(run.analysed===0 ? 1 : 2,audit.pageLimit-run.analysed,CRAWL_SLICE_PAGES-processed));
+      const items = await readFrontier(audit.id,Math.min(run.analysed===0 ? 1 : 2,audit.pageLimit-run.analysed,CRAWL_SLICE_PAGES-processed), audit.scope?.coverage==='page' && scopeIncludesGroup(audit.scope,'crawlability'));
       if (leaseError) throw leaseError;
       if (isScalableWorkerStopRequested(workerId)) break;
       if (!items.length) break;
@@ -209,6 +229,8 @@ export async function runScalableSlice(workerId: string, onActivity?: (auditId: 
           metadata.robotsEvidence = result.robotsEvidence;
           metadata.robotsState = (result.robotsEvidence as { state: string }).state;
         }
+        if (result.sitemapInspected) metadata.sitemapInspected = true;
+        if (result.sitemapContainsTarget) metadata.sitemapContainsTarget = true;
         const measured = storedMeasuredAuditCategories(run.metadata.measuredCategories);
         const newlyMeasured = storedMeasuredAuditCategories(result.measuredCategories).filter(category => !measured.includes(category));
         if (newlyMeasured.length) metadata.measuredCategories = [...measured, ...newlyMeasured];
@@ -222,16 +244,18 @@ export async function runScalableSlice(workerId: string, onActivity?: (auditId: 
     const timedOut=run.active_ms+Date.now()-started>=run.budget_ms;
     const pending=await hasPendingFrontier(audit.id);
     if (run.analysed>=audit.pageLimit || timedOut || !pending) {
-      const score=calculateTransparentAuditScore({issues:[],pages:[],aggregate:await readScoreAggregate(run),...scoreOptions(run),
-        limitations:['Scores cover the automated checks actually run, not every possible SEO requirement.',
-          'Response timing measures the HTML request, not Core Web Vitals or time to first byte.',
-          'Internal-link observations do not verify every destination or measure external backlinks.'],
+      const score=calculateTransparentAuditScore({issues:[],pages:[],aggregate:await readScoreAggregate(run),...scoreOptions(run,audit),
+        limitations:['Scores cover the automated checks actually run, not every possible requirement.',
+          ...(scopeIncludesGroup(audit.scope,'performance') ? ['Response timing measures the HTML request, not Core Web Vitals or time to first byte.'] : []),
+          ...(scopeIncludesGroup(audit.scope,'links') ? ['Internal-link observations do not verify every destination or measure external backlinks.'] : []),
+          ...(scopeIncludesGroup(audit.scope,'security') ? ['Passive security checks inspect HTTPS, headers and HTML; they are not penetration testing.'] : []),
+          ...(scopeIncludesGroup(audit.scope,'technical') ? ['Mobile observations inspect static HTML, not browser-rendered layout.'] : [])],
         unavailableChecks:{mobile:['Browser-rendered layout and Core Web Vitals were not collected.'],technical:run.unavailable_count ? [`${run.unavailable_count} check groups could not complete.`] : []}});
       const [pages,topIssues]=await Promise.all([auditRepository.getLatestPages(audit.id,25),auditRepository.getLatestIssues(audit.id,25)]);
-      const reason=run.analysed>=audit.pageLimit ? 'page_limit_reached' : timedOut ? 'audit_deadline_reached' : run.discovered>=run.candidate_limit ? 'safety_limit_reached' : 'crawl_queue_exhausted';
-      const report:ResourceAuditReport={scores:{...toReportScoreRecord(score),auditEngineVersion:AUDIT_ENGINE_VERSION,scoringVersion:scoreOptions(run).scoringVersion,checkRegistryVersion:CHECK_REGISTRY_VERSION,
+      const reason=run.analysed>=audit.pageLimit ? audit.scope?.coverage==='page' ? 'selected_page_completed' : 'page_limit_reached' : timedOut ? 'audit_deadline_reached' : run.discovered>=run.candidate_limit ? 'safety_limit_reached' : 'crawl_queue_exhausted';
+      const report:ResourceAuditReport={scope:audit.scope,scores:{...toReportScoreRecord(score),...(audit.scope ? {scope:audit.scope} : {}),auditEngineVersion:AUDIT_ENGINE_VERSION,scoringVersion:scoreOptions(run,audit).scoringVersion,checkRegistryVersion:CHECK_REGISTRY_VERSION,
         processingVersion:2,unavailableCount:run.unavailable_count,evidenceSample:true,checkCountUnit:'groups',coverage:{pagesDiscovered:run.discovered,pagesAttempted:run.attempted,pagesAnalysed:run.analysed,pagesFailed:run.failed,pagesBlocked:run.blocked,pageLimit:audit.pageLimit,coveragePercent:Math.round(100*run.analysed/audit.pageLimit),discoveredCoveragePercent:run.discovered ? Math.round(100*run.analysed/run.discovered) : null,quotaReached:run.analysed>=audit.pageLimit,stopReason:reason}},
-        summary:`Analysed ${run.analysed} of up to ${audit.pageLimit} pages. ${run.failed} failed and ${run.blocked} were blocked. Full evidence is available in the paginated report and exports.`,
+        summary:`${auditFocusLabel(audit.scope)}: analysed ${run.analysed} of up to ${audit.pageLimit} pages. ${run.failed} failed and ${run.blocked} were blocked. Evidence for the selected checks is available in the report and exports.`,
         // Finalization fills the bounded recommendations from all retained findings in the same transaction.
         presentationSummary:readAuditPresentationSummary(run.presentation_summary),
         pages,topIssues,exports:{json:`/api/tools/audit/export/${audit.id}/json`,issuesCsv:`/api/tools/audit/export/${audit.id}/issues.csv`,pagesCsv:`/api/tools/audit/export/${audit.id}/pages.csv`},generatedAt:new Date().toISOString()};

@@ -76,7 +76,7 @@ export const supabaseScoreBadgeShares: ScoreBadgeShareStore = {
 
 export async function readScoreBadgeScores(auditId: string): Promise<Record<string, unknown> | null> {
   const { data, error } = await requireSupabaseAdminClient().from('audit_reports')
-    .select('overall:scores->overall,scoringVersion:scores->scoringVersion,coverage:scores->coverage')
+    .select('overall:scores->overall,scoringVersion:scores->scoringVersion,coverage:scores->coverage,scope:scores->scope')
     .eq('audit_id', auditId).maybeSingle();
   if (error) throw error;
   return data;
