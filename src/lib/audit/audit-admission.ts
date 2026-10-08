@@ -21,6 +21,13 @@ export function projectAuditAdmission(audit: ResourceAuditDocument): AuditAdmiss
   return Object.fromEntries(ADMISSION_FIELDS.map(key => [key, audit[key]])) as unknown as AuditAdmissionSummary;
 }
 
+const STATUS_FIELDS = [...ADMISSION_FIELDS, 'presentationSummary', 'warningCount', 'failureCounts',
+  'usedHttpFallback', 'recoveryAttempts', 'lastRecoveredAt', 'checkpointPagesCrawled', 'checkpointUpdatedAt'] as const satisfies readonly (keyof ResourceAuditDocument)[];
+export type AuditStatusSummary = Pick<ResourceAuditDocument, typeof STATUS_FIELDS[number]>;
+export function projectAuditStatus(audit: ResourceAuditDocument): AuditStatusSummary {
+  return Object.fromEntries(STATUS_FIELDS.map(key => [key, audit[key]])) as unknown as AuditStatusSummary;
+}
+
 export function snapshotFromAdmission(result: AuditStartResult): ResourceAuditLiveData | undefined {
   if (result.reusedExistingAudit || !result.initialAudit || result.initialAudit.id !== result.auditId) return undefined;
   const audit = result.initialAudit;

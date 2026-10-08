@@ -2,7 +2,7 @@ export const API_ROUTES = {
   auditStart: "/api/tools/audit/start",
   auditStatus: (id: string) => `/api/tools/audit/status/${id}`,
   auditStatusDelta: (id: string, known: { updatedAt?: string; status?: string; pagesCrawled?: number; issuesFound?: number; hasReport?: boolean }) => {
-    const params = new URLSearchParams({ delta: '1' });
+    const params = new URLSearchParams({ delta: '1', compact: '1' });
     if (known.updatedAt) params.set('knownUpdatedAt', known.updatedAt);
     if (known.status) params.set('knownStatus', known.status);
     if (known.pagesCrawled != null) params.set('knownPagesCrawled', String(known.pagesCrawled));

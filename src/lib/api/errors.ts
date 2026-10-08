@@ -1,7 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
-import { getSupabaseAdminClient } from '../supabase/server';
-import { getCommitIdentifier } from '../platform/version';
 import { captureApiException } from '../monitoring/sentry-node';
 
 export type SafeApiErrorShape = {
@@ -72,27 +70,16 @@ export function safeApiError(error: unknown, requestId: string): { status: numbe
   };
 }
 
-function redactInternalDetails(value: unknown) {
-  const text = value instanceof Error ? `${value.name}: ${value.message}\n${value.stack || ''}` : String(value || 'Unknown error');
-  return text
-    .replace(/Bearer\s+[A-Za-z0-9._~-]+/gi, 'Bearer [redacted]')
-    .replace(/(service[_-]?role|api[_-]?key|password|authorization)\s*[:=]\s*\S+/gi, '$1=[redacted]')
-    .slice(0, 12_000);
-}
-
 export async function recordApiError(req: Request, requestId: string, error: unknown, internalCode = 'UNEXPECTED_API_ERROR') {
-  const client = getSupabaseAdminClient();
-  if (!client) return;
   try {
-    await client.from('api_error_logs').insert({
+    const { persistApiError } = await import('./error-persistence');
+    await persistApiError({
       request_id: requestId,
       route: String(req.route?.path || req.path || '').slice(0, 300),
       method: req.method,
       user_id: resUserId(req),
       internal_code: internalCode,
-      internal_details: redactInternalDetails(error),
-      deployment_version: getCommitIdentifier(),
-    });
+    }, error);
   } catch {
     // Error logging must never replace or recursively fail the customer response.
   }

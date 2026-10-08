@@ -16,7 +16,7 @@ import { customerSafeDiagnosticText } from '../../lib/audit/audit-failures';
 import { deriveAuditLivePresentation } from '../../lib/audit/audit-live-presentation';
 import { getAuditLiveScore } from '../../lib/audit/audit-live-score';
 import { describeCrawlCompletion } from '../../lib/audit/audit-coverage';
-import { downloadAuditExport } from '../../lib/http/download';
+import { AuditExportDownloadNotice, useAuditExportDownload } from './AuditExportDownload';
 import { SparklineChart, StatusBadge, SurfaceCard } from '../ui/visual-system';
 import { Notice } from '../ui/page-system';
 import { readAuditHistory, scoreTrendForUrl, upsertAuditHistory, type ChecklistStatus } from '../../lib/audit/client-insights';
@@ -108,9 +108,9 @@ export function LiveAuditProgress({ auditId, initialSnapshot, onRerun, onOpenWor
   const [now, setNow] = useState(Date.now());
   const [isCancelling, setIsCancelling] = useState(false);
   const [shareMessage, setShareMessage] = useState<string | null>(null);
-  const [exportMessage, setExportMessage] = useState<string | null>(null);
-  const [isDownloadingJson, setIsDownloadingJson] = useState(false);
-  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const exportDownload = useAuditExportDownload(auditId);
+  const isDownloadingJson = exportDownload.busy && exportDownload.state?.format === 'json';
+  const isDownloadingPdf = exportDownload.busy && exportDownload.state?.format === 'pdf';
   const [loadRetryKey, setLoadRetryKey] = useState(0);
   const [reportRetryKey, setReportRetryKey] = useState(0);
   const [reportRetryExhausted, setReportRetryExhausted] = useState(false);
@@ -305,31 +305,11 @@ export function LiveAuditProgress({ auditId, initialSnapshot, onRerun, onOpenWor
   };
 
   const downloadPdf = async () => {
-    setIsDownloadingPdf(true);
-    setExportMessage(null);
-    try {
-      await downloadAuditExport(auditId, 'pdf');
-      setExportMessage('PDF report downloaded.');
-    } catch (downloadError) {
-      setExportMessage(downloadError instanceof Error ? downloadError.message : 'PDF download failed.');
-    } finally {
-      setIsDownloadingPdf(false);
-      window.setTimeout(() => setExportMessage(null), 4000);
-    }
+    await exportDownload.start('pdf');
   };
 
   const downloadJson = async () => {
-    setIsDownloadingJson(true);
-    setExportMessage(null);
-    try {
-      await downloadAuditExport(auditId, 'json');
-      setExportMessage('JSON report downloaded.');
-    } catch (downloadError) {
-      setExportMessage(downloadError instanceof Error ? downloadError.message : 'JSON download failed.');
-    } finally {
-      setIsDownloadingJson(false);
-      window.setTimeout(() => setExportMessage(null), 4000);
-    }
+    await exportDownload.start('json');
   };
 
 
@@ -377,7 +357,8 @@ export function LiveAuditProgress({ auditId, initialSnapshot, onRerun, onOpenWor
     <AuditReportReadyNote warning={audit.status === 'completed_with_warnings' && Boolean(data.finalReport)} />
     {error && <Notice tone="danger" title="Some audit data could not refresh">{humanizeAuditText(error)}</Notice>}
     {warning && !terminal && <Notice tone="warning">{humanizeAuditText(warning)}</Notice>}
-    {(shareMessage || exportMessage) && <Notice tone={/copied|downloaded/.test(shareMessage || exportMessage || '') ? 'success' : 'danger'}>{shareMessage || exportMessage}</Notice>}
+    {shareMessage && <Notice tone={/copied/.test(shareMessage) ? 'success' : 'danger'}>{shareMessage}</Notice>}
+    <AuditExportDownloadNotice download={exportDownload} />
     {queuedTooLong && <Notice tone="warning" title="This audit is taking longer than usual to start">The audit engine may be waking up or finishing earlier work. Updates will resume automatically. Audit ID: {audit.id}</Notice>}
     <AuditWorkspaceModes mode={modes.mode} pathFor={modes.pathFor} />
     {modes.mode === 'overview' && <>

@@ -913,6 +913,16 @@ export const auditRepository = {
     return this.getAuditJob(id);
   },
 
+  async getAuditStatusDocument(id: string): Promise<ResourceAuditDocument | null> {
+    const client = getSupabaseAdminClient();
+    if (!client) return this.getAuditJob(id);
+    // The guest identity is read for authorization only; the route withholds it.
+    const { data, error } = await client.from('audits').select(`${AUDIT_HISTORY_SUMMARY_SELECT},guest_key_hash`)
+      .eq('id', id).maybeSingle();
+    assertNoError(error, 'Get audit status summary');
+    return toAuditDocument(data);
+  },
+
   async updateAuditJob(id: string, patch: Partial<ResourceAuditDocument>) {
     const update = { ...patch, updatedAt: nowIso() };
     const client = getSupabaseAdminClient();

@@ -1,4 +1,5 @@
 import { Activity, FileSearch, Globe2, LayoutDashboard } from 'lucide-react';
+import './audit-report.css';
 import { useCallback } from 'react';
 import { Link, useLocation, useNavigate } from '../../app/router';
 

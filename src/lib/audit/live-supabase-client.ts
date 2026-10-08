@@ -7,6 +7,7 @@ import { FINAL_REPORT_RETRY_DELAYS_MS, mergeAuditLiveData } from './audit-lifecy
 import { readAuditPresentationSummary } from './audit-presentation-summary';
 import { readToolEvidence } from '../tools/audit-tools';
 import { hasUsableAuditReport, isTerminalAuditStatus } from './audit-time';
+import { createLiveEmissionScheduler } from './live-emission';
 import type {
   ResourceAuditDocument,
   ResourceAuditEvent,
@@ -326,9 +327,13 @@ export function subscribeToAuditLiveData(
     message: 'Opening live updates for this audit.',
   });
 
-  const emitLiveData = () => {
-    emit();
+  const emission = createLiveEmissionScheduler({
+    hidden: () => document.hidden,
+    requestFrame: callback => window.requestAnimationFrame(callback),
+    cancelFrame: id => window.cancelAnimationFrame(id),
+    emit: () => {
     if (closed) return;
+    emit();
     const usingFallback = Boolean(fallbackUnsubscribe);
     onConnectionChange?.({
       transport: usingFallback ? 'polling' : 'websocket',
@@ -340,6 +345,10 @@ export function subscribeToAuditLiveData(
           : 'Loaded the audit snapshot. Waiting for the WebSocket subscription.',
       lastUpdateAt: Date.now(),
     });
+    },
+  });
+  const emitLiveData = () => {
+    emission.request(isTerminalAuditStatus(liveData.audit?.status) || Boolean(liveData.finalReport));
     queueFinalReconciliation();
   };
 
@@ -386,6 +395,7 @@ export function subscribeToAuditLiveData(
         onError?.(new Error(response.error));
         if ([401, 403, 404, 410].includes(response.status || 0)) {
           closed = true;
+          emission.dispose();
           client.removeChannel(channel);
           onConnectionChange?.({ transport: 'websocket', status: 'closed', message: response.error });
         } else startPollingFallback('Updates are reconnecting with automatic refresh.');
@@ -407,7 +417,7 @@ export function subscribeToAuditLiveData(
       if (reconciliation === controller) reconciliation = null;
     }
   };
-  const visible = () => { if (!document.hidden && websocketConnected) void reconcile(); };
+  const visible = () => { if (!document.hidden && websocketConnected) { emitLiveData(); void reconcile(); } };
   document.addEventListener('visibilitychange', visible);
 
   const channel = client
@@ -518,6 +528,7 @@ export function subscribeToAuditLiveData(
 
   return () => {
     closed = true;
+    emission.dispose();
     reconciliation?.abort();
     window.clearTimeout(finalHintTimer);
     document.removeEventListener('visibilitychange', visible);

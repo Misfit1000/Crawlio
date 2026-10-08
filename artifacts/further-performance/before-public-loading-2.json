@@ -1,0 +1,81 @@
+{
+  "origin": "https://crawlio1.vercel.app",
+  "observedAt": "2026-10-08T13:36:25.274Z",
+  "visits": [
+    {
+      "kind": "fresh",
+      "domContentLoadedMs": 3759,
+      "lcpMs": 3820,
+      "cls": 0,
+      "transferredBytes": 115562,
+      "scriptEncodedBytes": 46588,
+      "browserRequests": 4,
+      "apiRequests": [],
+      "requestedScripts": [
+        "/assets/index-DiRElmz-.js",
+        "/assets/react-vendor-ktE_opPO.js"
+      ],
+      "cdnResponses": [
+        {
+          "path": "/",
+          "cache": "MISS",
+          "status": 200
+        },
+        {
+          "path": "/assets/index-DiRElmz-.js",
+          "cache": "MISS",
+          "status": 200
+        },
+        {
+          "path": "/assets/react-vendor-ktE_opPO.js",
+          "cache": "MISS",
+          "status": 200
+        },
+        {
+          "path": "/assets/index-C_G2fZqN.css",
+          "cache": "MISS",
+          "status": 200
+        }
+      ],
+      "note": "Unthrottled local browser sample, not field Core Web Vitals or origin execution counts."
+    },
+    {
+      "kind": "repeat",
+      "domContentLoadedMs": 77,
+      "lcpMs": 100,
+      "cls": 0,
+      "transferredBytes": 300,
+      "scriptEncodedBytes": 46588,
+      "browserRequests": 4,
+      "apiRequests": [],
+      "requestedScripts": [
+        "/assets/index-DiRElmz-.js",
+        "/assets/react-vendor-ktE_opPO.js"
+      ],
+      "cdnResponses": [
+        {
+          "path": "/",
+          "cache": "HIT",
+          "status": 200
+        },
+        {
+          "path": "/assets/index-DiRElmz-.js",
+          "cache": "MISS",
+          "status": 200
+        },
+        {
+          "path": "/assets/react-vendor-ktE_opPO.js",
+          "cache": "MISS",
+          "status": 200
+        },
+        {
+          "path": "/assets/index-C_G2fZqN.css",
+          "cache": "MISS",
+          "status": 200
+        }
+      ],
+      "note": "Unthrottled local browser sample, not field Core Web Vitals or origin execution counts."
+    }
+  ],
+  "pricingRequests": []
+}

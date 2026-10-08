@@ -10,7 +10,7 @@ import { customerSafeDiagnosticText } from '../../lib/audit/audit-failures';
 import { getAuditLiveScore } from '../../lib/audit/audit-live-score';
 import { classifyReportSection, extractReportScores } from '../../lib/audit/report-insights';
 import type { AuditComparison, AuditHistoryPage, AuditMode, ResourceAuditPage } from '../../lib/audit/resource-types';
-import { downloadAuditExport } from '../../lib/http/download';
+import { AuditExportDownloadNotice, useAuditExportDownload } from './AuditExportDownload';
 import { safeJsonFetch } from '../../lib/http/safe-json';
 import { EmptyState, MetricCard, StatusBadge, SurfaceCard } from '../ui/visual-system';
 import { Notice } from '../ui/page-system';
@@ -108,6 +108,7 @@ function ComparisonPanel() {
 function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSection; onRerun?: (url: string, mode: AuditMode, scope?: AuditScope | null) => void | Promise<void> }) {
   const { auditId, data, loading, error, connection, reportPending, reportRetrying, refresh, retryFinalReport } = useAuditWorkspace();
   const audit = data.audit;
+  const exportDownload = useAuditExportDownload(auditId);
   const modes = useAuditWorkspaceMode(section === 'overview' ? 'overview' : section === 'pages' ? 'pages' : 'findings');
   const workflow = useFindingWorkflow(auditId, data.latestIssues);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -134,8 +135,7 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
     } catch (reason) { setActionMessage(reason instanceof Error ? reason.message : 'The report link could not be created.'); }
   };
   const exportReport = async (format: 'pdf' | 'json') => {
-    try { await downloadAuditExport(auditId, format); setActionMessage(`${format.toUpperCase()} report downloaded.`); }
-    catch (reason) { setActionMessage(reason instanceof Error ? reason.message : 'The export could not be downloaded.'); }
+    await exportDownload.start(format);
   };
   useEffect(() => {
     if (!actionMessage) return;
@@ -156,14 +156,15 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
       <div className="flex flex-wrap gap-2">
         {onRerun && isTerminalAuditStatus(audit.status) && <button type="button" onClick={() => onRerun(audit.normalizedUrl, audit.effectiveMode, audit.scope)} className="quiet-button min-h-9 px-3 py-1 text-xs"><RefreshCw className="h-4 w-4" />Rerun</button>}
         <button type="button" onClick={copyReportLink} className="quiet-button min-h-9 px-3 py-1 text-xs"><Copy className="h-4 w-4" />Share report</button>
-        <button type="button" onClick={() => void exportReport('pdf')} disabled={!data.finalReport} className="quiet-button min-h-9 px-3 py-1 text-xs"><FileDown className="h-4 w-4" />PDF</button>
-        <button type="button" onClick={() => void exportReport('json')} disabled={!data.finalReport} className="quiet-button min-h-9 px-3 py-1 text-xs"><FileDown className="h-4 w-4" />JSON</button>
+        <button type="button" onClick={() => void exportReport('pdf')} disabled={!data.finalReport || exportDownload.busy} className="quiet-button min-h-9 px-3 py-1 text-xs"><FileDown className="h-4 w-4" />PDF</button>
+        <button type="button" onClick={() => void exportReport('json')} disabled={!data.finalReport || exportDownload.busy} className="quiet-button min-h-9 px-3 py-1 text-xs"><FileDown className="h-4 w-4" />JSON</button>
       </div>
     </header>
     <AuditTerminalState audit={audit} reportPending={reportPending} reportRetrying={reportRetrying} onRetryReport={retryFinalReport} />
     <AuditReportReadyNote warning={audit.status === 'completed_with_warnings' && Boolean(data.finalReport)} />
     {error && <Notice tone="danger" title="Some audit data could not refresh">{customerSafeDiagnosticText(error)}</Notice>}
     {actionMessage && <Notice tone={/copied|downloaded/.test(actionMessage) ? 'success' : 'danger'}>{actionMessage}</Notice>}
+    <AuditExportDownloadNotice download={exportDownload} />
     <AuditWorkspaceModes mode={modes.mode} pathFor={modes.pathFor} />
     {!included && <AuditScopeNotIncluded />}
     {included && modes.mode === 'overview' && <>

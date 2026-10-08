@@ -1,4 +1,5 @@
 import { memo, useMemo } from 'react';
+import './audit-report.css';
 import { CheckCircle2, ShieldAlert } from 'lucide-react';
 import type { ResourceAuditDocument, ResourceAuditIssue } from '../../lib/audit/resource-types';
 import type { AuditScoreState } from '../../lib/audit/audit-live-score';

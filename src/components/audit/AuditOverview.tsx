@@ -1,4 +1,5 @@
 import { lazy, memo, Suspense, useMemo, useState } from 'react';
+import './audit-report.css';
 import type { ResourceAuditLiveData } from '../../lib/audit/resource-types';
 import { REPORT_SECTIONS, formatBytes } from '../../lib/audit/report-insights';
 import { MetricBarChart, SitePreviewSection, StatusBadge } from '../ui/visual-system';

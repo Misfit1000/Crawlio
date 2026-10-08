@@ -150,7 +150,7 @@ apiRouter.get('/audit/export/:id/:format', asyncJsonRoute(async (req, res) => {
 
   if (audit.processingVersion === 2 && format !== 'pdf') {
     const { handleScalableExportDownload, isScalableExportFormat } = await import('../lib/report/scalable-exports');
-    if (isScalableExportFormat(format)) return handleScalableExportDownload(res, audit, format);
+    if (isScalableExportFormat(format)) return handleScalableExportDownload(res, audit, format, { prepared: req.query.prepared === '1' });
   }
   const liveData = await auditRepository.getLiveData(id, audit);
 

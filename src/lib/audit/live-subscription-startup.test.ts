@@ -44,6 +44,8 @@ test('authenticated live subscriptions initialize access and reconcile final evi
       removeChannel: () => { calls.push('remove'); },
     };
     Object.defineProperty(globalThis, 'window', { configurable: true, value: {
+      requestAnimationFrame: (callback: () => void) => { const id = ++nextTimer; queueMicrotask(callback); return id; },
+      cancelAnimationFrame: () => {},
       setTimeout: (callback: () => void) => { const id = ++nextTimer; timers.set(id, callback); return id; },
       clearTimeout: (id: number) => timers.delete(id),
     } });

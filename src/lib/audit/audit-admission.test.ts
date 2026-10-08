@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { projectAuditAdmission, snapshotFromAdmission } from './audit-admission';
+import { projectAuditAdmission, projectAuditStatus, snapshotFromAdmission } from './audit-admission';
 import type { ResourceAuditDocument } from './resource-types';
 
 const audit = {
@@ -27,4 +27,15 @@ test('reopened or mismatched admissions never imply empty evidence', () => {
   assert.equal(snapshotFromAdmission({ auditId: audit.id, initialAudit, reusedExistingAudit: true }), undefined);
   assert.equal(snapshotFromAdmission({ auditId: 'other-job', initialAudit }), undefined);
   assert.equal(snapshotFromAdmission({ auditId: 'old-compatible-response' }), undefined);
+});
+
+test('compact status retains measured progress but excludes private and oversized state', () => {
+  const summary = projectAuditStatus({ ...audit, pagesCrawled: 12, issuesFound: 34,
+    presentationSummary: { version: 1 }, checkpointPagesCrawled: 12 } as unknown as ResourceAuditDocument);
+  assert.equal(summary.pagesCrawled, 12);
+  assert.equal(summary.issuesFound, 34);
+  assert.equal(summary.checkpointPagesCrawled, 12);
+  for (const key of ['guestKeyHash', 'lockedBy', 'checkpointState', 'ipHash', 'leaseUntil']) {
+    assert.equal(key in summary, false);
+  }
 });

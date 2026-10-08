@@ -10,7 +10,7 @@ test('healthy homepage defers pricing and route-only bundles until needed', asyn
   await page.waitForTimeout(500);
   expect(requests.filter(url => /sentry-vendor|sentry-browser-runtime|node_modules.*sentry|supabase-vendor|node_modules.*supabase|editor-vendor|BlogAdmin|LiveAuditProgress/i.test(url))).toEqual([]);
   expect(requests.filter(url => url.includes('/api/tools/plans/public'))).toEqual([]);
-  await page.locator('#pricing').scrollIntoViewIfNeeded();
+  await page.getByRole('navigation', { name: 'Public navigation' }).getByRole('link', { name: 'Pricing', exact: true }).click();
   await expect.poll(() => requests.filter(url => url.includes('/api/tools/plans/public')).length).toBe(1);
 });
 
@@ -68,7 +68,7 @@ for (const width of [390, 768, 1440]) {
     await expect(expectNoHorizontalOverflow(page)).resolves.toBe(true);
     await page.getByLabel('Website or domain').focus();
     await page.keyboard.press('Tab');
-    await expect(page.getByRole('radio', { name: /Quick/ })).toBeFocused();
+    await expect(page.getByRole('combobox', { name: 'Audit focus', exact: true })).toBeFocused();
     await page.getByRole('button', { name: 'Switch to dark mode' }).click();
     expect(await page.locator('html').evaluate(element => getComputedStyle(element).getPropertyValue('--background').trim())).toBe('#000000');
     await expect(expectNoHorizontalOverflow(page)).resolves.toBe(true);

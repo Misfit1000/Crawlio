@@ -44,7 +44,7 @@ import {
   type ReportSectionId,
 } from '../lib/audit/report-insights';
 import type { AuditHistoryPage, AuditReportSummary, ResourceAuditIssue, ResourceAuditLiveData, ResourceAuditPage } from '../lib/audit/resource-types';
-import { downloadAuditExport } from '../lib/http/download';
+import { AuditExportDownloadNotice, useAuditExportDownload } from './audit/AuditExportDownload';
 import { safeJsonFetch } from '../lib/http/safe-json';
 import { isCompletedAuditStatus } from '../lib/audit/audit-time';
 import {
@@ -163,6 +163,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
   const [history, setHistory] = useState<AuditHistoryEntry[]>([]);
   const [historyScopes, setHistoryScopes] = useState<Record<string, AuditScope | null>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const exportDownload = useAuditExportDownload(selectedId);
   const [reportData, setReportData] = useState<ResourceAuditLiveData | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
@@ -291,8 +292,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
     if (!selectedId) return showMessage('Select an audit before exporting.');
     setActionLoading(format);
     try {
-      await downloadAuditExport(selectedId, format);
-      showMessage(`${format === 'pdf' ? 'PDF report' : format.toUpperCase()} downloaded.`);
+      await exportDownload.start(format);
     } catch (error) {
       showMessage(error instanceof Error ? error.message : 'Export failed.');
     } finally {
@@ -383,6 +383,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
               </div>
             </div>
             {message && <div role="status" className="mt-5 rounded-lg border border-emerald-500/25 bg-emerald-500/10 p-3 text-sm font-semibold text-emerald-700 dark:text-emerald-300"><Clipboard className="mr-2 inline h-4 w-4" />{message}</div>}
+            <AuditExportDownloadNotice download={exportDownload} />
           </div>
         </div>
       </SurfaceCard>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import './blog-content.css';
 import { ArrowLeft, BookOpen, CalendarDays, Clock, Share2 } from 'lucide-react';
 import { getPublishedPost } from '../../lib/blog/client';
 import { usePageMetadata } from '../../lib/blog/metadata';

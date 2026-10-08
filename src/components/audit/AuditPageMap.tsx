@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import './audit-report.css';
 import { Pause, Play, Waypoints } from 'lucide-react';
 import type { ResourceAuditPage, ResourceAuditIssue, ResourceAuditDocument } from '../../lib/audit/resource-types';
 import { PageEvidenceDrawer } from './PageEvidenceDrawer';

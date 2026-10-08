@@ -32,7 +32,8 @@ test('complete chart aggregates, addressable modes, global filters and page evid
   await page.goto(`/audit/live/${AUDIT_ID}`);
   await expect(page.getByRole('heading', { name: 'example.com', exact: true })).toBeVisible();
   await expect(page.locator('[data-presentation-scope]')).toHaveAttribute('data-presentation-scope', 'complete');
-  await expect(page.getByText('100 analysed / 100 attempted pages.', { exact: false })).toBeVisible();
+  await expect(page.getByText('100 analysed / 100 attempted pages', { exact: false })).toBeVisible();
+  await page.getByText('Delivery and crawl details', { exact: true }).click();
   await expect(page.getByText('0 ms', { exact: true })).toBeVisible();
   await expect(page.getByText('80 affected pages', { exact: true })).toBeVisible();
   await expect(page.locator('.audit-map-node')).toHaveCount(48);
@@ -67,7 +68,7 @@ test('historical samples remain explicit and Vanta Black has no navy panels on m
   await mockAudit(page, { complete: false });
   await page.goto(`/audit/live/${AUDIT_ID}`);
   await expect(page.locator('[data-presentation-scope]')).toHaveAttribute('data-presentation-scope', 'sample');
-  await expect(page.locator('[data-presentation-scope]')).toContainText('Sample only');
+  await expect(page.locator('[data-presentation-scope]')).toContainText('not full audit totals');
   if (!await page.locator('html').evaluate(node => node.classList.contains('dark'))) await page.getByRole('button', { name: 'Switch to dark mode' }).click();
   await expect(page.locator('html')).toHaveClass(/dark/);
   expect(await page.locator('body').evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgb(0, 0, 0)');
@@ -84,6 +85,7 @@ test('historical samples remain explicit and Vanta Black has no navy panels on m
 });
 
 test('map pauses for offscreen, reduced motion, preference and manual pause without evidence calls', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 600 });
   const { result, requests } = await mockAudit(page, { running: true });
   await page.goto(`/audit/live/${AUDIT_ID}`);
   const map = page.locator('.audit-evidence-map');
@@ -129,6 +131,7 @@ test('active findings await final recommendations and unavailable delivery is no
   await page.goto(`/audit/live/${AUDIT_ID}`);
   await expect(page.getByText('Recommendations are prepared at finalization.', { exact: false })).toBeVisible();
   await expect(page.getByText('0 B', { exact: true })).toHaveCount(0);
+  await page.getByText('Delivery and crawl details', { exact: true }).click();
   await expect(page.locator('.audit-overview-charts').getByText('Not measured', { exact: true })).toHaveCount(2);
   await page.getByRole('button', { name: 'View findings', exact: true }).click();
   await expect(page.getByRole('button', { name: /Missing page title https/ })).toBeVisible();

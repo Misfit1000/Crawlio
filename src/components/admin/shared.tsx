@@ -1,4 +1,5 @@
 import { AlertTriangle, Loader2 } from 'lucide-react';
+import './admin-workspace.css';
 import React from 'react';
 import { Link } from '../../app/router';
 import { isCompletedAuditStatus } from '../../lib/audit/audit-time';

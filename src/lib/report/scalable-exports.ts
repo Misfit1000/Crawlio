@@ -176,10 +176,20 @@ export async function* readExportParts(job: ExportJob, signal?: AbortSignal) {
 }
 
 /** Call only AFTER ownership and exportsEnabled checks, BEFORE getLiveData. */
-export async function handleScalableExportDownload(res: Response, audit: ResourceAuditDocument, format: ExportFormat) {
+export async function handleScalableExportDownload(res: Response, audit: ResourceAuditDocument, format: ExportFormat, options: { prepared?: boolean } = {}) {
   res.setHeader('Cache-Control', 'private, no-store');
   if (audit.status === 'queued' || audit.status === 'running') {
     return res.status(409).json({ success: false, error: 'Data export is available after the audit stops.' });
+  }
+  if (!options.prepared) {
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    res.once('close', cancel);
+    try {
+      const { tryImmediateExportDownload } = await import('./immediate-export');
+      if (await tryImmediateExportDownload(res, audit, format, undefined, controller.signal)) return res;
+      controller.signal.throwIfAborted();
+    } finally { res.off('close', cancel); }
   }
   const job = await enqueueOrGetScalableExport(audit, format);
   if (Date.parse(job.expires_at) <= Date.now()) {

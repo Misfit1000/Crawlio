@@ -41,7 +41,11 @@ try {
     visits.push({ kind, ...measured, browserRequests: requests.length, apiRequests: requests.filter(value => value.startsWith('/api/')), requestedScripts: requests.filter(value => value.endsWith('.js')), cdnResponses: responses.filter(value => value.cache), note: 'Unthrottled local browser sample, not field Core Web Vitals or origin execution counts.' });
   }
   const requestCount = requests.length;
-  await page.locator('#pricing').scrollIntoViewIfNeeded();
+  if (process.argv[3]) {
+    await mkdir(path.dirname(process.argv[3]), { recursive: true });
+    await page.screenshot({ path: process.argv[3].replace(/\.json$/, '-homepage.jpg'), type: 'jpeg' });
+  }
+  await page.getByRole('navigation', { name: 'Public navigation' }).getByRole('link', { name: 'Pricing', exact: true }).click();
   await page.waitForTimeout(1000);
   const observation = { origin, observedAt: new Date().toISOString(), visits, pricingRequests: requests.slice(requestCount).filter(value => value.startsWith('/api/')) };
   if (process.argv[3]) {

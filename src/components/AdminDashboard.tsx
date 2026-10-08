@@ -1,5 +1,6 @@
 import { Loader2, ShieldAlert } from 'lucide-react';
 import React from 'react';
+import './admin/admin-workspace.css';
 import { Link, useLocation } from '../app/router';
 import { useAuth } from '../contexts/AuthContext';
 import { AdminActionProvider } from './admin/AdminActionDialog';

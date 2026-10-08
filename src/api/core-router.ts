@@ -8,7 +8,7 @@ import { isCompletedAuditStatus } from '../lib/audit/audit-time';
 
 import { planAuditLiveDelta } from '../lib/audit/live-delta';
 
-import { projectAuditAdmission } from '../lib/audit/audit-admission';
+import { projectAuditAdmission, projectAuditStatus } from '../lib/audit/audit-admission';
 
 import { auditRepository } from '../lib/supabase/audit-repository';
 
@@ -494,7 +494,8 @@ apiRouter.get('/audit/events/:id', asyncJsonRoute(async (req, res) => {
 
 apiRouter.get('/audit/status/:id', asyncJsonRoute(async (req, res) => {
   res.setHeader('Cache-Control', 'private, no-store');
-  const audit = await auditRepository.getAudit(req.params.id);
+  const compact = String(req.query.compact || '') === '1';
+  const audit = compact ? await auditRepository.getAuditStatusDocument(req.params.id) : await auditRepository.getAudit(req.params.id);
   if (!audit || !(await canAccessAudit(req, audit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
   if (String(req.query.delta || '') === '1') {
     const delta = planAuditLiveDelta(audit, {
@@ -512,7 +513,7 @@ apiRouter.get('/audit/status/:id', asyncJsonRoute(async (req, res) => {
     ]);
     return res.json({ success: true, data: {
       partial: true,
-      audit,
+      audit: compact ? projectAuditStatus(audit) : audit,
       ...(latestEvents ? { latestEvents } : {}),
       ...(latestPages ? { latestPages } : {}),
       ...(latestIssues ? { latestIssues } : {}),
@@ -520,7 +521,7 @@ apiRouter.get('/audit/status/:id', asyncJsonRoute(async (req, res) => {
     } });
   }
   const liveData = await auditRepository.getLiveData(req.params.id, audit);
-  res.json({ success: true, data: liveData });
+  res.json({ success: true, data: compact ? { ...liveData, audit: projectAuditStatus(audit) } : liveData });
 }));
 
 apiRouter.post('/audit/cancel/:id', asyncJsonRoute(async (req, res) => {

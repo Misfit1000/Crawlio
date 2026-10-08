@@ -6,7 +6,7 @@ import { useTheme } from './contexts/ThemeContext';
 import { AuditLaunchProvider, useAuditLaunch } from './contexts/AuditLaunchContext';
 import { loadLiveAuditScreen } from './lib/audit/live-screen-loader';
 import { BrandMark, LoadingSkeleton, ThemeToggle } from './components/ui/visual-system';
-import { MarketingShell, WorkspaceShell } from './components/layout/ProductShells';
+import { MarketingShell } from './components/layout/ProductShells';
 import { useLocation, useNavigate } from './app/router';
 import { BRAND } from './lib/brand';
 import type { AuditScope } from './lib/audit/audit-scope';
@@ -26,6 +26,7 @@ const Login = lazy(() => import('./components/Login'));
 const Register = lazy(() => import('./components/Register'));
 const AccountRecovery = lazy(() => import('./components/AccountRecovery'));
 const Sidebar = lazy(() => import('./components/Sidebar'));
+const WorkspaceShell = lazy(() => import('./components/layout/WorkspaceShell'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
 const ProjectsPage = lazy(() => import('./components/projects/ProjectsPage'));
 const WebsiteAnalyzer = lazy(() => import('./components/WebsiteAnalyzer'));
@@ -441,7 +442,7 @@ function AppContent() {
               />
             </MarketingShell>
           ) : isSearching && isKnownWorkspace ? (
-            <WorkspaceShell
+            <Suspense fallback={<LoadingSkeleton rows={5} />}><WorkspaceShell
               theme={theme}
               onToggleTheme={toggleTheme}
               sidebarOpen={isSidebarOpen}
@@ -466,7 +467,7 @@ function AppContent() {
               }
             >
               <Suspense fallback={<LoadingSkeleton rows={5} />}>{renderContent()}</Suspense>
-            </WorkspaceShell>
+            </WorkspaceShell></Suspense>
           ) : (
             <MarketingShell
               theme={theme}
