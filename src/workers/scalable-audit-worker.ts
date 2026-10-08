@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { auditRepository, issueToRow, pageToRow } from '../lib/supabase/audit-repository';
-import { claimScalableAudit, finishScalableSlice, frontierItem, hasPendingFrontier, readFrontier, readScoreAggregate, registerScalableWorker, scalableRpc, type CrawlRun, type FrontierItem } from '../lib/supabase/scalable-audit-repository';
+import { claimScalableAudit, finishScalableSlice, frontierItem, readFrontier, readScoreAggregate, registerScalableWorker, scalableRpc, scoreAggregateFromGroups, type EfficientCommitResult, type CrawlRun, type FrontierItem } from '../lib/supabase/scalable-audit-repository';
 import { calculateTransparentAuditScore, categoryForIssue, deduplicatePageIssues, normalizedIssueKey, toReportScoreRecord } from '../lib/audit/audit-scoring';
 import { CRAWL_SLICE_MS, CRAWL_SLICE_PAGES, retryDelayMs } from '../lib/audit/scalable-policy';
 import { getAuditModeConfig } from '../lib/audit/audit-config';
@@ -79,6 +79,18 @@ export function selectedCheckModules(audit: ResourceAuditDocument, scoringVersio
   return (isFocusedAudit(audit) ? CHECKS : planModules).filter(check => selected.has(check.id));
 }
 
+export function auditHtmlExtraction(audit: ResourceAuditDocument, scoringVersion: unknown) {
+  const modules = new Set(selectedCheckModules(audit, scoringVersion).map(check => check.id));
+  return {
+    keywords: false,
+    links: audit.scope?.coverage !== 'page' || modules.has('links'),
+    images: modules.has('images'),
+    structuredData: modules.has('schema'),
+    accessibility: modules.has('accessibility'),
+    security: scopeIncludesGroup(audit.scope, 'security'),
+  };
+}
+
 export async function analyseScalableItem(audit: ResourceAuditDocument, run: CrawlRun, item: FrontierItem, scheduler: HostRequestScheduler): Promise<Record<string, unknown>> {
   const config = getAuditModeConfig(audit.effectiveMode);
   try {
@@ -105,7 +117,7 @@ export async function analyseScalableItem(audit: ResourceAuditDocument, run: Cra
         sitemapContainsTarget: parsed.urls.some(url => normalizeCrawlUrl(url, item.url) === audit.normalizedUrl) };
     }
     if (run.metadata.robotsUnavailable || (run.metadata.robots && isBlockedByRobots(item.url, run.metadata.robots))) return failurePage(audit,item,failureForCode('ROBOTS_BLOCKED',{ affectedUrl: item.url }));
-    const fetched = await scheduler.schedule(item.url, () => fetchHtmlPage(item.url,config.timeoutMs));
+    const fetched = await scheduler.schedule(item.url, () => fetchHtmlPage(item.url,config.timeoutMs,auditHtmlExtraction(audit,run.metadata.scoringVersion)));
     if ([429,502,503,504].includes(fetched.statusCode) && item.attempts < 2) {
       return { key: item.key, retryAt: new Date(Date.now()+retryDelayMs(fetched.headers['retry-after'],item.attempts)).toISOString() };
     }
@@ -152,6 +164,8 @@ export async function runScalableSlice(workerId: string, onActivity?: (auditId: 
   if (!claimed) return false;
   const { audit } = claimed;
   let run = claimed.run;
+  let pending = claimed.pending;
+  const committedGroups = new Map(claimed.scoreGroups.map(group => [group.key, group]));
   const started = Date.now();
   const scheduler = new HostRequestScheduler(2,150);
   let processed = 0;
@@ -161,7 +175,11 @@ export async function runScalableSlice(workerId: string, onActivity?: (auditId: 
   const commit = (payload: Record<string,unknown>) => {
     const task = writeChain.then(async () => {
       if (leaseError) throw leaseError;
-      run = await scalableRpc<CrawlRun>('scalable_audit_commit',{p_audit:audit.id,p_worker:workerId,p_generation:run.generation,p_payload:{...payload,phase:audit.scope ? `Running ${auditFocusLabel(audit.scope).toLowerCase()}` : 'Checking pages',rss:process.memoryUsage().rss}});
+      const result = await scalableRpc<EfficientCommitResult>('scalable_audit_commit_efficient',{p_audit:audit.id,p_worker:workerId,p_generation:run.generation,p_payload:{...payload,phase:audit.scope ? `Running ${auditFocusLabel(audit.scope).toLowerCase()}` : 'Checking pages',rss:process.memoryUsage().rss}});
+      run = result.run;
+      pending = result.pending;
+      for (const group of result.scoreGroups) committedGroups.set(group.key, group);
+      if (committedGroups.size >= 1000) throw new Error('Scoring group bound reached; finalization requires investigation.');
     });
     writeChain = task.catch(error=>{leaseError=error;});
     return task;
@@ -170,7 +188,13 @@ export async function runScalableSlice(workerId: string, onActivity?: (auditId: 
   const leaseTimer = setInterval(()=>{
     if (renewalPending || leaseError) return;
     renewalPending = true;
-    void commit({}).catch(()=>undefined).finally(()=>{ renewalPending = false; });
+    const task = writeChain.then(async () => {
+      if (leaseError) throw leaseError;
+      await scalableRpc('renew_scalable_audit_lease', { p_audit: audit.id, p_worker: workerId,
+        p_generation: run.generation, p_rss: process.memoryUsage().rss });
+    });
+    writeChain = task.catch(error => { leaseError = error; });
+    void task.catch(()=>undefined).finally(()=>{ renewalPending = false; });
   },30_000);
   leaseTimer.unref();
   const finish = async (report: ResourceAuditReport | null, reason?: string) => {
@@ -183,7 +207,7 @@ export async function runScalableSlice(workerId: string, onActivity?: (auditId: 
   };
   const publishScore = async (force = false) => {
     if (!shouldPublishProvisionalScore({ pagesAnalysed:run.analysed,lastPublishedPages:run.last_score_pages,nowMs:Date.now(),lastPublishedAtMs:run.last_score_at ? Date.parse(run.last_score_at) : 0,force })) return;
-    const result = calculateTransparentAuditScore({issues:[],pages:[],aggregate:await readScoreAggregate(run),...scoreOptions(run,audit)});
+    const result = calculateTransparentAuditScore({issues:[],pages:[],aggregate:scoreAggregateFromGroups(run,[...committedGroups.values()]),...scoreOptions(run,audit)});
     await commit({score:{ overallScore:result.overall,categoryScores:Object.fromEntries(Object.entries(result.categories).map(([key,value])=>[key,value.score])),
       scoreState:'provisional',pagesAnalysed:run.analysed,pagesDiscovered:run.discovered,pageLimit:audit.pageLimit,unavailableCount:run.unavailable_count,updatedAt:new Date().toISOString() }});
   };
@@ -204,11 +228,14 @@ export async function runScalableSlice(workerId: string, onActivity?: (auditId: 
       if (leaseError) throw leaseError;
       const memoryLimit = Math.max(128,Number(process.env.AUDIT_WORKER_RSS_LIMIT_MB || 384))*1024*1024;
       if (process.memoryUsage().rss>memoryLimit) { pauseReason='Worker memory pressure; waiting to resume'; break; }
-      const items = await readFrontier(audit.id,Math.min(run.analysed===0 ? 1 : 2,audit.pageLimit-run.analysed,CRAWL_SLICE_PAGES-processed), audit.scope?.coverage==='page' && scopeIncludesGroup(audit.scope,'crawlability'));
+      const nextScorePage = run.last_score_pages === 0 ? 1 : run.last_score_pages + 5;
+      const untilScore = Math.max(1, nextScorePage - run.analysed);
+      const items = await readFrontier(audit.id,Math.min(2,untilScore,audit.pageLimit-run.analysed,CRAWL_SLICE_PAGES-processed), audit.scope?.coverage==='page' && scopeIncludesGroup(audit.scope,'crawlability'));
       if (leaseError) throw leaseError;
       if (isScalableWorkerStopRequested(workerId)) break;
       if (!items.length) break;
       const results = await Promise.all(items.map(item=>analyseScalableItem(audit,run,item,scheduler)));
+      const batchMetadata: Record<string, unknown> = {};
       for (const result of results) {
         // Discovery is inserted in bounded chunks before marking a document done.
         // A restart repeats inserts safely through the frontier's unique key.
@@ -232,18 +259,18 @@ export async function runScalableSlice(workerId: string, onActivity?: (auditId: 
         }
         if (result.sitemapInspected) metadata.sitemapInspected = true;
         if (result.sitemapContainsTarget) metadata.sitemapContainsTarget = true;
-        const measured = storedMeasuredAuditCategories(run.metadata.measuredCategories);
+        const measured = storedMeasuredAuditCategories(batchMetadata.measuredCategories || run.metadata.measuredCategories);
         const newlyMeasured = storedMeasuredAuditCategories(result.measuredCategories).filter(category => !measured.includes(category));
         if (newlyMeasured.length) metadata.measuredCategories = [...measured, ...newlyMeasured];
         delete result.measuredCategories;
-        await commit({items:[result],metadata,currentUrl:items.find(item=>item.key===result.key)?.url});
-        processed++;
-        await publishScore();
+        Object.assign(batchMetadata, metadata);
       }
+      await commit({items:results,metadata:batchMetadata,currentUrl:items.at(-1)?.url});
+      processed += results.length;
+      await publishScore();
     }
     await publishScore(true);
     const timedOut=run.active_ms+Date.now()-started>=run.budget_ms;
-    const pending=await hasPendingFrontier(audit.id);
     if (run.analysed>=audit.pageLimit || timedOut || !pending) {
       const score=calculateTransparentAuditScore({issues:[],pages:[],aggregate:await readScoreAggregate(run),...scoreOptions(run,audit),
         limitations:['Scores cover the automated checks actually run, not every possible requirement.',

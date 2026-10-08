@@ -9,9 +9,10 @@ import { CHECKS, runCheckSetSafely } from '../src/lib/seo/checks/runner';
 import { buildSecurityIssues, mapAuditIssue } from '../src/workers/audit-worker';
 import { parseHtml } from '../src/lib/seo/html-parser';
 import { calculateTransparentAuditScore } from '../src/lib/audit/audit-scoring';
+import { scoreAggregateFromGroups, type CommittedScoreGroup } from '../src/lib/supabase/scalable-audit-repository';
 import { HostRequestScheduler } from '../src/workers/host-request-scheduler';
 import { frontierItem, type CrawlRun } from '../src/lib/supabase/scalable-audit-repository';
-import { toAuditDocument } from '../src/lib/supabase/audit-repository';
+import { toAuditDocument, toAuditPage, pageToRow } from '../src/lib/supabase/audit-repository';
 import { buildPublicAuditExport } from '../src/lib/report/export';
 
 const fixture = (url: string, scope = makeAuditScope('security')) => toAuditDocument({ id: randomUUID(), normalized_url: url, hostname: new URL(url).hostname,
@@ -62,7 +63,7 @@ try {
     const invoked: string[]=[];
     CHECKS.forEach((check,index) => { check.run = (...args) => { invoked.push(check.id); return originals[index](...args); }; });
     const result = await analyseScalableItem(audit,run,frontierItem(audit.normalizedUrl,'page'),new HostRequestScheduler(2,0));
-    assert.deepEqual(invoked.sort(),scope.checkGroups.flatMap(group => AUDIT_GROUP_DETAILS[group].modules).sort());
+    assert.deepEqual(invoked.sort(),scope.checkGroups.flatMap(group => AUDIT_GROUP_DETAILS[group].modules).sort(),JSON.stringify(result));
     assert.deepEqual(result.children,[],'page coverage must not enqueue internal links');
     assert.ok(result.page,'the requested page should be analysed');
     const categories = scopeScoreCategories(scope);
@@ -112,6 +113,8 @@ try {
   await db.exec(retry);
   await db.exec(await migration('034_focused_audits.sql'));
   await db.exec(await migration('034_focused_audits.sql'));
+  await db.exec(await migration('035_performance_efficiency.sql'));
+  await db.exec(await migration('035_performance_efficiency.sql'));
   const retryBody=await db.query<{body:string}>("select prosrc body from pg_proc where proname='admin_audit_operation'");
   assert.match(retryBody.rows[0].body,/plan_page_limit/);
   assert.match(retryBody.rows[0].body,/scope_version=1/);
@@ -134,9 +137,62 @@ try {
   await db.exec(`insert into audit_scalable_workers(worker_id,commit_id,scope_commit_id,scope_version,deep_enabled) values('new-worker','new','new',1,true)`);
   const claimed=await db.query<{result:any}>('select claim_scoped_audit($1,true) result',['new-worker']);
   assert.equal(claimed.rows[0].result.audit.id,id);
+  const generation = claimed.rows[0].result.run.generation;
+  const beforeLease = await db.query<{stamp:string}>('select updated_at::text stamp from audits where id=$1',[id]);
+  await db.query('select renew_scalable_audit_lease($1,$2,$3,123)',[id,'new-worker',generation]);
+  const afterLease = await db.query<{stamp:string}>('select updated_at::text stamp from audits where id=$1',[id]);
+  assert.equal(afterLease.rows[0].stamp,beforeLease.rows[0].stamp,'lease renewal must not publish progress');
+  await assert.rejects(db.query('select renew_scalable_audit_lease($1,$2,$3,123)',[id,'new-worker',generation+1]),/AUDIT_OWNERSHIP_LOST/);
+  const root = await db.query<{key:string}>("select key from audit_crawl_frontier where audit_id=$1 and kind='page'",[id]);
+  const efficientPayload = {items:[{key:root.rows[0].key,
+    page:pageToRow(id,toAuditPage({id:'efficient-page',url:'https://example.com/',status_code:200,fetch_status:'success',crawled_at:new Date().toISOString()})),
+    issues:[],groups:[{key:'fixture',category:'crawlability',title:'Fixture',severity:'low',rank:2}],children:[],checks:1}]};
+  const efficient = await db.query<{result:any}>('select scalable_audit_commit_efficient($1,$2,$3,$4) result',[id,'new-worker',generation,JSON.stringify(efficientPayload)]);
+  assert.equal(efficient.rows[0].result.run.analysed,1);
+  assert.equal(efficient.rows[0].result.scoreGroups[0].affected_pages,1);
+  const repeated = await db.query<{result:any}>('select scalable_audit_commit_efficient($1,$2,$3,$4) result',[id,'new-worker',generation,JSON.stringify(efficientPayload)]);
+  assert.equal(repeated.rows[0].result.run.analysed,1);
+  assert.equal(repeated.rows[0].result.scoreGroups[0].affected_pages,1,'retries must not inflate cached deductions');
   await db.query(`insert into audit_crawl_frontier(audit_id,key,url,kind,depth) values($1,'sitemap','https://example.com/sitemap.xml','sitemap',0)`,[id]);
   const frontier=await db.query<{result:any[]}>('select read_scoped_audit_frontier($1,2) result',[id]);
   assert.equal(frontier.rows[0].result[0].kind,'sitemap');
+
+  const runBatchFixture = async (paired: boolean) => {
+    const auditId = randomUUID();
+    await db.query(`insert into audits(id,submitted_input,normalized_url,hostname,page_limit,plan_page_limit,processing_version,audit_scope)
+      values($1,'https://batch.example/','https://batch.example/','batch.example',3,3,2,$2)`,[auditId,JSON.stringify(makeAuditScope('full','site'))]);
+    let claim = (await db.query<{result:{run:CrawlRun;scoreGroups:CommittedScoreGroup[]}}>('select claim_efficient_scoped_audit($1,true) result',['new-worker'])).rows[0].result;
+    const pages = [0,1,2].map(index => frontierItem(`https://batch.example/${index ? index : ''}`,'page',index ? 1 : 0));
+    const entries = pages.map((page,index) => ({key:page.key,
+      page:pageToRow(auditId,toAuditPage({id:`batch-page-${auditId}-${index}`,url:page.url,status_code:200,fetch_status:'success',crawled_at:new Date().toISOString()})),
+      issues:[],groups:[{key:'shared',category:'onPage',title:'Shared finding',severity:'low',rank:2}],children:index===0 ? pages.slice(1) : [],checks:1}));
+    const commit = async (items:typeof entries) => {
+      const result = await db.query<{result:{run:CrawlRun;scoreGroups:CommittedScoreGroup[];pending:boolean}}>(
+        'select scalable_audit_commit_efficient($1,$2,$3,$4) result',[auditId,'new-worker',claim.run.generation,JSON.stringify({items})]);
+      return result.rows[0].result;
+    };
+    const first = await commit(entries.slice(0,1));
+    assert.equal(first.run.analysed,1,'first-page score remains available before the pair');
+    if (paired) {
+      await db.query("update audit_crawl_runs set lease_until=now()-interval '1 second' where audit_id=$1",[auditId]);
+      const staleGeneration = claim.run.generation;
+      claim = (await db.query<{result:typeof claim}>('select claim_efficient_scoped_audit($1,true) result',['new-worker'])).rows[0].result;
+      assert.equal(claim.run.analysed,1);
+      assert.equal(claim.scoreGroups[0].affected_pages,1,'restart hydrates committed score groups');
+      await assert.rejects(db.query('select scalable_audit_commit_efficient($1,$2,$3,$4)',[auditId,'new-worker',staleGeneration,JSON.stringify({items:entries.slice(1)})]),/AUDIT_OWNERSHIP_LOST/);
+    }
+    let result = first;
+    for (const items of paired ? [entries.slice(1)] : [entries.slice(1,2),entries.slice(2)]) result = await commit(items);
+    const repeated = await commit(entries.slice(1));
+    assert.equal(repeated.run.analysed,3,'pair retries never inflate counters');
+    assert.equal(result.pending,false);
+    const persisted = await db.query<CommittedScoreGroup>('select key,category,title,severity,affected_pages from audit_score_groups where audit_id=$1 order by key',[auditId]);
+    assert.deepEqual(result.scoreGroups,persisted.rows,'cached deltas match final persisted groups');
+    const score = calculateTransparentAuditScore({issues:[],pages:[],aggregate:scoreAggregateFromGroups(result.run,persisted.rows),scoringVersion:'2.2'});
+    await db.query("update audits set status='completed' where id=$1",[auditId]);
+    return {score,analysed:result.run.analysed,checks:result.run.check_count};
+  };
+  assert.deepEqual(await runBatchFixture(true),await runBatchFixture(false),'pair/restart and sequential processing have identical canonical results');
   await db.query('update audit_scalable_workers set commit_id=$1 where worker_id=$2',['old','new-worker']);
   await assert.rejects(db.query('select claim_scoped_audit($1,true)',['new-worker']),/SCOPED_WORKER_UNAVAILABLE/);
   const args=[randomUUID(),null,'guest','ip','fixture.example','https://fixture.example/','quick','free',10,10,1,10,true,auditScopeFingerprint(makeAuditScope('security'))];
@@ -146,7 +202,9 @@ try {
   const conflict=await admit([randomUUID(),...args.slice(1,-1),auditScopeFingerprint(makeAuditScope('seo'))]);
   assert.equal(conflict.rows[0].result.allowed,false); assert.equal(conflict.rows[0].result.code,'ACTIVE_AUDIT_EXISTS');
   await db.exec('set role anon');
+  await assert.rejects(db.query('select renew_scalable_audit_lease($1,$2,$3,123)',[id,'new-worker',generation]),/permission denied/);
+  await assert.rejects(db.query('select claim_efficient_scoped_audit($1,true)',['new-worker']),/permission denied/);
   await assert.rejects(db.query('select claim_scoped_audit($1,true)',['new-worker']),/permission denied/);
   await assert.rejects(db.query('select read_scoped_audit_frontier($1,2)',[id]),/permission denied/);
-  console.log('PASS migration 034 validation, repeat application, immutable snapshots, worker fencing, document ordering, scoped deduplication and privileges');
+  console.log('PASS migrations 034/035, quiet leases, pair/restart score parity, immutable snapshots, worker fencing, scoped deduplication and privileges');
 } finally { await db.close(); }

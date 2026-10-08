@@ -1,4 +1,4 @@
-import { parseHtml, type ParsedPageData } from '../lib/seo/html-parser';
+import { parseHtml, type HtmlExtractionOptions, type ParsedPageData } from '../lib/seo/html-parser';
 import { pathToFileURL } from 'node:url';
 import { fetchRobotsEvidence, getSitemapUrlsFromRobots, isBlockedByRobots, parseRobotsTxt } from '../lib/seo/robots';
 import { collectToolEvidence } from '../lib/tools/audit-tools';
@@ -178,12 +178,12 @@ export function workerFetchOptions(timeoutMs: number): SafePublicFetchOptions {
   };
 }
 
-export async function fetchHtmlPage(url: string, timeoutMs: number): Promise<FetchedPage> {
+export async function fetchHtmlPage(url: string, timeoutMs: number, extraction?: HtmlExtractionOptions): Promise<FetchedPage> {
   const response = await safePublicFetch(url, workerFetchOptions(timeoutMs));
   let parsed: ParsedPageData | null = null;
   if (response.body) {
     try {
-      parsed = parseHtml(response.body, response.finalUrl);
+      parsed = parseHtml(response.body, response.finalUrl, { keywords: false, ...extraction });
     } catch (error) {
       const parseError = new Error(error instanceof Error ? error.message : 'HTML parsing failed.');
       (parseError as Error & { code: string }).code = 'INVALID_HTML_RESPONSE';
@@ -817,7 +817,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     });
 
     if (fetched.parsed) {
-      for (const link of fetched.parsed.internalLinks) {
+      for (const link of fetched.parsed.internalLinks || []) {
         await enqueuePage(link.href, item.depth + 1, fetched.finalUrl, link.text);
       }
     }

@@ -69,13 +69,17 @@ function fixture(context: TestContext) {
     if (url.pathname.startsWith('/rest/v1/rpc/')) {
       const args = JSON.parse(await request.text());
       switch (url.pathname.split('/').at(-1)) {
-        case 'claim_scalable_audit':
+        case 'read_scalable_audit_frontier':
+          return json({code:'PGRST202',message:'read_scalable_audit_frontier is absent in the rollback fixture'},404);
+        case 'claim_efficient_scoped_audit':
           state.claims++;
           state.run.owner = args.p_worker;
           await state.onClaim();
-          return json({ audit: auditRow, run: state.run });
-        case 'scalable_audit_commit': {
-          const payload = args.p_payload;
+          return json({ audit: auditRow, run: state.run, scoreGroups: [], pending: state.pending });
+        case 'renew_scalable_audit_lease':
+        case 'scalable_audit_commit_efficient': {
+          const renewal = url.pathname.endsWith('/renew_scalable_audit_lease');
+          const payload = args.p_payload || { renewal: true };
           state.commits.push(payload);
           assert.equal(args.p_generation, state.run.generation);
           assert.equal(args.p_worker, state.run.owner);
@@ -83,7 +87,7 @@ function fixture(context: TestContext) {
           try { await state.onCommit(payload); }
           catch (error) { return json({ message: String(error) }, 400); }
           state.run.metadata = { ...state.run.metadata, ...payload.metadata };
-          return json(state.run);
+          return json(renewal ? true : { run: state.run, scoreGroups: [], pending: state.pending });
         }
         case 'scalable_audit_finish_slice':
           state.finishes.push(args);

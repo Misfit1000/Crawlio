@@ -87,15 +87,21 @@ export async function registerScalableWorker(workerId: string) {
   if (error) throw new Error(`Scalable audit schema is unavailable: ${error.message}`);
 }
 
-export async function claimScalableAudit(worker: string): Promise<{ audit: ResourceAuditDocument; run: CrawlRun } | null> {
+export interface CommittedScoreGroup {
+  key: string; category: AuditScoreCategory; title: string; severity: AuditSeverity; affected_pages: number;
+}
+export interface EfficientCommitResult {
+  run: CrawlRun; scoreGroups: CommittedScoreGroup[]; pending: boolean;
+}
+
+export async function claimScalableAudit(worker: string): Promise<({ audit: ResourceAuditDocument } & EfficientCommitResult) | null> {
   const client = requireSupabaseAdminClient();
   const parameters = { p_worker: worker, p_deep: process.env.DEEP_AUDIT_ENABLED === 'true' };
-  let response = await client.rpc('claim_scoped_audit', parameters);
-  if (response.error?.code === 'PGRST202' && /claim_scoped_audit/.test(response.error.message)) response = await client.rpc('claim_scalable_audit', parameters);
+  const response = await client.rpc('claim_efficient_scoped_audit', parameters);
   if (response.error) throw new Error(`Claim audit: ${response.error.message}`);
-  const result = response.data as { audit: Record<string, unknown>; run: CrawlRun } | null;
+  const result = response.data as ({ audit: Record<string, unknown> } & EfficientCommitResult) | null;
   const audit = result && toAuditDocument(result.audit);
-  return result && audit ? { audit, run: result.run } : null;
+  return result && audit ? { audit, run: result.run, scoreGroups: result.scoreGroups, pending: result.pending } : null;
 }
 
 const FRONTIER_RPC = 'read_scalable_audit_frontier';
@@ -145,10 +151,14 @@ export async function readScoreAggregate(run: CrawlRun): Promise<AuditScoreAggre
     .eq('audit_id', run.audit_id).order('key').limit(1000);
   if (error) throw error;
   if (data?.length === 1000) throw new Error('Scoring group bound reached; finalization requires investigation.');
+  return scoreAggregateFromGroups(run, data || []);
+}
+
+export function scoreAggregateFromGroups(run: CrawlRun, groups: CommittedScoreGroup[]): AuditScoreAggregate {
   return {
     pageCount: run.page_count, errorPages: run.error_pages, redirectPages: run.redirect_pages,
     slowPages: run.slow_pages, largePages: run.large_pages,
-    groups: (data || []).map(row => ({ key: row.key, category: row.category as AuditScoreCategory, title: row.title, severity: row.severity as AuditSeverity, affectedPages: row.affected_pages })),
+    groups: groups.map(row => ({ key: row.key, category: row.category, title: row.title, severity: row.severity, affectedPages: row.affected_pages })),
   };
 }
 
