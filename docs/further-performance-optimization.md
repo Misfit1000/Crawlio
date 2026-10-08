@@ -8,11 +8,11 @@ Same local build configuration, without Sentry source-map instrumentation:
 | --- | ---: | ---: | ---: |
 | Initial compressed JavaScript | 90,012 B | 88,334 B | 1.9% |
 | Initial CSS | 106,837 B | 97,349 B | 8.9% |
-| Static API shell dependency graph | 1,329,324 B | 981,575 B | 26.2% |
+| Static API shell dependency graph | 1,329,324 B | 982,017 B | 26.1% |
 
 The 5% JavaScript and 10% CSS stretch targets were not reached. Total CSS is
 114,874 B, within the existing 115,000 B budget. The core route dependency graph
-is 1,472,333 B; the shell reduction does not imply an equivalent reduction in every
+is 1,472,775 B; the shell reduction does not imply an equivalent reduction in every
 route or a measured cold-start improvement.
 
 ## Behavior and resource changes
@@ -66,3 +66,39 @@ Before-release `/api/tools/version` HTTP samples were 894, 391 and 372 ms. These
 include network time and are not proof of a cold or warm function invocation.
 Production throughput, per-page database bytes and worker memory under sustained
 load cannot be inferred from build sizes or a single small verification audit.
+
+## Production verification
+
+Migration 035 was applied before worker commit `8a7984c`; application commit
+`f9c8b36` reached the public Vercel alias and Render with matching schema 16,
+processing version 2 and focused-audit support.
+
+Two fresh browser samples after release recorded LCP of 3,100 and 3,124 ms versus
+3,500 and 3,820 ms before release. Repeat visits recorded LCP of 88 and 92 ms.
+These samples had zero layout shift, four initial browser requests and no initial
+API requests. Sentry, Supabase, editor, PDF and administrator chunks remained
+absent from healthy homepage loading. These are network-dependent lab observations,
+not field metrics or a controlled cold-start benchmark; the 2.5-second LCP goal
+has not been established.
+
+The signed-in one-page security audit `2fe851ac-e68e-486c-9933-1c5dca51f146`
+completed with six security findings and its queued JSON export became ready.
+The guest audit `fc0451e0-f9fb-4beb-be0b-3c9829e6bafd` also completed with one
+page and six security findings. Its first JSON request returned HTTP 200 with
+all retained evidence, `private, no-store`, and no export-job or artifact writes.
+Read-only Supabase diagnostics confirmed export-job counts of one and zero,
+respectively. Thus the bounded immediate path and queued fallback were both used.
+
+The guest admission request took 8,923 ms, audit completion was observed at
+12,979 ms after submission, and the complete JSON request took 6,602 ms. The
+export HTTP duration includes authorization, function startup and network time;
+it is not the four-second preparation budget. These results do not establish
+small-audit startup or export latency improvement against a comparable baseline.
+Recorded peak RSS was approximately 139 and 149 MiB for the two small audits,
+not a sustained-load or large-audit memory benchmark.
+
+Compatible patches update `proxy-addr` to 2.0.8, `source-map-js` to 1.2.2 and
+`sharp` to 0.35.5, including its matching native libraries. The package update
+reported zero vulnerabilities. The patched production build, complete-export
+tests, SVG badge rendering, raster resize, source-map lookup and proxy address
+checks passed. No framework migration or security protection was removed.
