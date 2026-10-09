@@ -25,7 +25,7 @@ const fixtures = {
     });
   },
 };
-const server = await createServer({ configFile: false, plugins: [fixtures, react(), tailwindcss()], define: { __CRAWLIO_RELEASE__: '"blog-check"', __CRAWLIO_ENVIRONMENT__: '"test"' }, server: { host: '127.0.0.1', port: 5193 }, logLevel: 'error' });
+const server = await createServer({ configFile: false, cacheDir: 'node_modules/.vite-blog-ui-check', resolve: { dedupe: ['react', 'react-dom'] }, optimizeDeps: { entries: [], include: ['react', 'react-dom/client', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'lucide-react'] }, plugins: [fixtures, react(), tailwindcss()], define: { __CRAWLIO_RELEASE__: '"blog-check"', __CRAWLIO_ENVIRONMENT__: '"test"' }, server: { host: '127.0.0.1', port: 5193, hmr: false, watch: { ignored: ['**/*'] } }, logLevel: 'error' });
 const overview = Object.fromEntries('automaticGeneratedToday automaticGeneratedWeek automaticPublishedToday automaticPublishedWeek manuallyTriggered manualBatchArticles customHeadlineArticles updates skippedAutomaticOpportunities automaticHeldForReview highPriorityStories expiringStories draftsNeedingReview activeJobs unresolvedClaims sourceFailures linkFailures imageFailures qualityFailures originalityWarnings duplicateTopicWarnings prerenderFailures updatesDue sitemapReady rssReady providerInputTokens providerOutputTokens automaticReviewed automaticApproved automaticRejected vercelJobs stalledVercelJobs'.split(' ').map(key => [key, 0]));
 const provider = { provider: 'Groq', execution: 'Vercel server workflow', enabled: true, configured: true, model: 'structured-model', structuredModel: 'structured-model', writerModel: 'writer-model', baseUrlHost: 'api.groq.com', health: 'not tested', lastErrorCode: '', fixtureAvailable: false };
 const runtime = { dispatchConfigured: false, automationEnabled: false, providerEnabled: true, providerConfigured: true, generationAllowed: false, automaticPublishingAllowed: false, oneClickAllowed: false, cronSchedule: null, blockers: [{ code: 'BLOG_DISPATCH_NOT_CONFIGURED', message: 'Blog dispatcher is not configured.', action: 'Configure the deployment dispatcher and redeploy.' }] };
@@ -67,7 +67,7 @@ try {
   await expect(page.getByText('Blog dispatcher is not configured.', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Research, write and publish', exact: true })).toBeDisabled();
   await expect(page.getByText('Queued', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Open simple editor', exact: true }).click();
+  await page.getByRole('button', { name: 'Open editor', exact: true }).click();
   assert.equal(await page.locator('body').getAttribute('data-action'), 'manual');
   await noOverflow();
   await page.setViewportSize({ width: 390, height: 844 });
@@ -79,7 +79,7 @@ try {
   await expect(page.getByRole('button', { name: 'Create and publish', exact: true })).toBeDisabled();
   await page.getByRole('textbox', { name: 'Public source URL' }).fill('https://example.com/source');
   await page.getByRole('button', { name: 'Create and publish', exact: true }).click();
-  await expect(page.getByText('AI job queued.', { exact: false })).toBeVisible();
+  await expect(page.getByText('Job queued; waiting for the dispatcher.', { exact: false })).toBeVisible();
   assert.equal(writes.at(-1).body.mode, 'one_click_source');
   assert.deepEqual(writes.at(-1).body.sourceUrls, ['https://example.com/source']);
   assert.equal('publishWhenReady' in writes.at(-1).body, false);
@@ -87,7 +87,7 @@ try {
   await page.getByRole('button', { name: 'Refresh status', exact: true }).click();
   await expect(page.getByText('Status could not be verified:', { exact: false })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Research, write and publish', exact: true })).toBeDisabled();
-  await expect(page.getByRole('button', { name: 'Open simple editor', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Open editor', exact: true })).toBeEnabled();
   overviewFailed = false; runtime.oneClickAllowed = false;
   await page.goto(`${origin}/__blog_check/advanced`);
   await expect(page.getByText('Drafting available', { exact: true })).toBeVisible();

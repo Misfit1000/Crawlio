@@ -40,7 +40,7 @@ export default function AuditStartForm({ initialUrl = '', initialFocus = 'full',
     if (submitting.current) return;
     const normalized = normalizeAuditTarget(url);
     if (!normalized.isValid) { setError(normalized.error || 'Enter a public website.'); return; }
-    if (!scope.checkGroups.length) { setError('Select at least one check group in Options.'); return; }
+    if (!scope.checkGroups.length) { setError('Select at least one check group.'); return; }
     if (entitlements.hasCurrentEntitlements && !entitlements.selectableModes.includes(mode)) { setError('Choose an available audit depth.'); return; }
     submitting.current = true;
     setStarting(true);
@@ -60,7 +60,7 @@ export default function AuditStartForm({ initialUrl = '', initialFocus = 'full',
 
   return <form id={formId} aria-label="Start a website audit" className="clarity-audit-form" onSubmit={submit} onFocusCapture={() => setOptionsRequested(true)} onPointerDownCapture={() => setOptionsRequested(true)} noValidate>
     <label htmlFor={`${id}-url`} className="sr-only">Website or domain</label>
-    <div className="clarity-url-row"><Globe className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" /><input id={`${id}-url`} {...AUDIT_TARGET_INPUT_PROPS} value={url} onChange={event => setUrl(event.target.value)} aria-describedby={`${id}-scope${error ? ` ${id}-error` : ''}`} aria-invalid={Boolean(error)} placeholder="Enter your website or domain" /><button type="submit" className="trust-button" disabled={starting || !url.trim() || !scope.checkGroups.length || entitlements.hasCurrentEntitlements && !entitlements.selectableModes.includes(mode)}>Start audit <ArrowRight className="h-4 w-4" /></button></div>
+    <div className="clarity-url-row"><Globe className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" /><input id={`${id}-url`} {...AUDIT_TARGET_INPUT_PROPS} value={url} onChange={event => setUrl(event.target.value)} aria-describedby={`${id}-scope${error ? ` ${id}-error` : ''}`} aria-invalid={Boolean(error)} placeholder="Enter your website or domain" /><button type="submit" className="trust-button" disabled={starting || !url.trim() || !scope.checkGroups.length || entitlements.hasCurrentEntitlements && !entitlements.selectableModes.includes(mode)}>{starting ? 'Starting...' : 'Start audit'} <ArrowRight className="h-4 w-4" aria-hidden="true" /></button></div>
     <AuditScopeControls scope={scope} onChange={setScope} mode={mode} onModeChange={setMode} modes={entitlements.selectableModes} limits={entitlements.pageLimits} loading={!entitlements.hasCurrentEntitlements} fixedFocus={fixedFocus} />
     <p id={`${id}-scope`} className="mt-3 text-xs leading-6 text-muted-foreground">{scope.focus === 'full' ? 'All eight check groups.' : scope.focus === 'custom' ? `${scope.checkGroups.length} check groups selected.` : 'Only the selected check group.'} {scope.coverage === 'page' ? 'Single-page coverage.' : 'Website coverage within your allowance.'}</p>
     {entitlements.guestPlanError && <p role="status" className="mt-2 text-xs text-[var(--warning)]">{entitlements.guestPlanError}<button type="button" onClick={entitlements.retryGuestPlan} className="ml-2 underline">Retry</button></p>}

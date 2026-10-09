@@ -68,7 +68,7 @@ export default function WebsiteAnalyzer() {
 
   return (
     <div className="w-full space-y-9 animate-rise">
-      <PageHeader eyebrow="Website health" icon={Globe} title="Website scan" description="Review page delivery, redirects, response signals, search access, and the fixes that matter most." />
+      <PageHeader eyebrow="Website health" icon={Globe} title="Website scan" description="Review page delivery, redirects, and search access." />
 
       <Panel className="p-5 sm:p-7">
         <form onSubmit={handleAnalyze} noValidate className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
@@ -95,21 +95,18 @@ export default function WebsiteAnalyzer() {
         </Notice>
       </Panel>
 
-      <PageSection title="Included quick checks" description="These checks all start the same real quick-audit workflow; the cards explain coverage and are intentionally not duplicate buttons.">
+      <PageSection title="Included checks">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         {freeMiniTools.map((tool) => {
           const Icon = tool.icon;
           return (
-            <Panel
-              key={tool.title}
-              className="p-5"
-            >
+            <article key={tool.title} className="p-4">
               <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-accent/10 text-accent">
                 <Icon className="h-5 w-5" />
               </div>
               <h3 className="font-semibold">{tool.title}</h3>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">{tool.text}</p>
-            </Panel>
+            </article>
           );
         })}
       </div>

@@ -1,4 +1,4 @@
-import { Database,RefreshCw,Search } from 'lucide-react';
+import { Database,Search } from 'lucide-react';
 import { useAdminFilter } from './useAdminFilter';
 import { Pagination } from './Pagination';
 import { useAdminList } from './useAdminList';
@@ -18,7 +18,7 @@ export default function AdminAudits({ adminUserId }: { adminUserId: string }) {
   const audits = useAdminList('audits', { search: query, status, userId, mode, plan, sort: allowedSort('audits', sort), direction: direction === 'asc' ? 'asc' : 'desc' });
   const rows = audits.rows;
   return (
-    <Panel title="Audit jobs" description="Inspect jobs, change queue priority, retry failures, or recover stale leases." icon={Database} action={<button type="button" onClick={audits.refresh} className="quiet-button min-h-11 px-3 py-1.5 text-xs"><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>}>
+    <Panel title="Audit jobs" description="Inspect jobs, change queue priority, retry failures, or recover stale leases." icon={Database}>
       <DataNotice {...audits} />
       {userId && <div className="mb-4 flex min-w-0 flex-wrap items-center gap-3 text-sm"><span className="break-all">Account: {userId}</span><button type="button" className="quiet-button min-h-11" onClick={() => setUserId('')}>Clear account filter</button></div>}
       <div className="mb-4 grid min-w-0 gap-3 md:grid-cols-[minmax(0,1fr)_200px]"><label className="relative"><span className="sr-only">Search audit jobs</span><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search website URL" className="suite-input min-h-11 pl-9" /></label><select aria-label="Filter audit status" value={status} onChange={(event) => setStatus(event.target.value)} className="suite-input min-h-11"><option value="all">All statuses</option>{['queued', 'running', 'completed', 'completed_with_warnings', 'failed', 'cancelled', 'abandoned'].map((item) => <option key={item} value={item}>{item.replace(/_/g, ' ')}</option>)}</select></div>

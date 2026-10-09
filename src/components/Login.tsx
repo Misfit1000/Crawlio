@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { Eye, EyeOff, Loader2, Lock, Mail, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { BrandMark } from './ui/visual-system';
+import { BrandMark } from './ui/chrome';
 import { FormField, Notice } from './ui/page-system';
 
 export default function Login({
@@ -39,7 +39,7 @@ export default function Login({
   };
 
   return (
-    <div className="suite-panel w-full max-w-md animate-rise p-6 sm:p-8">
+    <div className="suite-panel w-full max-w-md animate-rise p-6 sm:p-8" style={{ borderTop: '3px solid var(--accent)' }}>
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <BrandMark />
@@ -50,7 +50,7 @@ export default function Login({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             aria-label="Close sign in modal"
           >
             <X className="h-5 w-5" />

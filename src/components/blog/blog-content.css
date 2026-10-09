@@ -1,70 +1,16 @@
-@reference "../../index.css";
-
-@layer utilities {
-  .blog-prose,
-  .rich-editor .tiptap {
-    @apply text-[1rem] leading-8 text-foreground;
-  }
-
-  .blog-prose > * + *,
-  .rich-editor .tiptap > * + * {
-    @apply mt-5;
-  }
-
-  .blog-prose h2,
-  .rich-editor .tiptap h2 {
-    @apply mt-10 text-2xl font-semibold leading-tight sm:text-3xl;
-  }
-
-  .blog-prose h3,
-  .rich-editor .tiptap h3 {
-    @apply mt-8 text-xl font-semibold leading-snug sm:text-2xl;
-  }
-
-  .blog-prose h4,
-  .rich-editor .tiptap h4 {
-    @apply mt-7 text-lg font-semibold;
-  }
-
-  .blog-prose p,
-  .blog-prose li,
-  .rich-editor .tiptap p,
-  .rich-editor .tiptap li {
-    @apply text-muted-foreground;
-  }
-
-  .blog-prose ul,
-  .rich-editor .tiptap ul {
-    @apply list-disc space-y-2 pl-6;
-  }
-
-  .blog-prose ol,
-  .rich-editor .tiptap ol {
-    @apply list-decimal space-y-2 pl-6;
-  }
-
-  .blog-prose a,
-  .rich-editor .tiptap a {
-    @apply font-semibold text-accent underline decoration-accent/35 underline-offset-4 hover:decoration-accent;
-  }
-
-  .blog-prose blockquote,
-  .rich-editor .tiptap blockquote {
-    @apply border-l-4 border-accent bg-muted/55 px-5 py-4 text-foreground;
-  }
-
-  .blog-prose pre,
-  .rich-editor .tiptap pre {
-    @apply max-w-full overflow-x-auto rounded-lg bg-neutral-950 p-5 text-sm leading-6 text-neutral-100;
-  }
-
-  .blog-prose code:not(pre code),
-  .rich-editor .tiptap code:not(pre code) {
-    @apply rounded bg-muted px-1.5 py-0.5 text-sm text-foreground;
-  }
-
-  .rich-editor .tiptap p.is-editor-empty:first-child::before {
-    @apply pointer-events-none float-left h-0 text-muted-foreground;
-    content: 'Write the practical article guidance here...';
-  }
-}
+:is(.blog-prose,.rich-editor .tiptap) { color: var(--foreground); font-size: 1rem; line-height: 1.85; overflow-wrap: anywhere; }
+:is(.blog-prose,.rich-editor .tiptap)>*+* { margin-top: 1.25rem; }
+:is(.blog-prose,.rich-editor .tiptap) :is(h2,h3,h4) { margin-top: 2rem; font-weight: 600; line-height: 1.35; }
+:is(.blog-prose,.rich-editor .tiptap) h2 { font-size: 1.5rem; }
+:is(.blog-prose,.rich-editor .tiptap) h3 { font-size: 1.25rem; }
+:is(.blog-prose,.rich-editor .tiptap) h4 { font-size: 1.125rem; }
+:is(.blog-prose,.rich-editor .tiptap) :is(ul,ol) { padding-left: 1.5rem; }
+:is(.blog-prose,.rich-editor .tiptap) ul { list-style: disc; }
+:is(.blog-prose,.rich-editor .tiptap) ol { list-style: decimal; }
+:is(.blog-prose,.rich-editor .tiptap) a { color: var(--accent); text-decoration: underline; text-underline-offset: 4px; }
+:is(.blog-prose,.rich-editor .tiptap) blockquote { border-left: 3px solid var(--accent); padding: .5rem 1rem; }
+:is(.blog-prose,.rich-editor .tiptap) pre { max-width: 100%; overflow-x: auto; border-radius: 8px; background: #000; color: #fff; padding: 1rem; font-size: .875rem; line-height: 1.6; }
+:is(.blog-prose,.rich-editor .tiptap) code:not(pre code) { background: var(--muted); padding: .125rem .25rem; font-size: .875rem; }
+.rich-editor .tiptap p.is-editor-empty:first-child::before { content: 'Write the article...'; pointer-events: none; float: left; height: 0; color: var(--muted-foreground); }
+.blog-reading { max-width: 70ch; margin-inline: auto; }
+.blog-reading h1 { font-size: 2rem; line-height: 1.25; }

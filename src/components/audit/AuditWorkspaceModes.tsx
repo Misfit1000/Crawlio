@@ -26,8 +26,10 @@ export function useAuditWorkspaceMode(defaultMode: AuditWorkspaceMode = 'overvie
   return { mode, pathFor, setMode };
 }
 
-export function AuditWorkspaceModes({ mode, pathFor }: Pick<ReturnType<typeof useAuditWorkspaceMode>, 'mode' | 'pathFor'>) {
+export function AuditWorkspaceModes({ mode, pathFor, categories = [], selectedCategory = '' }: Pick<ReturnType<typeof useAuditWorkspaceMode>, 'mode' | 'pathFor'> & { categories?: Array<{ label: string; path: string }>; selectedCategory?: string }) {
+  const navigate = useNavigate();
   return <nav className="audit-mode-navigation" aria-label="Audit workspace views">
-    {modes.map(({ id, label, icon: Icon }) => <Link key={id} to={pathFor(id)} aria-current={mode === id ? 'page' : undefined} className={`flex min-h-11 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold ${mode === id ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}><Icon className="h-4 w-4 shrink-0" /><span>{label}</span></Link>)}
+    <div className="grid min-w-0 grid-cols-4 gap-1">{modes.map(({ id, label, icon: Icon }) => <Link key={id} to={pathFor(id)} aria-current={mode === id ? 'page' : undefined} className={`flex min-h-11 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold ${mode === id ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}><Icon className="h-4 w-4 shrink-0" /><span>{label}</span></Link>)}</div>
+    {mode === 'findings' && categories.length > 0 && <select aria-label="Report category" className="suite-input" value={selectedCategory || categories[0].path} onChange={event => navigate(event.target.value)}>{categories.map(item => <option key={item.path} value={item.path}>{item.label}</option>)}</select>}
   </nav>;
 }

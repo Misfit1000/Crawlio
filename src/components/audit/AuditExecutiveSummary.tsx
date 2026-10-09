@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, type CSSProperties } from 'react';
 import './audit-report.css';
 import { CheckCircle2, ShieldAlert } from 'lucide-react';
 import type { ResourceAuditDocument, ResourceAuditIssue } from '../../lib/audit/resource-types';
@@ -7,15 +7,24 @@ import { isTerminalAuditStatus } from '../../lib/audit/audit-time';
 import { issueSignature, type ChecklistStatus } from '../../lib/audit/client-insights';
 import { findingImpact } from '../../lib/audit/report-insights';
 import { auditCoverage } from '../../lib/audit/audit-evidence-quality';
-import { auditScopeScoreLabel } from '../../lib/audit/audit-scope';
+import { AUDIT_CHECK_GROUPS, AUDIT_GROUP_DETAILS, auditScopeScoreLabel } from '../../lib/audit/audit-scope';
+import { categoryColor } from '../ui/category-presentation';
 import { auditScopeProgressLabel } from '../../lib/report/scope-presentation';
-import { AuditGrade, CategoryScoreBar, ProgressBar, SeverityDistribution, StatusBadge } from '../ui/visual-system';
+import { AuditGrade, CategoryScoreBar, ProgressBar, RadialScoreGauge, SeverityDistribution, StatusBadge } from '../ui/visual-system';
 
 export interface AuditCategoryScore {
   label: string;
   value: number;
   detail?: string;
   tone?: 'accent' | 'green' | 'yellow' | 'red';
+}
+
+export function AuditScoreFactors({ categoryScores }: { categoryScores: AuditCategoryScore[] }) {
+  if (!categoryScores.length) return null;
+  return <section className="border-b border-border py-5" aria-label="Measured score factors"><h2 className="mb-4 text-sm font-semibold">Measured score factors</h2><div className="audit-score-factors grid gap-6 sm:grid-cols-2 xl:grid-cols-3">{categoryScores.map(item => {
+    const group = AUDIT_CHECK_GROUPS.find(group => AUDIT_GROUP_DETAILS[group].label === item.label);
+    return <div key={item.label} style={{ '--factor-color': categoryColor(group || (item.label === 'On-page SEO' ? 'seo' : item.label === 'Technical delivery' ? 'technical' : 'security')) } as CSSProperties}><CategoryScoreBar label={item.label} value={item.value} framed={false} /></div>;
+  })}</div></section>;
 }
 
 export const AuditExecutiveSummary = memo(function AuditExecutiveSummary({
@@ -34,25 +43,29 @@ export const AuditExecutiveSummary = memo(function AuditExecutiveSummary({
   const coverage = auditCoverage(audit);
   const terminal = isTerminalAuditStatus(audit.status);
   const limitationCount = unavailableChecks ?? audit.warningCount ?? 0;
-  return <section className="audit-compact-summary" aria-label="Audit summary">
-    <div className="min-w-0 py-4">
+  return <section aria-label="Audit summary">
+    <div className="audit-compact-summary grid gap-6 border-b border-border sm:grid-cols-2 xl:grid-cols-3">
+    <div className="min-w-0 py-5">
       <div className="mb-3"><StatusBadge tone={scoreState === 'final' ? 'success' : scoreState === 'provisional' ? 'accent' : 'neutral'}>{scoreState === 'final' ? 'Final score' : scoreState === 'provisional' ? 'Preliminary' : terminal ? 'Unavailable' : 'Score pending'}</StatusBadge></div>
-      <AuditGrade score={score} label={audit.scope ? auditScopeScoreLabel(audit.scope) : scoreLabel || 'Overall score'} detail={scoreDetail} compact />
+      {score != null && Number.isFinite(score)
+        ? <RadialScoreGauge value={score} label={audit.scope ? auditScopeScoreLabel(audit.scope) : scoreLabel || 'Overall score'} detail={scoreDetail} size="lg" />
+        : <AuditGrade score={null} label={audit.scope ? auditScopeScoreLabel(audit.scope) : scoreLabel || 'Overall score'} detail={scoreDetail} compact />}
       {progress != null && !terminal && <div className="mt-4"><ProgressBar label={auditScopeProgressLabel(audit)} value={progress} /></div>}
     </div>
-    <div className="min-w-0 py-4">
+    <div className="min-w-0 py-5">
       <h2 className="mb-3 text-sm font-semibold">Finding priority <span className="ml-1 text-xs font-normal text-muted-foreground">{audit.issuesFound.toLocaleString()} total</span></h2>
       <SeverityDistribution critical={audit.criticalCount} high={audit.highCount} medium={audit.mediumCount} low={audit.lowCount} />
     </div>
-    <div className="min-w-0 py-4">
+    <div className="min-w-0 py-5">
       <h2 className="mb-3 text-sm font-semibold">Coverage</h2>
       <dl className="grid grid-cols-2 gap-x-3 gap-y-3">
-        {[[coverage.analysed.toLocaleString(), 'Pages analysed'], [coverage.discovered.toLocaleString(), 'URLs discovered'], [audit.scope ? categoryScores.length.toLocaleString() : audit.checksCompleted.toLocaleString(), audit.scope ? 'Groups measured' : 'Check groups'], [limitationCount.toLocaleString(), unavailableChecks == null ? 'Warnings' : 'Unavailable checks']].map(([value, label]) => <div key={label}><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{value}</dd></div>)}
+        {[[coverage.analysed.toLocaleString(), 'Pages analysed'], [coverage.discovered.toLocaleString(), 'URLs discovered'], [audit.scope ? categoryScores.length.toLocaleString() : audit.checksCompleted.toLocaleString(), audit.scope ? 'Groups measured' : 'Checks completed'], [limitationCount.toLocaleString(), unavailableChecks == null ? 'Warnings' : 'Unavailable checks']].map(([value, label]) => <div key={label}><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{value}</dd></div>)}
       </dl>
       <p className="mt-3 text-xs text-muted-foreground">{audit.scope?.coverage === 'page' ? `Single-page coverage. ${(audit.planPageLimit ?? coverage.allowance).toLocaleString()} pages in your plan allowance.` : `${(audit.planPageLimit ?? coverage.allowance).toLocaleString()} page allowance. Discovered URLs are not total site size.`}</p>
       {coverage.discoveredPercent != null && <div className="mt-3"><ProgressBar label="Discovered pages analysed" value={coverage.discoveredPercent} tone="green" /></div>}
     </div>
-    {categoryScores.length > 0 && <div className="min-w-0 py-4"><h2 className="mb-3 text-sm font-semibold">Measured score factors</h2><div className="grid gap-2.5">{categoryScores.map(item => <CategoryScoreBar key={item.label} label={item.label} value={item.value} framed={false} />)}</div></div>}
+    </div>
+    <AuditScoreFactors categoryScores={categoryScores} />
   </section>;
 });
 

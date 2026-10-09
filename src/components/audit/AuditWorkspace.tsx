@@ -87,7 +87,7 @@ function ComparisonPanel() {
 
   if (!history?.items.some((item) => item.audit.id !== auditId)) return null;
   return (
-    <SurfaceCard id="audit-comparison" className="p-5 md:p-6">
+    <section id="audit-comparison" className="border-y border-border py-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><h2 className="text-xl font-semibold">Compare with an earlier audit</h2><p className="mt-1 text-sm text-muted-foreground">Review new, resolved, and persistent findings from stored audit history.</p></div><div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto"><select className="suite-input min-w-64" value={baselineId} onChange={(event) => setBaselineId(event.target.value)} aria-label="Earlier audit"><option value="">Choose an earlier audit</option>{history.items.filter((item) => item.audit.id !== auditId).map((item) => <option key={item.audit.id} value={item.audit.id}>{new Date(item.audit.createdAt).toLocaleString()} · {modeLabel(item.audit.effectiveMode)}</option>)}</select><button type="button" className="trust-button" onClick={compare} disabled={!baselineId || loading}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />} Compare</button></div></div>
       {error && <Notice tone="danger" className="mt-4">{error}</Notice>}
       {comparison && <div className="mt-5 grid gap-4 xl:grid-cols-2">
@@ -100,7 +100,7 @@ function ComparisonPanel() {
           <MetricCard label="Still present" value={comparison.issueCounts?.persistent ?? comparison.persistentIssues.length} detail="Detected in both audits" icon={<Wrench className="h-5 w-5" />} />
         </div>
       </div>}
-    </SurfaceCard>
+    </section>
   );
 }
 
@@ -150,7 +150,8 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
   const unavailableChecks = Array.isArray(scoreRecord?.unavailableChecks) ? scoreRecord.unavailableChecks.length : liveScore?.unavailableCount;
   const included = scopeIncludesSection(audit.scope, section);
   const statusTone = isCompletedAuditStatus(audit.status) ? audit.status === 'completed_with_warnings' ? 'warning' : 'success' : audit.status === 'failed' ? 'danger' : 'accent';
-  return <div className="audit-customer-workspace w-full space-y-4">
+  const categoryRoutes = [{ label: 'All findings', path: `${auditWorkspacePath(auditId)}?view=findings` }, ...sections.filter(item => scopeIncludesSection(audit.scope, item.id)).map(item => ({ label: item.label, path: auditWorkspacePath(auditId, item.id) }))];
+  return <div className="audit-customer-workspace w-full space-y-6">
     <header className="flex flex-col gap-3 border-b border-border pb-4 lg:flex-row lg:items-center lg:justify-between">
       <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><StatusBadge tone={statusTone}>{auditStatusLabel(audit.status)}</StatusBadge><span className="text-xs text-muted-foreground">{audit.scope ? `${auditFocusLabel(audit.scope)} · ${audit.scope.coverage} coverage · ` : ''}{modeLabel(audit.effectiveMode)}</span></div><h1 className="mt-2 break-words text-2xl font-semibold">{audit.hostname}</h1><p className="mt-1 break-all text-xs text-muted-foreground">{audit.normalizedUrl}</p></div>
       <div className="flex flex-wrap gap-2">
@@ -165,7 +166,7 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
     {error && <Notice tone="danger" title="Some audit data could not refresh">{customerSafeDiagnosticText(error)}</Notice>}
     {actionMessage && <Notice tone={/copied|downloaded/.test(actionMessage) ? 'success' : 'danger'}>{actionMessage}</Notice>}
     <AuditExportDownloadNotice download={exportDownload} />
-    <AuditWorkspaceModes mode={modes.mode} pathFor={modes.pathFor} />
+    <AuditWorkspaceModes mode={modes.mode} pathFor={modes.pathFor} categories={categoryRoutes} selectedCategory={categoryRoutes.find(item => item.path === auditWorkspacePath(auditId, section))?.path} />
     {!included && <AuditScopeNotIncluded />}
     {included && modes.mode === 'overview' && <>
       <AuditExecutiveSummary audit={audit} score={scores.overall} scoreState={liveScore?.scoreState} scoreDetail={liveScore?.scoreState === 'provisional' ? 'Preliminary, from analysed pages so far' : 'Stored deterministic score'} categoryScores={categoryScores} progress={audit.progress} unavailableChecks={unavailableChecks} />
@@ -174,7 +175,6 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
       <ComparisonPanel />
     </>}
     {included && modes.mode === 'findings' && <>
-      <nav className="no-scrollbar flex flex-wrap gap-1 border-b border-border pb-2" aria-label="Detailed report categories"><NavLink to={`${auditWorkspacePath(auditId)}?view=findings`} className="quiet-button min-h-9 px-3 py-1 text-xs">All findings</NavLink>{sections.filter(item => scopeIncludesSection(audit.scope, item.id)).map(item => <NavLink key={item.id} to={auditWorkspacePath(auditId, item.id)} className={({ isActive }) => `min-h-9 rounded-md px-3 py-2 text-xs font-semibold ${isActive ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted'}`}>{item.label}</NavLink>)}</nav>
       {section === 'security' && <StatusBadge tone="accent">Passive observations only</StatusBadge>}
       {section === 'accessibility' && <StatusBadge tone="warning">Automated signals, not certification</StatusBadge>}
       {audit.processingVersion === 2 ? <PaginatedAuditEvidence auditId={auditId} kind="issues" section={reportSectionForRoute[section]} {...workflowProps} /> : <FindingWorkspace auditId={auditId} issues={issues} {...workflowProps} />}

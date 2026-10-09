@@ -256,8 +256,8 @@ function AccountImports({ accountId, signedIn: user }: { accountId: string; sign
 
   return (
     <div className="space-y-9 animate-rise">
-      <PageHeader eyebrow="Data sources" icon={Database} title="Import real SEO data" description="Load search-performance, keyword-position, or backlink CSV exports. Imports stay on this device for guests and can sync to the selected project when you are signed in." />
-      <Notice tone="info" title="First-party and user-provided data only">Google Search Console and Bing data works only for sites you can verify or export. Crawlio does not invent search volume, rankings, traffic, backlinks, or authority metrics.</Notice>
+      <PageHeader icon={Database} title="Data imports" description="Search performance, keyword positions, and backlink CSV exports." />
+      <p className="text-sm text-muted-foreground">Import data from accounts you control. Guest imports stay on this device; signed-in imports can sync to a project.</p>
 
       {error && <Notice tone="danger" title="Import failed">{error}</Notice>}
       {remoteError && <Notice tone="danger" title="Account data unavailable">{remoteError}</Notice>}

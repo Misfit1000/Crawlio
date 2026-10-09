@@ -27,7 +27,7 @@ import type {
   BlogApprovedSource,
   BlogOperationsSnapshot,
 } from "../../lib/blog/types";
-import { Notice, Panel } from "../ui/page-system";
+import { Notice } from "../ui/page-system";
 import { StatusBadge } from "../ui/visual-system";
 import { useAdminActionReason } from "../admin/AdminActionDialog";
 
@@ -173,15 +173,15 @@ export default function BlogProviderFreeWorkspace() {
     );
 
   return (
-    <Panel className="p-5 sm:p-6">
+    <section className="min-w-0">
       <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h3 className="text-xl font-semibold text-foreground">
-            Editorial operations
-          </h3>
+          <h2 className="text-lg font-semibold text-foreground">
+            Sources and system
+          </h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
-            Manage approved evidence, review timely opportunities, and inspect
-            publishing health without a generation-provider key.
+            Approved sources, timely opportunities, and publishing health.
+            No generation-provider key required.
           </p>
         </div>
         <button
@@ -209,7 +209,7 @@ export default function BlogProviderFreeWorkspace() {
         </div>
       )}
       <div
-        className="mt-5 inline-flex rounded-lg bg-muted p-1"
+        className="mt-5 flex flex-wrap gap-1 border-b border-border pb-3"
         role="tablist"
         aria-label="Editorial operations"
       >
@@ -226,7 +226,7 @@ export default function BlogProviderFreeWorkspace() {
             role="tab"
             aria-selected={tab === value}
             onClick={() => setTab(value)}
-            className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold ${tab === value ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+            className={`flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-semibold ${tab === value ? "bg-accent/10 text-accent" : "text-muted-foreground hover:text-foreground"}`}
           >
             <Icon className="h-4 w-4" /> {label}
           </button>
@@ -865,6 +865,6 @@ export default function BlogProviderFreeWorkspace() {
           </div>
         </div>
       )}
-    </Panel>
+    </section>
   );
 }

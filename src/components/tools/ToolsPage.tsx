@@ -309,7 +309,7 @@ function ToolsWorkspace({ initialPage, embedded, tool, baseline, observed, obser
   </div>;
   return <div className={`${embedded ? styles.embedded : 'suite-page'} ${styles.root}`}>
     <header className={styles.row}>
-      <div><Title className={embedded ? 'text-xl' : 'text-2xl'}>Low-cost tools</Title><p className={styles.note}>Browser-only tools. No saved changes, crawler requests, or audit score changes.</p></div>
+      <div><Title data-route-focus-target={!embedded ? true : undefined} className={embedded ? 'text-xl' : 'text-2xl'}>SEO tools</Title><p className={styles.note}>Local tools for previews, markup, and header fixes. Audit scores stay unchanged.</p></div>
       <span className="suite-chip">{initialPage ? 'Selected page evidence' : 'Local input'}</span>
     </header>
     <div className={styles.tabs} role="tablist" aria-label="Browser tools">

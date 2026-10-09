@@ -10,9 +10,10 @@ test.describe('public product journeys', () => {
     await expect(page.getByRole('heading', { level: 1 })).toContainText('website');
     await page.getByRole('navigation', { name: 'Public navigation' }).getByRole('link', { name: 'Pricing' }).click();
     await expect(page.locator('#pricing')).toBeInViewport();
-    await expect(page.locator('#pricing')).toContainText('Up to 5 pages');
-    await expect(page.locator('#pricing')).toContainText('Up to 50 pages');
-    await expect(page.locator('#pricing')).toContainText('Up to 75 pages');
+    await expect(page.locator('#pricing article').filter({ has: page.getByRole('heading', { name: 'Free', exact: true }) }).locator('.pricing-allowance strong')).toHaveText('5');
+    await expect(page.locator('#pricing article').filter({ has: page.getByRole('heading', { name: 'Plus', exact: true }) }).locator('.pricing-allowance strong')).toHaveText('50');
+    await expect(page.locator('#pricing article').filter({ has: page.getByRole('heading', { name: 'Pro', exact: true }) }).locator('.pricing-allowance strong')).toHaveText('75');
+    await expect(page.getByRole('region', { name: 'Plan comparison' })).toBeVisible();
     await expect(page.locator('#pricing')).not.toContainText('deployment');
     await expect(expectNoHorizontalOverflow(page)).resolves.toBe(true);
 
@@ -23,7 +24,7 @@ test.describe('public product journeys', () => {
     await page.getByRole('button', { name: 'Switch to light mode' }).click();
 
     await page.goto('/blog');
-    await expect(page.getByRole('heading', { name: 'Practical SEO engineering guides' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Crawlio blog' })).toBeVisible();
   });
 
   test('mobile navigation is usable without overflow', async ({ page }) => {
@@ -115,8 +116,8 @@ test.describe('guest audit integration', () => {
     await expect(summary).toContainText('Pages analysed');
     await expect(summary).toContainText('2');
     await expect(summary).toContainText('5');
-    const domainStrength = page.getByRole('region', { name: 'Domain strength' });
-    await page.getByText('Domain strength and external signals', { exact: true }).click();
+    const domainStrength = page.getByRole('region', { name: 'Domain strength', exact: true });
+    await page.getByRole('region', { name: 'Domain strength and external signals', exact: true }).scrollIntoViewIfNeeded();
     await expect(domainStrength).toContainText('Crawlio Domain Strength');
     await expect(domainStrength).toContainText('#23,456');
     await expect(domainStrength).toContainText('420');

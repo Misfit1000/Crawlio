@@ -4,6 +4,7 @@ import { AlertCircle, CheckCircle2, Info, TriangleAlert } from 'lucide-react';
 import { handleTabListKeyDown } from '../../lib/ui/keyboard';
 
 type Tone = 'info' | 'success' | 'warning' | 'danger' | 'security';
+type PageVariant = 'workspace' | 'editorial';
 
 export function PageHeader({
   title,
@@ -12,6 +13,7 @@ export function PageHeader({
   icon: Icon,
   actions,
   metadata,
+  variant = 'workspace',
 }: {
   title: string;
   description?: string;
@@ -19,18 +21,14 @@ export function PageHeader({
   icon?: LucideIcon;
   actions?: ReactNode;
   metadata?: ReactNode;
+  variant?: PageVariant;
 }) {
   return (
-    <header className="page-header flex flex-col gap-5 border-b border-border pb-6 lg:flex-row lg:items-end lg:justify-between">
+    <header className="page-header flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between" data-variant={variant}>
       <div className="min-w-0">
-        {(eyebrow || Icon) && (
-          <div className="page-eyebrow mb-3">
-            {Icon && <Icon className="h-4 w-4" aria-hidden="true" />}
-            {eyebrow && <span>{eyebrow}</span>}
-          </div>
-        )}
-        <h1 className="text-2xl font-semibold leading-tight sm:text-3xl">{title}</h1>
-        {description && <p className="page-description mt-3">{description}</p>}
+        <div className="flex items-center gap-3">{Icon && <span className="page-heading-icon"><Icon className="h-5 w-5" aria-hidden="true" /></span>}<h1 data-route-focus-target>{title}</h1></div>
+        {eyebrow && <span className="sr-only">{eyebrow}</span>}
+        {description && <p className="page-description mt-2">{description}</p>}
         {metadata && <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">{metadata}</div>}
       </div>
       {actions && <div className="flex max-w-full flex-wrap items-center gap-2">{actions}</div>}
@@ -57,7 +55,7 @@ export function PageSection({
     <section id={id} className={`space-y-5 ${className}`} aria-labelledby={id ? `${id}-title` : undefined}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 id={id ? `${id}-title` : undefined} className="text-2xl font-semibold leading-tight">{title}</h2>
+          <h2 id={id ? `${id}-title` : undefined} className="text-xl font-semibold leading-tight">{title}</h2>
           {description && <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>}
         </div>
         {action && <div className="shrink-0">{action}</div>}
@@ -113,7 +111,7 @@ export function Notice({ tone = 'info', title, children, className = '' }: { ton
   };
   const Icon = tone === 'success' ? CheckCircle2 : tone === 'warning' ? TriangleAlert : tone === 'danger' ? AlertCircle : Info;
   return (
-    <div role={tone === 'danger' ? 'alert' : 'status'} className={`flex gap-3 rounded-xl border p-4 text-sm leading-6 ${styles[tone]} ${className}`}>
+    <div role={tone === 'danger' ? 'alert' : 'status'} className={`flex gap-3 rounded-lg border p-4 text-sm leading-6 ${styles[tone]} ${className}`}>
       <Icon className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
       <div>{title && <div className="font-semibold">{title}</div>}<div className={title ? 'mt-1' : ''}>{children}</div></div>
     </div>

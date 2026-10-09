@@ -1,9 +1,9 @@
 import React from 'react';
 import { UpdatedValue } from './UpdatedValue';
-import { AlertTriangle, CheckCircle2, ChevronDown, Globe, Monitor, Moon, ScanSearch, Search, ShieldCheck, Smartphone, Sun } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, Globe, Monitor, Search, ShieldCheck, Smartphone } from 'lucide-react';
 import { safePreviewMediaUrl } from '../../lib/audit/preview-model';
 import { gradeRangeLabel, scoreToGrade, scoreTone as reportScoreTone } from '../../lib/audit/report-insights';
-import { BRAND } from '../../lib/brand';
+export { BrandMark, ThemeToggle, LoadingSkeleton } from './chrome';
 import { CompactWebsitePreview, DesktopHomepagePreview, MobileHomepagePreview, PreviewUnavailableState, type CompactPreviewProps } from './compact-site-preview';
 
 export { CompactWebsitePreview, DesktopHomepagePreview, MobileHomepagePreview, PreviewUnavailableState } from './compact-site-preview';
@@ -48,9 +48,9 @@ export function SectionHeader({
   return (
     <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
       <div>
-        {eyebrow && <div className="suite-chip mb-3 w-fit text-accent">{eyebrow}</div>}
-        <Heading className="text-2xl font-bold md:text-4xl">{title}</Heading>
-        {description && <p className="mt-3 max-w-3xl text-sm leading-7 text-muted-foreground md:text-base">{description}</p>}
+        {eyebrow && <span className="sr-only">{eyebrow}</span>}
+        <Heading className="text-2xl font-semibold">{title}</Heading>
+        {description && <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>}
       </div>
       {action && <div className="self-start md:self-auto">{action}</div>}
     </div>
@@ -71,7 +71,7 @@ export function StatusBadge({
     danger: 'border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-300',
     accent: 'border-accent/20 bg-accent/10 text-accent',
   };
-  return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-bold shadow-sm ${tones[tone]}`}>{children}</span>;
+  return <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${tones[tone]}`}>{children}</span>;
 }
 
 export function AuditGrade({
@@ -499,7 +499,7 @@ export function RadialScoreGauge({
             style={{
               strokeDasharray: circumference,
               strokeDashoffset,
-              transition: 'stroke-dashoffset 700ms ease',
+              transition: 'stroke-dashoffset 300ms ease',
             }}
           />
         </svg>
@@ -646,7 +646,7 @@ export function MetricCard({
   value: React.ReactNode;
   detail?: string;
   icon?: React.ReactNode;
-  tone?: 'accent' | 'green' | 'yellow' | 'red' | 'blue';
+  tone?: 'accent' | 'green' | 'yellow' | 'red' | 'blue' | 'teal' | 'cyan' | 'violet';
 }) {
   const tones = {
     accent: 'bg-accent/10 text-accent',
@@ -654,6 +654,9 @@ export function MetricCard({
     yellow: 'bg-amber-500/10 text-amber-700 dark:text-amber-300',
     red: 'bg-red-500/10 text-red-700 dark:text-red-300',
     blue: 'bg-sky-500/10 text-sky-700 dark:text-sky-300',
+    teal: 'bg-[var(--category-teal)]/10 text-[var(--category-teal)]',
+    cyan: 'bg-[var(--category-cyan)]/10 text-[var(--category-cyan)]',
+    violet: 'bg-[var(--category-violet)]/10 text-[var(--category-violet)]',
   };
   return (
     <SurfaceCard className="p-5">
@@ -663,7 +666,7 @@ export function MetricCard({
           <div className="mt-2 text-3xl font-semibold tabular-nums"><UpdatedValue value={value} /></div>
           {detail && <div className="mt-1 text-xs text-muted-foreground">{detail}</div>}
         </div>
-        {icon && <div className={`rounded-xl p-3 ${tones[tone]}`}>{icon}</div>}
+        {icon && <div className={`rounded-lg p-3 ${tones[tone]}`}>{icon}</div>}
       </div>
     </SurfaceCard>
   );
@@ -929,48 +932,4 @@ export function SitePreviewSection({
   themeColor,
 }: PreviewProps) {
   return <HybridSitePreview url={url} title={title} description={description} hostname={hostname} canonicalUrl={canonicalUrl} faviconUrl={faviconUrl} openGraphImage={openGraphImage} screenshotUrl={screenshotUrl} h1={h1} siteName={siteName} themeColor={themeColor} />;
-}
-
-export function ThemeToggle({
-  theme,
-  onToggle,
-}: {
-  theme: 'dark' | 'light';
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className="group inline-flex h-10 w-10 items-center rounded-full border border-border bg-card/90 px-1.5 text-sm font-semibold shadow-sm transition-all duration-300 hover:bg-muted focus:outline-none focus:ring-2 focus:ring-accent/40 sm:w-[4.5rem]"
-      aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-      title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-    >
-      <span className={`flex h-7 w-7 items-center justify-center rounded-full shadow-sm transition-all duration-300 ${theme === 'dark' ? 'bg-accent text-accent-foreground sm:translate-x-8' : 'translate-x-0 bg-amber-400 text-slate-950'}`}>
-        {theme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-      </span>
-      <span className="sr-only">{theme === 'dark' ? 'Dark mode' : 'Light mode'}</span>
-    </button>
-  );
-}
-
-export function LoadingSkeleton({ rows = 3 }: { rows?: number }) {
-  return (
-    <div className="space-y-3">
-      {Array.from({ length: rows }).map((_, index) => (
-        <div key={index} className="h-12 animate-pulse rounded-xl bg-muted" />
-      ))}
-    </div>
-  );
-}
-
-export function BrandMark() {
-  return (
-    <div className="flex items-center gap-2.5 font-bold text-foreground">
-      <div className="rounded-lg bg-accent p-2 text-accent-foreground shadow-sm">
-        <ScanSearch className="h-5 w-5" aria-hidden="true" />
-      </div>
-      <span className="text-lg max-[359px]:hidden sm:text-xl">{BRAND.name}</span>
-    </div>
-  );
 }

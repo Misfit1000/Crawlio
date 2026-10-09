@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { BrandMark } from './ui/visual-system';
+import { BrandMark } from './ui/chrome';
 import { Notice } from './ui/page-system';
 
 export default function AccountRecovery() {
@@ -24,7 +24,7 @@ export default function AccountRecovery() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <main className="suite-panel w-full max-w-md p-6 sm:p-8">
         <BrandMark />
-        <h1 className="mt-6 text-2xl font-semibold">Finish account setup</h1>
+        <h1 data-route-focus-target className="mt-6 text-2xl font-semibold">Finish account setup</h1>
         <p className="mt-1 text-sm text-muted-foreground">Authentication succeeded. Your profile still needs to load before you can use the workspace.</p>
         <div className="mt-6" aria-live="polite"><Notice tone="warning">{localError || error || 'Retry account setup without submitting another signup.'}</Notice></div>
         <button type="button" className="trust-button mt-5 w-full" disabled={busy} onClick={() => void perform(retryProfile)}>

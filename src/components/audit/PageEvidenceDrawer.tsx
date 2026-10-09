@@ -50,7 +50,7 @@ export function PageEvidenceDrawer({ page, issues = [], onClose, scope }: { page
   const fields = [...(scopeIncludesGroup(scope, 'seo') ? [['Description', page.metaDescription], ['H1', page.h1]] : []),
     ...(scopeIncludesGroup(scope, 'crawlability') ? [['Preferred URL', page.canonicalUrl]] : []), ['Discovered from', page.sourceUrl],
     ...(scopeIncludesGroup(scope, 'links') ? [['Link anchor', page.anchorText]] : [])];
-  return createPortal(<div className="fixed inset-0 z-[90] flex justify-end bg-black/65" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+  return createPortal(<div className="audit-customer-workspace fixed inset-0 z-[90] flex justify-end bg-black/65" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <aside ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="page-evidence-title" className="flex h-full w-full max-w-xl flex-col border-l border-border bg-card shadow-xl">
       <header className="flex items-start justify-between gap-3 border-b border-border p-5"><div className="min-w-0"><p className="text-xs text-muted-foreground">Stored page evidence</p><h2 id="page-evidence-title" className="mt-1 break-words text-lg font-semibold">{scopeIncludesGroup(scope, 'seo') ? page.title || 'Untitled page' : 'Page evidence'}</h2><p className="mt-2 break-all text-xs text-muted-foreground">{page.url}</p></div><button ref={closeRef} type="button" className="quiet-button min-h-10 min-w-10 p-2" onClick={onClose} aria-label="Close page evidence" title="Close page evidence"><X className="h-5 w-5" /></button></header>
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain p-5">

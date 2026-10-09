@@ -5,6 +5,12 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import AxeBuilder from '@axe-core/playwright';
 
+if (process.argv.includes('--serve')) {
+  const { servePreview } = await import('./workspace-preview.mjs');
+  await servePreview();
+  process.exit(0);
+}
+
 const userId = '11111111-1111-4111-8111-111111111111';
 const auditId = '22222222-2222-4222-8222-222222222222';
 const retryId = '33333333-3333-4333-8333-333333333333';
@@ -38,7 +44,7 @@ const fixtures = {
     });
   },
 };
-const server = await createServer({ configFile: false, plugins: [fixtures, react(), tailwindcss()], define: { __CRAWLIO_RELEASE__: '"admin-check"', __CRAWLIO_ENVIRONMENT__: '"test"' }, server: { host: '127.0.0.1', port: 5187 }, logLevel: 'error' });
+const server = await createServer({ configFile: false, cacheDir: 'node_modules/.vite-admin-ui-check', resolve: { dedupe: ['react', 'react-dom'] }, optimizeDeps: { entries: [], include: ['react', 'react-dom/client', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'lucide-react'] }, plugins: [fixtures, react(), tailwindcss()], define: { __CRAWLIO_RELEASE__: '"admin-check"', __CRAWLIO_ENVIRONMENT__: '"test"' }, server: { host: '127.0.0.1', port: 5187, hmr: false, watch: { ignored: ['**/*'] } }, logLevel: 'error' });
 let browser;
 const counts = new Map();
 const writes = [];
@@ -94,6 +100,14 @@ try {
   const goto = async path => { await page.goto(`${origin}${path}`); await page.getByRole('heading', { name: 'Operations overview', exact: true }).or(page.getByRole('heading', { name: 'User management', exact: true })).or(page.getByRole('heading', { name: 'Audit jobs', exact: true })).or(page.getByRole('heading', { name: 'Platform settings', exact: true })).or(page.getByRole('heading', { name: 'Plan limits', exact: true })).waitFor(); };
   await goto('/admin');
   await page.getByText('75.0%', { exact: true }).waitFor();
+  assert.equal(await page.locator('h1').count(), 1, 'One route title');
+  for (const title of ['Queue pressure', 'Component health', 'Audit trend', 'Recent failures', 'Administrator activity', 'Workers and controls']) {
+    const section = page.getByRole('heading', { name: title, exact: true });
+    assert.equal(await section.isVisible(), true, `${title} is expanded by default`);
+    assert.equal(await section.evaluate(node => Boolean(node.closest('details'))), false, `${title} is not deferred`);
+  }
+  assert.equal(await page.getByText('Deployment evidence', { exact: true }).evaluate(node => node.closest('details').open), false, 'Advanced deployment evidence remains collapsed');
+  assert.equal(counts.get('actions') || 0, 0, 'Expanded recent activity does not request full history');
   await page.clock.install();
   await page.getByLabel('Admin auto-refresh interval').selectOption('15');
   const beforeInterval = counts.get('operations');
@@ -165,6 +179,7 @@ try {
   assert.equal(maximumConcurrent, 1, 'Refreshes must not overlap');
   await page.setViewportSize({ width: 390, height: 844 });
   await noOverflow();
+  assert.ok(await page.getByRole('heading', { name: 'Administrator activity', exact: true }).evaluate(node => node.getBoundingClientRect().height) < 48, 'Mobile activity title is not squeezed by its actions');
   await page.screenshot({ path: 'test-results/admin-operations-mobile.png', fullPage: true });
   await goto(`/admin/users?userId=${userId}`);
   await page.getByRole('heading', { name: 'Account details and usage' }).waitFor();
@@ -196,6 +211,7 @@ try {
   assert.equal(writes.at(-1).body.confirmation, 'APPLY RETENTION');
   await noOverflow();
   await goto('/admin/plans');
+  assert.equal(await page.getByRole('button', { name: /Refresh/ }).count(), 1, 'Only the shared admin refresh control remains');
   await page.getByLabel('paid limit preset').selectOption('pause');
   await confirm.getByRole('cell', { name: '25', exact: true }).waitFor();
   await confirm.getByRole('button', { name: 'Cancel', exact: true }).click();

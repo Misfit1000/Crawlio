@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ArrowLeft, ArrowRight, CheckSquare, ChevronRight, FileText, Search, X } from 'lucide-react';
 import type { ResourceAuditIssue } from '../../lib/audit/resource-types';
 import { buildIssueInsight, issueBucket, issueSignature, type ChecklistStatus } from '../../lib/audit/client-insights';
@@ -9,6 +10,7 @@ import { useUrlFilter } from '../../app/use-url-filter';
 import type { AuditScope } from '../../lib/audit/audit-scope';
 import { isOperationalFinding, scopeFindings, scopeIncludesReportSection } from '../../lib/report/scope-presentation';
 import { AuditScopeNotIncluded } from './AuditScopeNotIncluded';
+import './audit-report.css';
 
 const PAGE_SIZE = 20;
 const STATUSES: ChecklistStatus[] = [...FINDING_WORKFLOW_STATUSES];
@@ -71,6 +73,7 @@ export default memo(function FindingWorkspace({
   const [noteMessage, setNoteMessage] = useState<string | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const inspectorRef = useRef<HTMLElement>(null);
   const issues = useMemo(() => scopeFindings(scope, allIssues), [scope, allIssues]);
 
   const categories = useMemo(() => Array.from(new Set(issues.map((issue) => issue.category).filter(Boolean))).sort(), [issues]);
@@ -96,15 +99,23 @@ export default memo(function FindingWorkspace({
   useEffect(() => setPage(1), [query, severity, category, status, errorCode, sort]);
   useEffect(() => {
     if (!selectedId) return;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     window.requestAnimationFrame(() => closeRef.current?.focus());
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
         closeInspector();
       }
+      if (event.key === 'Tab' && inspectorRef.current) {
+        const controls = [...inspectorRef.current.querySelectorAll<HTMLElement>('button, input, select, textarea, a[href]')].filter(element => !element.hasAttribute('disabled') && element.getClientRects().length);
+        const first = controls[0]; const last = controls.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
     };
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => { document.body.style.overflow = overflow; window.removeEventListener('keydown', onKeyDown); };
   }, [selectedId]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -162,7 +173,7 @@ export default memo(function FindingWorkspace({
 
   if (evidenceFilters && evidenceFilters.section !== 'all' && !scopeIncludesReportSection(scope, evidenceFilters.section)) return <AuditScopeNotIncluded />;
   return (
-    <section aria-labelledby="finding-workspace-title">
+    <section className="audit-customer-workspace" aria-labelledby="finding-workspace-title">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 id="finding-workspace-title" className="text-lg font-semibold">Findings</h2></div><div className="flex flex-wrap gap-2"><StatusBadge tone="warning">{highPriority} high priority{evidenceFilters ? ' loaded' : ''}</StatusBadge><StatusBadge tone="neutral">{issues.length} {evidenceFilters ? 'loaded' : 'total'}</StatusBadge></div></div>
       <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${workflowError ? 'border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-200' : 'border-border bg-[var(--surface-inset)] text-muted-foreground'}`} role={workflowError ? 'alert' : 'status'}>{workflowError || (workflowStorage === 'supabase' ? 'Finding status and notes sync to your account.' : workflowStorage === 'loading' ? 'Loading saved finding workflow...' : 'Guest workflow is stored only on this device. Sign in before starting an audit to sync future work.')}</div>
       <p className="sr-only" aria-live="polite">{filtered.length} findings match the current filters.</p>
@@ -172,7 +183,7 @@ export default memo(function FindingWorkspace({
         <select value={evidenceFilters.severity} onChange={event => evidenceFilters.onChange('severity', event.target.value)} className="suite-input" aria-label="Filter all findings by severity"><option value="all">All severities</option>{Object.keys(SEVERITY_ORDER).map(value => <option key={value}>{value}</option>)}</select>
         <select value={evidenceFilters.section} onChange={event => evidenceFilters.onChange('section', event.target.value)} className="suite-input" aria-label="Filter all findings by report section"><option value="all">All report sections</option>{REPORT_SECTIONS.filter(section => scopeIncludesReportSection(scope, section.id)).map(section => <option key={section.id} value={section.id}>{section.label}</option>)}</select>
         <label><span className="sr-only">Filter all findings by exact category</span><input maxLength={100} value={evidenceFilters.category === 'all' ? '' : evidenceFilters.category} onChange={event => evidenceFilters.onChange('category', event.target.value || 'all')} className="suite-input" placeholder="Exact category" /></label>
-      </div> : <div className="mt-4 grid gap-3 rounded-lg border border-border bg-[var(--surface-inset)] p-3 sm:grid-cols-2 xl:grid-cols-[minmax(180px,1fr)_140px_160px_150px_180px_140px]">
+      </div> : <div className="mt-4 grid gap-3 border-y border-border py-3 sm:grid-cols-2 xl:grid-cols-3">
         <label className="relative"><span className="sr-only">Search finding URLs and titles</span><Search className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search URL or finding" className="suite-input pl-9" /></label>
         <select value={severity} onChange={(event) => setSeverity(event.target.value)} className="suite-input" aria-label="Filter by priority"><option value="all">All priorities</option>{Object.keys(SEVERITY_ORDER).map((value) => <option key={value} value={value}>{value}</option>)}</select>
         <select value={category} onChange={(event) => setCategory(event.target.value)} className="suite-input" aria-label="Filter by category"><option value="all">All categories</option>{categories.map((value) => <option key={value} value={value}>{value}</option>)}</select>
@@ -183,34 +194,33 @@ export default memo(function FindingWorkspace({
 
       {checkedIds.size > 0 && <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-accent/20 bg-accent/5 px-3 py-2 text-sm"><CheckSquare className="h-4 w-4 text-accent" /><strong>{checkedIds.size} selected</strong>{onStatusChange && <select defaultValue="" onChange={(event) => event.target.value && bulkUpdate(event.target.value as ChecklistStatus)} className="ml-auto rounded-md border border-border bg-card px-2 py-1.5"><option value="">Bulk status...</option>{STATUSES.map((value) => <option key={value} value={value}>{statusLabel(value)}</option>)}</select>}<button type="button" onClick={() => setCheckedIds(new Set())} className="quiet-button min-h-8 px-2 py-1 text-xs">Clear</button></div>}
 
-      <div className={`mt-4 grid min-w-0 gap-4 ${selected ? 'xl:grid-cols-[minmax(0,1fr)_minmax(390px,470px)]' : ''}`}>
-        <div className="min-w-0 overflow-hidden rounded-xl border border-border bg-card">
-          <div className="hidden grid-cols-[24px_84px_100px_minmax(0,1fr)_48px_74px_26px] gap-2 border-b border-border bg-[var(--surface-inset)] px-3 py-2.5 text-xs font-semibold text-muted-foreground lg:grid"><span /><span>Priority</span><span>Category</span><span>Finding</span><span>Pages</span><span>Evidence</span><span /></div>
+      <div className="mt-4 min-w-0">
+        <div className="min-w-0 overflow-hidden border-y border-border">
           {visible.length ? visible.map((issue) => {
             const signature = issueSignature(issue);
             const workflowStatus = statuses[signature] || 'not_started';
             return (
-              <div key={issue.id} className={`grid min-w-0 gap-2 border-b border-border px-3 py-3 last:border-0 lg:grid-cols-[24px_84px_100px_minmax(0,1fr)_48px_74px_26px] lg:items-center ${selectedId === issue.id ? 'bg-muted' : 'hover:bg-muted/30'}`}>
-                <input type="checkbox" checked={checkedIds.has(issue.id)} onChange={() => toggleChecked(issue.id)} aria-label={`Select ${issue.title}`} className="h-4 w-4 accent-[var(--accent)]" />
-                <StatusBadge tone={severityTone(issue.severity)}>{issue.severity}</StatusBadge>
-                <span className="truncate text-xs font-semibold text-muted-foreground">{scope && isOperationalFinding(issue) ? 'Retrieval failure' : issue.category}</span>
-                <button type="button" onClick={(event) => openInspector(issue, event.currentTarget)} className="min-w-0 text-left"><span className="block truncate text-sm font-semibold">{issue.title}</span><span className="mt-1 block truncate text-xs text-muted-foreground">{issue.affectedUrl || 'No affected page stored'}</span><span className="mt-1 block text-[11px] capitalize text-muted-foreground">{statusLabel(workflowStatus)}</span></button>
-                <span className="text-sm tabular-nums">{issue.affectedPageCount || 1}</span>
-                <span className={`inline-flex w-fit items-center gap-1 text-xs ${issue.evidence ? 'text-emerald-700 dark:text-emerald-300' : 'text-muted-foreground'}`}><FileText className="h-3.5 w-3.5" />{issue.evidence ? 'Available' : 'Limited'}</span>
-                <button type="button" onClick={(event) => openInspector(issue, event.currentTarget)} aria-label={`Open details for ${issue.title}`} className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"><ChevronRight className="h-4 w-4" /></button>
-              </div>
+              <article key={issue.id} className={`grid min-w-0 grid-cols-[24px_minmax(0,1fr)] gap-3 border-b border-border py-5 last:border-0 ${selectedId === issue.id ? 'bg-muted' : ''}`}>
+                <input type="checkbox" checked={checkedIds.has(issue.id)} onChange={() => toggleChecked(issue.id)} aria-label={`Select ${issue.title}`} className="mt-1 h-4 w-4 accent-[var(--accent)]" />
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2"><StatusBadge tone={severityTone(issue.severity)}>{issue.severity}</StatusBadge><span className="text-xs font-semibold text-muted-foreground">{scope && isOperationalFinding(issue) ? 'Retrieval failure' : issue.category}</span><span className="text-xs tabular-nums text-muted-foreground">{issue.affectedPageCount || 1} affected pages</span><span className="text-xs capitalize text-muted-foreground">{statusLabel(workflowStatus)}</span></div>
+                  <button type="button" onClick={(event) => openInspector(issue, event.currentTarget)} className="mt-3 block min-w-0 text-left"><span className="block break-words text-base font-semibold">{issue.title}</span><span className="mt-1 block break-all text-xs text-muted-foreground">{issue.affectedUrl || 'No affected page stored'}</span></button>
+                  {issue.description && <p className="mt-3 text-sm leading-6 text-muted-foreground">{issue.description}</p>}
+                  {issue.recommendation && <p className="mt-2 text-sm leading-6"><span className="font-semibold text-accent">Recommended fix: </span>{issue.recommendation}</p>}
+                  <button type="button" onClick={(event) => openInspector(issue, event.currentTarget)} aria-label={`Open details for ${issue.title}`} className="quiet-button mt-3 min-h-9 px-3 py-1 text-xs"><FileText className="h-4 w-4" />{issue.evidence ? 'View evidence and workflow' : 'Review finding and workflow'}<ChevronRight className="h-4 w-4" /></button>
+                </div>
+              </article>
             );
           }) : <div className="p-8 text-center text-sm text-muted-foreground">No findings match the selected filters.</div>}
           {!evidenceFilters && filtered.length > PAGE_SIZE && <div className="flex items-center justify-between border-t border-border p-3 text-sm"><span className="text-muted-foreground">Page {page} of {pageCount}</span><div className="flex gap-2"><button type="button" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="quiet-button min-h-8 px-3 py-1">Previous</button><button type="button" disabled={page >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))} className="quiet-button min-h-8 px-3 py-1">Next</button></div></div>}
         </div>
 
-        {selected && selectedInsight && <>
-          <button type="button" onClick={closeInspector} className="fixed inset-0 z-[70] bg-black/65 xl:hidden" aria-label="Close finding details" />
-          <aside role="dialog" aria-modal="false" aria-labelledby="finding-inspector-title" className="fixed inset-x-0 bottom-0 top-[4.25rem] z-[75] flex min-w-0 flex-col overflow-hidden border border-border bg-card shadow-sm xl:sticky xl:inset-auto xl:top-20 xl:z-auto xl:max-h-[calc(100dvh-7rem)] xl:rounded-xl" aria-label="Finding details">
+        {selected && selectedInsight && createPortal(<div className="audit-customer-workspace fixed inset-0 z-[90] flex justify-end bg-black/65" onMouseDown={event => { if (event.target === event.currentTarget) closeInspector(); }}>
+          <aside ref={inspectorRef} role="dialog" aria-modal="true" aria-labelledby="finding-inspector-title" className="flex h-full w-full max-w-xl min-w-0 flex-col overflow-hidden border-l border-border bg-card shadow-xl" aria-label="Finding details">
             <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border p-4"><div className="min-w-0"><div className="flex flex-wrap gap-2"><StatusBadge tone={severityTone(selected.severity)}>{selected.severity}</StatusBadge><StatusBadge tone="accent">{issueBucket(selected)}</StatusBadge></div><h3 id="finding-inspector-title" className="mt-3 text-lg font-semibold">{selected.title}</h3><p className="mt-1 truncate text-xs text-muted-foreground" title={selected.affectedUrl}>{selected.affectedUrl || 'No affected page stored'}</p></div><button ref={closeRef} type="button" onClick={closeInspector} className="rounded-lg p-2 text-muted-foreground hover:bg-muted" aria-label="Close finding details"><X className="h-5 w-5" /></button></div>
             <div className="flex shrink-0 items-center justify-between border-b border-border bg-[var(--surface-inset)] px-3 py-2"><button type="button" onClick={() => moveInspector(-1)} className="quiet-button min-h-9 px-3 py-1.5 text-xs"><ArrowLeft className="h-3.5 w-3.5" /> Previous</button><span className="text-xs text-muted-foreground">{selectedIndex + 1} of {filtered.length}</span><button type="button" onClick={() => moveInspector(1)} className="quiet-button min-h-9 px-3 py-1.5 text-xs">Next <ArrowRight className="h-3.5 w-3.5" /></button></div>
             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain p-4">
-              <section className="grid gap-3 rounded-lg border border-accent/20 bg-accent/5 p-3 sm:grid-cols-2"><div><h4 className="text-xs font-semibold text-accent">{findingImpact(selected).label}</h4><p className="mt-1 text-sm leading-6 text-muted-foreground">{findingImpact(selected).detail} This is a prioritization guide, not a promised score increase.</p></div><div><h4 className="text-xs font-semibold text-accent">{findingEffort(selected).label}</h4><p className="mt-1 text-sm leading-6 text-muted-foreground">{findingEffort(selected).detail}</p></div></section>
+              <section className="grid gap-3 border-b border-border pb-4 sm:grid-cols-2"><div><h4 className="text-xs font-semibold text-accent">{findingImpact(selected).label}</h4><p className="mt-1 text-sm leading-6 text-muted-foreground">{findingImpact(selected).detail} This is a prioritization guide, not a promised score increase.</p></div><div><h4 className="text-xs font-semibold text-accent">{findingEffort(selected).label}</h4><p className="mt-1 text-sm leading-6 text-muted-foreground">{findingEffort(selected).detail}</p></div></section>
               {[['What happened', selectedInsight.whatHappened], ['Why it matters', selectedInsight.whyItMatters], ['Recommendation', selectedInsight.howToFix]].map(([title, copy]) => <section key={title}><h4 className="text-xs font-semibold text-muted-foreground">{title}</h4><p className="mt-1 text-sm leading-6">{copy}</p></section>)}
               <section><h4 className="text-xs font-semibold text-muted-foreground">Evidence</h4><div className="mt-2 rounded-lg border border-border bg-[var(--surface-inset)] p-3 text-sm leading-6">{selected.evidence || 'No additional evidence was stored for this finding.'}</div></section>
               <section><h4 className="text-xs font-semibold text-muted-foreground">Affected and source pages</h4><div className="mt-2 grid gap-2">{Array.from(new Set([selected.affectedUrl, ...(selected.sourceUrls || [])].filter(Boolean))).map((url, index) => <div key={url} className="rounded-lg border border-border px-3 py-2"><div className="text-[11px] font-semibold text-muted-foreground">{index === 0 ? 'Affected page' : 'Source page'}</div><div className="mt-1 break-all text-xs">{url}</div></div>)}</div></section>
@@ -219,7 +229,7 @@ export default memo(function FindingWorkspace({
               <section><label htmlFor={`finding-note-${selected.id}`} className="text-xs font-semibold text-muted-foreground">Implementation note</label><textarea id={`finding-note-${selected.id}`} value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} maxLength={2000} rows={4} className="suite-input mt-2 resize-y" placeholder="Add context for the person fixing this finding" /><div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="block"><span className="text-xs font-semibold text-muted-foreground">Due date</span><input type="date" value={dueDraft} onChange={(event) => setDueDraft(event.target.value)} disabled={workflowStorage !== 'supabase'} className="suite-input mt-2" /></label><label className="flex min-h-11 items-center gap-2 self-end rounded-lg border border-border px-3 text-sm font-semibold"><input type="checkbox" checked={Boolean(selectedWorkflow?.assignedTo)} disabled={workflowStorage !== 'supabase' || !onWorkflowSave} onChange={(event) => onWorkflowSave && void onWorkflowSave(selectedKey, { assignedToSelf: event.target.checked })} className="h-4 w-4 accent-[var(--accent)]" />Assign to account owner</label></div><div className="mt-2 flex items-center justify-between gap-3"><span className="text-[11px] text-muted-foreground">{workflowStorage === 'supabase' ? `Account synced${selectedWorkflow?.updatedAt ? ` · updated ${new Date(selectedWorkflow.updatedAt).toLocaleString()}` : ''}` : 'Stored on this device for this audit.'}</span><button type="button" onClick={() => void saveNote()} disabled={!auditId || !onWorkflowSave || savingKeys.has(selectedKey)} className="quiet-button min-h-9 px-3 py-1.5 text-xs">{savingKeys.has(selectedKey) ? 'Saving...' : 'Save details'}</button></div>{noteMessage && <p role="status" className={`mt-2 text-xs font-semibold ${noteMessage.includes('not saved') ? 'text-red-700 dark:text-red-300' : 'text-emerald-700 dark:text-emerald-300'}`}>{noteMessage}</p>}</section>
             </div>
           </aside>
-        </>}
+        </div>, document.body)}
       </div>
     </section>
   );

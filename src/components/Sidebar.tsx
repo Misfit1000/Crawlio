@@ -3,7 +3,7 @@ import type { TabType } from '../app/routes';
 import { useAuth } from '../contexts/AuthContext';
 import { Link, useLocation } from '../app/router';
 import { useEffect, useRef } from 'react';
-import { adminGroupForPath, adminNavigation, adminSectionForPath, clientGroupForTab, clientNavigation, clientNavigationPath, currentNavigationPath, isCurrentNavigationPath } from './navigation/product-navigation';
+import { adminGroupForPath, adminNavigation, adminSectionForPath, clientGroupForTab, clientNavigation, clientNavigationPath, currentNavigationPath } from './navigation/product-navigation';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -13,7 +13,7 @@ interface SidebarProps {
   onOpenHelp?: () => void;
 }
 
-const navigationClass = (active: boolean) => `flex min-h-11 min-w-0 items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${active ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`;
+const navigationClass = (active: boolean) => `workspace-nav-link flex min-h-11 min-w-0 items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold ${active ? 'is-active text-accent' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`;
 
 export default function Sidebar({ isOpen, onClose, activeTab, onOpenHelp }: SidebarProps) {
   const navigationRef = useRef<HTMLElement>(null);
@@ -48,7 +48,7 @@ export default function Sidebar({ isOpen, onClose, activeTab, onOpenHelp }: Side
 
   return <>
     {isOpen && <div onClick={onClose} className="fixed inset-0 z-40 bg-background/70 backdrop-blur-sm lg:hidden" />}
-    {isOpen && <aside id="workspace-navigation" ref={navigationRef} tabIndex={-1} aria-label={isAdmin ? 'Admin navigation' : 'Workspace navigation'} className="workspace-navigation fixed left-0 top-[4.25rem] z-50 flex h-[calc(100dvh-4.25rem)] w-[16rem] max-w-full flex-col overflow-hidden border-r border-border bg-card lg:relative lg:top-0 lg:h-full lg:shrink-0">
+    {isOpen && <aside id="workspace-navigation" ref={navigationRef} tabIndex={-1} aria-label={isAdmin ? 'Admin navigation' : 'Workspace navigation'} className="workspace-navigation fixed left-0 top-[4.25rem] z-50 flex h-[calc(100dvh-4.25rem)] w-[14.5rem] max-w-full flex-col overflow-hidden border-r border-border bg-card lg:relative lg:top-0 lg:h-full lg:shrink-0">
       <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
         <h2 className="text-sm font-semibold">{isAdmin ? 'Administration' : 'Workspace'}</h2>
         <button type="button" onClick={onClose} className="min-h-11 min-w-11 rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent lg:hidden" aria-label="Close navigation"><X className="mx-auto h-4 w-4" /></button>
@@ -64,11 +64,6 @@ export default function Sidebar({ isOpen, onClose, activeTab, onOpenHelp }: Side
           const Icon = group.icon;
           return <div key={group.id}>
             <Link to={active ? `${location.pathname}${location.search}${location.hash}` : clientPath(group.id)} onClick={closeOnMobile} aria-current={active ? 'page' : undefined} className={navigationClass(active)}><Icon className="h-5 w-5 shrink-0" aria-hidden="true" /><span className="min-w-0 break-words">{group.label}</span></Link>
-            {active && group.items.length > 0 && <ul aria-label={`${group.label} views`} className="mb-2 ml-5 mt-1 space-y-0.5 border-l border-border pl-2">{group.items.map(item => {
-              const path = clientPath(item.id);
-              const current = isCurrentNavigationPath(path, location.pathname);
-              return <li key={item.id}><Link to={path} onClick={closeOnMobile} aria-current={current ? 'page' : undefined} className={`${navigationClass(current)} text-xs`}>{item.label}</Link></li>;
-            })}</ul>}
           </div>;
         })}
       </nav>

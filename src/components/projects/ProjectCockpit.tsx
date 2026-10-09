@@ -6,7 +6,7 @@ import type { ProjectAuditFrequency, ProjectOverviewItem, ProjectOverviewRespons
 import { safeJsonFetch } from '../../lib/http/safe-json';
 import { inflightRead } from '../../lib/http/inflight-read';
 import { useAuth } from '../../contexts/AuthContext';
-import { AuditGrade, MetricCard, StatusBadge, SurfaceCard } from '../ui/visual-system';
+import { AuditGrade, MetricCard, RadialScoreGauge, StatusBadge, SurfaceCard } from '../ui/visual-system';
 import { Notice } from '../ui/page-system';
 
 interface ProjectCockpitProps {
@@ -182,7 +182,7 @@ function AccountProjectCockpit({ onStartAudit, onOpenReports, accountId }: Proje
     <section aria-labelledby="project-cockpit-title" className="space-y-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <div className="flex items-center gap-2"><h2 id="project-cockpit-title" className="text-xl font-semibold">Website projects</h2>{overview?.unreadNotifications || showNotifications ? <button type="button" onClick={toggleNotifications} aria-expanded={showNotifications} aria-controls={showNotifications ? 'project-notifications' : undefined} aria-label={showNotifications ? 'Close project notifications' : 'Open project notifications'} className="min-h-11 rounded-lg"><StatusBadge tone="neutral"><Bell className="h-3.5 w-3.5" /> {overview?.unreadNotifications || 0} unread</StatusBadge></button> : null}</div>
+          <div className="flex items-center gap-2"><h2 id="project-cockpit-title" className="text-xl font-semibold">Your website</h2>{overview?.unreadNotifications || showNotifications ? <button type="button" onClick={toggleNotifications} aria-expanded={showNotifications} aria-controls={showNotifications ? 'project-notifications' : undefined} aria-label={showNotifications ? 'Close project notifications' : 'Open project notifications'} className="min-h-11 rounded-lg"><StatusBadge tone="neutral"><Bell className="h-3.5 w-3.5" /> {overview?.unreadNotifications || 0} unread</StatusBadge></button> : null}</div>
         </div>
         <button type="button" className="quiet-button" onClick={() => void load()} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh</button>
       </div>
@@ -201,26 +201,23 @@ function AccountProjectCockpit({ onStartAudit, onOpenReports, accountId }: Proje
       ) : null}
 
       {overview && overview.projects.length ? <>
-        <SurfaceCard className="p-4">
-          <div className="grid gap-3 lg:grid-cols-[minmax(260px,.7fr)_minmax(0,1fr)_auto] lg:items-center">
-            <label><span className="mb-1.5 block text-xs font-semibold text-muted-foreground">Current website</span><select className="suite-input" value={selectedHost} onChange={(event) => setSelectedHost(event.target.value)}>{overview.projects.map((project) => <option key={project.hostname} value={project.hostname}>{project.name} - {project.hostname}</option>)}</select></label>
-            <div className="min-w-0"><div className="truncate text-sm font-semibold">{selected?.normalizedUrl}</div><div className="mt-1 text-xs text-muted-foreground">Next audit: {formatDate(selected?.nextAuditAt)}</div></div>
+          <div className="project-selector">
+            <label><span className="mb-2 block text-xs font-semibold text-muted-foreground">Current website</span><select className="suite-input" value={selectedHost} onChange={(event) => setSelectedHost(event.target.value)}>{overview.projects.map((project) => <option key={project.hostname} value={project.hostname}>{project.name === project.hostname ? project.hostname : `${project.name} - ${project.hostname}`}</option>)}</select></label>
             <div className="flex flex-wrap gap-2">{selected && !selected.id ? <button type="button" className="quiet-button" disabled={busy === 'track'} onClick={() => void trackSite(selected)}><Plus className="h-4 w-4" /> Track project</button> : null}<button type="button" className="trust-button" onClick={runAudit}>Run audit <ArrowRight className="h-4 w-4" /></button></div>
           </div>
-        </SurfaceCard>
 
         {selected ? <>
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(300px,.5fr)]">
-            <SurfaceCard className="p-5 md:p-7">
-              <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-lg font-semibold">Latest result and next action</h3>{selected.newCriticalCount ? <StatusBadge tone="danger">{selected.newCriticalCount} new critical</StatusBadge> : selected.latestAudit ? <StatusBadge tone="success">Comparison checked</StatusBadge> : <StatusBadge tone="neutral">Awaiting first audit</StatusBadge>}</div>
-              <div className="mt-6 grid gap-6 md:grid-cols-[minmax(190px,.65fr)_minmax(0,1fr)] md:items-center">
-                <div className="border-b border-border pb-5 md:border-b-0 md:border-r md:pb-0 md:pr-6"><AuditGrade score={selected.latestAudit?.score} label="Website health" detail={selected.latestAudit ? `Last run ${formatDate(selected.latestAudit.completedAt || selected.latestAudit.createdAt)}` : 'Run an audit to measure this site'} />{selected.scoreDelta != null && <div className={`mt-4 inline-flex items-center gap-1.5 text-sm font-semibold ${selected.scoreDelta < 0 ? 'text-red-600 dark:text-red-300' : 'text-emerald-700 dark:text-emerald-300'}`}>{selected.scoreDelta < 0 ? <TrendingDown className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}{selected.scoreDelta > 0 ? '+' : ''}{selected.scoreDelta} since previous audit</div>}</div>
-                <div><div className="text-xs font-semibold uppercase text-muted-foreground">Recommended next action</div><p className="mt-2 text-base leading-7">{selected.recommendedAction}</p><div className="mt-5 flex flex-wrap gap-2"><button type="button" className="trust-button" onClick={selected.latestAudit ? openReport : runAudit}>{selected.latestAudit ? 'Open latest report' : 'Run first audit'} <ArrowRight className="h-4 w-4" /></button>{selected.latestAudit && <button type="button" className="quiet-button" onClick={runAudit}>Run again</button>}</div></div>
+          <div className="project-result">
+            <div>
+              <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-semibold">Latest result</h3><p className="mt-1 text-xs text-muted-foreground">{selected.latestAudit ? formatDate(selected.latestAudit.completedAt || selected.latestAudit.createdAt) : 'No audit yet'}</p></div>{selected.newCriticalCount ? <StatusBadge tone="danger">{selected.newCriticalCount} new critical</StatusBadge> : selected.latestAudit ? <StatusBadge tone="neutral">{selected.latestAudit.status.replace(/_/g, ' ')}</StatusBadge> : <StatusBadge tone="neutral">Awaiting first audit</StatusBadge>}</div>
+              <div className="project-score">
+                <div>{selected.latestAudit?.score != null ? <RadialScoreGauge value={selected.latestAudit.score} label="Latest audit score" /> : <AuditGrade score={null} label="Latest audit score" detail="Run an audit to collect evidence" />}{selected.scoreDelta != null && <div className={`mt-3 inline-flex items-center gap-1.5 text-sm font-semibold ${selected.scoreDelta < 0 ? 'text-red-600 dark:text-red-300' : 'text-emerald-700 dark:text-emerald-300'}`}>{selected.scoreDelta < 0 ? <TrendingDown className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}{selected.scoreDelta > 0 ? '+' : ''}{selected.scoreDelta} since previous audit</div>}</div>
+                <div><h4 className="text-sm font-semibold text-muted-foreground">Next action</h4><p className="mt-2 text-lg leading-7">{selected.recommendedAction}</p><div className="mt-5 flex flex-wrap gap-2"><button type="button" className="trust-button" onClick={selected.latestAudit ? openReport : runAudit}>{selected.latestAudit ? 'Open latest report' : 'Run first audit'} <ArrowRight className="h-4 w-4" /></button>{selected.latestAudit && <button type="button" className="quiet-button" onClick={runAudit}>Run again</button>}</div></div>
               </div>
-            </SurfaceCard>
-            <SurfaceCard className="p-5"><div className="flex items-center gap-2"><CalendarClock className="h-5 w-5 text-accent" /><h3 className="text-base font-semibold">Audit schedule</h3></div><select aria-label="Audit schedule" className="suite-input mt-4" value={selected.auditFrequency} disabled={!selected.id || busy === 'schedule'} onChange={(event) => void updateSchedule(event.target.value as ProjectAuditFrequency)}><option value="manual">Manual only</option><option value="weekly" disabled={!overview.scheduledAuditsEnabled}>Every week</option><option value="monthly" disabled={!overview.scheduledAuditsEnabled}>Every month</option></select>{!selected.id ? <p className="mt-2 text-xs text-muted-foreground">Track this project before scheduling.</p> : !overview.scheduledAuditsEnabled ? <p className="mt-2 text-xs text-muted-foreground">Automatic schedules are included with Agency and administrator plans.</p> : null}</SurfaceCard>
+            </div>
+            <section><div className="flex items-center gap-2"><CalendarClock className="h-5 w-5 text-[var(--category-violet)]" /><h3 className="text-base font-semibold">Audit schedule</h3></div><select aria-label="Audit schedule" className="suite-input mt-4" value={selected.auditFrequency} disabled={!selected.id || busy === 'schedule'} onChange={(event) => void updateSchedule(event.target.value as ProjectAuditFrequency)}><option value="manual">Manual only</option><option value="weekly" disabled={!overview.scheduledAuditsEnabled}>Every week</option><option value="monthly" disabled={!overview.scheduledAuditsEnabled}>Every month</option></select><p className="mt-3 text-xs text-muted-foreground">Next audit: {formatDate(selected.nextAuditAt)}</p>{!selected.id ? <p className="mt-2 text-xs text-muted-foreground">Track this project before scheduling.</p> : !overview.scheduledAuditsEnabled ? <p className="mt-2 text-xs text-muted-foreground">Scheduling is not available on your plan.</p> : null}</section>
           </div>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="project-metrics">
             <MetricCard label="Open findings" value={selected.openFindingCount} detail={`${selected.latestAudit?.criticalCount || 0} critical - ${selected.latestAudit?.highCount || 0} high`} icon={<AlertTriangle className="h-5 w-5" />} tone={selected.latestAudit?.criticalCount ? 'red' : 'yellow'} />
             <MetricCard label="Resolved" value={selected.resolvedFindingCount} detail="Not detected in the latest comparison" icon={<CheckCircle2 className="h-5 w-5" />} tone="green" />
             <MetricCard label="Pages checked" value={selected.latestAudit?.pagesCrawled ?? '--'} detail={selected.latestAudit ? `Last run ${formatDate(selected.latestAudit.completedAt || selected.latestAudit.createdAt)}` : 'No completed audit'} icon={<Globe2 className="h-5 w-5" />} />

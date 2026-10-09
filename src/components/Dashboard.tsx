@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, BarChart3, FileText, Gauge, History, Layers, Lock, Rocket, Search, ShieldCheck, Upload } from 'lucide-react';
+import { ArrowRight, BarChart3, FileText, Gauge, History, Layers, Rocket, Search, ShieldCheck, Upload } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { readAuditHistory, scoreTrendForUrl, type AuditHistoryEntry } from '../lib/audit/client-insights';
 import { groupRecommendations, scoreToGrade } from '../lib/audit/report-insights';
 import { isCompletedAuditStatus } from '../lib/audit/audit-time';
-import { AuditGrade, CategoryGradeCard, ProgressBar, SeverityDistribution, SitePreviewSection, SparklineChart, StatusBadge } from './ui/visual-system';
+import { AuditGrade, CategoryGradeCard, SeverityDistribution, SitePreviewSection, SparklineChart, StatusBadge } from './ui/visual-system';
 import { PageHeader } from './ui/page-system';
 import ProjectCockpit from './projects/ProjectCockpit';
-import DeferredSection from './admin/DeferredSection';
+import { Link } from '../app/router';
 
 interface DashboardProps {
   onOpenSeoAudit?: () => void;
@@ -31,7 +31,6 @@ export default function Dashboard(props: DashboardProps) {
   const { user } = useAuth();
   const [history, setHistory] = useState<AuditHistoryEntry[]>([]);
   const [importState, setImportState] = useState({ search: false, rankings: false });
-  const upgradeUrl = import.meta.env.VITE_UPGRADE_URL;
 
   useEffect(() => {
     setHistory(readAuditHistory());
@@ -56,7 +55,7 @@ export default function Dashboard(props: DashboardProps) {
   const latestScores = latest?.scores;
 
   return <div className="min-w-0 w-full space-y-6 animate-rise [&_.rounded-xl]:rounded-lg">
-    <PageHeader eyebrow="Workspace" icon={Gauge} title="Dashboard" />
+    <PageHeader icon={Gauge} title="Dashboard" actions={<button type="button" className="trust-button" onClick={props.onOpenSeoAudit}><Search className="h-4 w-4" />New audit</button>} />
     {user ? <ProjectCockpit onStartAudit={props.onOpenSeoAudit || (() => undefined)} onOpenReports={props.onOpenReports || (() => undefined)} /> : <section aria-labelledby="current-website-title" className="min-w-0 space-y-4">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
         <div className="min-w-0"><h2 id="current-website-title" className="break-words text-xl font-semibold">{latest?.hostname || 'Your first website audit'}</h2>{latest && <p className="mt-1 text-xs text-muted-foreground">Last run {formatDate(latest.updatedAt)}</p>}</div>
@@ -69,29 +68,22 @@ export default function Dashboard(props: DashboardProps) {
       {latest && <dl className="grid grid-cols-3 gap-3 border-t border-border pt-3">{[['Pages checked', latest.pagesCrawled], ['Open fixes', latest.issuesFound], ['Saved audits', history.length]].map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{value}</dd></div>)}</dl>}
     </section>}
 
-    <section aria-labelledby="usage-title" className="min-w-0 space-y-3 border-y border-border py-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3"><h2 id="usage-title" className="text-base font-semibold">Usage</h2><StatusBadge>{plan} plan</StatusBadge></div>
-        {plan === 'free' && <a href={upgradeUrl || '#'} onClick={event => {
-          if (!upgradeUrl) { event.preventDefault(); window.alert('Paid plans are not connected yet. Contact the administrator to change your plan.'); }
-        }} className="quiet-button min-h-11"><Lock className="h-4 w-4" aria-hidden="true" />Plan options</a>}
-      </div>
-      <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-        <div className="min-w-0"><ProgressBar label={`Daily audits: ${dailyUsed}/${dailyLimit}`} value={(dailyUsed / Math.max(1, dailyLimit)) * 100} tone="accent" /><p className="mt-1 text-xs text-muted-foreground">{Math.max(0, dailyLimit - dailyUsed)} remaining today</p></div>
-        <div className="min-w-0"><ProgressBar label={`Monthly audits: ${monthlyUsed}/${monthlyLimit}`} value={(monthlyUsed / Math.max(1, monthlyLimit)) * 100} tone="green" /><p className="mt-1 text-xs text-muted-foreground">{Math.max(0, monthlyLimit - monthlyUsed)} remaining this month</p></div>
-      </div>
+    <section aria-labelledby="usage-title" className="dashboard-usage">
+      <div className="flex items-center gap-2"><h2 id="usage-title" className="text-sm font-semibold">Usage</h2><StatusBadge>{plan === 'paid' ? 'Plus' : plan === 'agency' ? 'Pro' : plan} plan</StatusBadge></div>
+      <div className="usage-item"><meter aria-label="Daily audit usage" min={0} max={Math.max(1,dailyLimit)} value={dailyUsed} /><span className="text-sm"><strong>{dailyUsed}/{dailyLimit.toLocaleString()}</strong> today</span></div>
+      <div className="usage-item"><meter aria-label="Monthly audit usage" min={0} max={Math.max(1,monthlyLimit)} value={monthlyUsed} /><span className="text-sm"><strong>{monthlyUsed}/{monthlyLimit.toLocaleString()}</strong> this month</span></div>
+      <Link to="/app/settings#scan-preferences" className="inline-flex min-h-11 items-center text-sm font-semibold text-accent">Plan access <ArrowRight className="ml-2 h-4 w-4" /></Link>
     </section>
 
     <section aria-label="Quick actions" className="flex flex-wrap gap-2">
       {[
-        { label: 'New audit', icon: Search, action: props.onOpenSeoAudit },
         { label: 'Passive security review', icon: ShieldCheck, action: props.onOpenSecurityAudit },
         { label: 'Import data', icon: Upload, action: props.onOpenImports },
         { label: 'Reports', icon: FileText, action: props.onOpenReports },
       ].map(item => <button key={item.label} type="button" onClick={item.action} className="quiet-button min-h-11"><item.icon className="h-4 w-4" aria-hidden="true" />{item.label}</button>)}
     </section>
 
-    <DeferredSection title="Saved audit details">
+    <section aria-label="Saved audit details">
       <div className="min-w-0 space-y-6">
         {completed && latest && <section aria-labelledby="latest-health-title" className="space-y-3">
           <h2 id="latest-health-title" className="text-lg font-semibold">Latest saved audit health</h2>
@@ -135,6 +127,6 @@ export default function Dashboard(props: DashboardProps) {
         </div>
         {trend.length > 1 && <SparklineChart values={trend.map(entry => entry.score)} label="Score trend" valueLabel={`${Math.round(trend[trend.length - 1].score)}/100`} />}
       </div>
-    </DeferredSection>
+    </section>
   </div>;
 }

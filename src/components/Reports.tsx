@@ -9,16 +9,12 @@ import {
   FileSpreadsheet,
   Globe2,
   History,
-  Layers,
   Link2,
   Loader2,
-  MonitorSmartphone,
   Printer,
   Search,
   Share2,
-  ShieldCheck,
   SlidersHorizontal,
-  Accessibility,
   Wrench,
 } from 'lucide-react';
 import { API_ROUTES } from '../lib/api/routes';
@@ -39,7 +35,6 @@ import {
   formatMilliseconds,
   groupRecommendations,
   observedPageMetrics,
-  scoreToGrade,
   type RecommendationGroup,
   type ReportSectionId,
 } from '../lib/audit/report-insights';
@@ -49,11 +44,8 @@ import { safeJsonFetch } from '../lib/http/safe-json';
 import { isCompletedAuditStatus } from '../lib/audit/audit-time';
 import {
   AuditGrade,
-  CategoryGradeCard,
   EmptyState,
-  FindingRow,
   MetricCard,
-  SeverityDistribution,
   SitePreviewSection,
   StatusBadge,
   StickyReportNavigation,
@@ -63,6 +55,11 @@ import { PageHeader } from './ui/page-system';
 import { auditFocusLabel, auditScopeScoreLabel, isFocusedAudit, scopeIncludesGroup, type AuditScope } from '../lib/audit/audit-scope';
 import { reportCategoryScores, scopeFindings, scopeIncludesReportSection, scopeScoreMetadata } from '../lib/report/scope-presentation';
 import { AuditScopeNotIncluded } from './audit/AuditScopeNotIncluded';
+import { AuditExecutiveSummary } from './audit/AuditExecutiveSummary';
+import { AuditDeliveryCharts } from './audit/AuditDeliveryCharts';
+import { AuditFindingRow as FindingRow } from './audit/AuditFindingRow';
+import { completePresentationSummary, samplePresentation } from './audit/audit-presentation';
+import './audit/audit-report.css';
 
 type ApiEnvelope<T> = { success: boolean; data: T; error?: string };
 type PageStatusFilter = 'all' | '2xx' | '3xx' | '4xx' | '5xx';
@@ -86,7 +83,7 @@ function reportViewCopy(initialSection?: string) {
   };
   return initialSection && views[initialSection]
     ? views[initialSection]
-    : { eyebrow: 'Reports', title: 'Professional audit report', description: 'Start with the executive result, work through prioritized recommendations, then open technical evidence only when needed.' };
+    : { eyebrow: 'Reports', title: 'Audit reports', description: 'Measured results, prioritized fixes, and collected page evidence.' };
 }
 
 function formatDate(value?: string | null) {
@@ -258,6 +255,8 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
   const counts = severityCounts(reportData, selectedHistory);
   const pageMetrics = useMemo(() => observedPageMetrics(pages), [pages]);
   const firstPage = pages.find((page) => page.title || page.metaDescription) || pages[0] || null;
+  const complete = useMemo(() => completePresentationSummary(reportData?.audit || null, reportData?.finalReport), [reportData]);
+  const presentation = useMemo(() => complete || samplePresentation(pages, issues), [complete, pages, issues]);
 
   const sectionGroups = useMemo(() => {
     const result = new Map<ReportSectionId, RecommendationGroup[]>();
@@ -347,7 +346,7 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
   }
 
   return (
-    <div className="w-full space-y-8 animate-rise">
+    <div className="audit-customer-workspace w-full space-y-6 animate-rise">
       <PageHeader
         eyebrow={viewCopy.eyebrow}
         icon={FileText}
@@ -357,23 +356,18 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
       />
 
       <div id="report-history" className="scroll-mt-28">
-      <SurfaceCard className="p-0">
-        <div className="grid lg:grid-cols-[minmax(300px,0.7fr)_minmax(0,1.3fr)]">
-          <div className="border-b border-border p-5 md:p-6 lg:border-b-0 lg:border-r">
+        <div className="grid gap-5 border-y border-border py-5 lg:grid-cols-2">
+          <div className="min-w-0">
             <label htmlFor="report-audit" className="text-sm font-semibold">Report to review</label>
             <select id="report-audit" value={selectedId || ''} onChange={(event) => setSelectedId(event.target.value)} className="suite-input mt-2">
               {history.map((entry) => <option key={entry.auditId} value={entry.auditId}>{entry.hostname || entry.normalizedUrl} - {new Date(entry.updatedAt).toLocaleDateString()}</option>)}
             </select>
-            <div className="mt-5 space-y-2 text-sm">
-              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Website</span><span className="max-w-[65%] truncate font-semibold">{reportData?.audit?.normalizedUrl || selectedHistory?.normalizedUrl}</span></div>
-              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Audit type</span><span className="font-semibold">{scope ? `${auditFocusLabel(scope)} · ${scope.coverage} coverage` : reportData?.audit?.effectiveMode || selectedHistory?.mode || 'Not stored'}</span></div>
-              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Ended</span><span className="text-right font-semibold">{formatDate(reportData?.audit?.completedAt || reportData?.audit?.cancelledAt || selectedHistory?.completedAt || selectedHistory?.updatedAt)}</span></div>
-              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Saved audits</span><span className="font-semibold tabular-nums">{history.length} across {groupedSites} site(s)</span></div>
-            </div>
+            <p className="mt-3 break-all text-xs text-muted-foreground">{reportData?.audit?.normalizedUrl || selectedHistory?.normalizedUrl}</p>
+            <p className="mt-2 text-xs text-muted-foreground">{scope ? `${auditFocusLabel(scope)} · ${scope.coverage} coverage` : reportData?.audit?.effectiveMode || selectedHistory?.mode || 'Not stored'} · {history.length} saved audits across {groupedSites} site(s)</p>
           </div>
-          <div className="p-5 md:p-6">
-            <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-              <AuditGrade score={overallScore} label={scope ? auditScopeScoreLabel(scope) : undefined} detail={scoreIsFinal ? 'Stored final audit engine score' : `No final score: audit ${selectedHistory?.status || 'not completed'}`} />
+          <div className="min-w-0 lg:text-right">
+            <p className="mb-3 text-xs text-muted-foreground">Last updated {formatDate(reportData?.audit?.updatedAt || selectedHistory?.updatedAt)}</p>
+            <div className="flex flex-wrap gap-2 lg:justify-end">
               <div className="flex flex-wrap gap-2 no-print">
                 <button type="button" onClick={copyReportLink} className="quiet-button"><Share2 className="h-4 w-4" /> Copy link</button>
                 <button type="button" onClick={() => window.print()} className="quiet-button"><Printer className="h-4 w-4" /> Print</button>
@@ -386,7 +380,6 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
             <AuditExportDownloadNotice download={exportDownload} />
           </div>
         </div>
-      </SurfaceCard>
       </div>
 
       {reportLoading && <SurfaceCard className="flex items-center gap-3 p-6 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin text-accent" /> Loading stored audit evidence...</SurfaceCard>}
@@ -405,36 +398,11 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
           <h2 id="report-summary-title" className="text-2xl font-semibold">Executive summary</h2>
           <p className="mt-1 text-sm text-muted-foreground">The audit result and its measured categories, before technical detail.</p>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard label={scope ? auditScopeScoreLabel(scope) : 'Overall grade'} value={scoreToGrade(overallScore) || '--'} detail={overallScore == null ? 'Not measured' : `${Math.round(overallScore)}/100 final score`} icon={<BarChart3 className="h-5 w-5" />} tone={overallScore != null && overallScore >= 80 ? 'green' : 'yellow'} />
-          <MetricCard label="Pages checked" value={reportData?.audit?.pagesCrawled ?? selectedHistory?.pagesCrawled ?? '--'} detail={reportData?.audit ? `${reportData.audit.pagesDiscovered} discovered` : 'Stored audit summary'} icon={<Layers className="h-5 w-5" />} />
-          <MetricCard label="Fix now" value={counts.critical} detail={`${counts.high} high-priority finding(s)`} icon={<AlertTriangle className="h-5 w-5" />} tone={counts.critical ? 'red' : counts.high ? 'yellow' : 'green'} />
-          <MetricCard label="Observed pages" value={pages.length || '--'} detail={pages.length ? `${pageMetrics.errorPages} returned an error status` : 'Page details unavailable'} icon={<Globe2 className="h-5 w-5" />} />
-        </div>
-
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
-          <SurfaceCard className="p-5 md:p-6">
-            <h3 className="text-lg font-semibold">Section grades</h3>
-            <p className="mt-1 text-sm text-muted-foreground">A-F uses A: 90-100, B: 80-89, C: 70-79, D: 60-69, E: 50-59, F: below 50.</p>
-            <div className="mt-5 grid gap-x-8 sm:grid-cols-2">
-              {scope ? categories.map(category => <CategoryGradeCard key={category.label} label={category.label} score={category.value} description="Selected measured checks." icon={<FileText className="h-4 w-4" />} />) : <><CategoryGradeCard label="On-page SEO" score={scores.seo} description="Metadata and page content." icon={<Search className="h-4 w-4" />} />
-              <CategoryGradeCard label="Technical SEO" score={scores.technical} description="Technical delivery checks." icon={<Wrench className="h-4 w-4" />} />
-              <CategoryGradeCard label="Crawlability" score={scores.crawlability} description="Discovery and index signals." icon={<Globe2 className="h-4 w-4" />} />
-              <CategoryGradeCard label="Performance" score={scores.performance} description="Observed response and size signals." icon={<BarChart3 className="h-4 w-4" />} />
-              <CategoryGradeCard label="Passive Security Review" score={scores.security} description="Non-invasive public observations." icon={<ShieldCheck className="h-4 w-4" />} />
-              <CategoryGradeCard label="Accessibility signals" score={scores.accessibility} description="Deterministic HTML observations, not certification." icon={<Accessibility className="h-4 w-4" />} />
-              <CategoryGradeCard label="Mobile usability" score={null} description="Not scored by this audit." icon={<MonitorSmartphone className="h-4 w-4" />} /></>}
-            </div>
-          </SurfaceCard>
-          <SurfaceCard className="p-5 md:p-6">
-            <h3 className="text-lg font-semibold">Fix priority</h3>
-            <p className="mb-5 mt-1 text-sm text-muted-foreground">Issue counts recorded by the audit engine.</p>
-            <SeverityDistribution critical={counts.critical} high={counts.high} medium={counts.medium} low={counts.low} />
-          </SurfaceCard>
-        </div>
-
-        {reportData?.finalReport?.summary && <SurfaceCard className="p-5 md:p-6"><h3 className="text-lg font-semibold">Audit engine summary</h3><p className="mt-2 max-w-5xl text-sm leading-7 text-muted-foreground">{reportData.finalReport.summary}</p></SurfaceCard>}
+        {reportData?.audit ? <AuditExecutiveSummary audit={reportData.audit} score={overallScore} scoreState={scoreIsFinal ? 'final' : 'unavailable'} scoreDetail={scoreIsFinal ? 'Stored final audit engine score' : 'No final score recorded'} categoryScores={categories} unavailableChecks={Array.isArray(reportData.finalReport?.scores?.unavailableChecks) ? reportData.finalReport.scores.unavailableChecks.length : null} /> : <div className="grid gap-4 sm:grid-cols-2"><AuditGrade score={overallScore} label={scope ? auditScopeScoreLabel(scope) : undefined} detail="Cached audit summary only" /><MetricCard label="Pages checked" value={selectedHistory?.pagesCrawled ?? '--'} detail="Stored audit summary" /></div>}
+        {reportData?.finalReport?.summary && <p className="max-w-5xl text-sm leading-7 text-muted-foreground">{reportData.finalReport.summary}</p>}
       </section>
+
+      <AuditDeliveryCharts presentation={presentation} scope={scope} complete={Boolean(complete)} />
 
       {firstPage && reportData?.audit && !isFocusedAudit({ scope }) && (
         <SitePreviewSection

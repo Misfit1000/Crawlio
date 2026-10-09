@@ -31,7 +31,7 @@ export default function RichTextEditor({ value, onChange }: { value: string; onC
     if (editor && value !== editor.getHTML()) editor.commands.setContent(value || '<p></p>', { emitUpdate: false });
   }, [editor, value]);
 
-  if (!editor) return <div className="h-[480px] animate-pulse rounded-xl bg-muted" />;
+  if (!editor) return <div role="status" aria-label="Loading editor" className="h-[480px] animate-pulse rounded-lg bg-muted" />;
 
   const applyLink = () => {
     const url = linkUrl.trim();
@@ -42,7 +42,7 @@ export default function RichTextEditor({ value, onChange }: { value: string; onC
   };
 
   return (
-    <div className="rich-editor overflow-hidden rounded-xl border border-border bg-card shadow-sm focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/15">
+    <div className="rich-editor overflow-hidden rounded-lg border border-border bg-card focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/15">
       <div className="flex flex-wrap items-center gap-1 border-b border-border bg-muted/60 p-2" role="toolbar" aria-label="Rich text formatting">
         <ToolbarButton label="Undo" disabled={!editor.can().undo()} onClick={() => editor.chain().focus().undo().run()}><Undo2 className="h-4 w-4" /></ToolbarButton>
         <ToolbarButton label="Redo" disabled={!editor.can().redo()} onClick={() => editor.chain().focus().redo().run()}><Redo2 className="h-4 w-4" /></ToolbarButton>

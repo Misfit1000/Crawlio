@@ -5,7 +5,7 @@ import { getPublishedPosts } from '../../lib/blog/client';
 import { usePageMetadata } from '../../lib/blog/metadata';
 import type { BlogListResult } from '../../lib/blog/types';
 import { EmptyState, LoadingSkeleton, StatusBadge } from '../ui/visual-system';
-import { Notice, PageHeader, Panel } from '../ui/page-system';
+import { Notice, PageHeader } from '../ui/page-system';
 import { BRAND } from '../../lib/brand';
 
 const PAGE_SIZE = 9;
@@ -53,17 +53,16 @@ export default function BlogIndex() {
 
   return (
     <main id="main-content" className="bg-background text-foreground">
-      <div className="section-shell space-y-10 py-12 sm:py-16 lg:py-20">
+      <div className="section-shell blog-index-shell space-y-6 py-8 sm:py-12">
         <PageHeader
-          eyebrow="Crawlio editorial"
           icon={BookOpen}
-          title="Practical SEO engineering guides"
-          description="Clear, evidence-conscious guidance for auditing websites, prioritizing fixes, and understanding technical SEO without unsupported ranking promises."
+          title="Crawlio blog"
+          description="Field notes on technical SEO, crawlability, and website health."
         />
 
-        <Panel className="p-4 sm:p-5">
+        <div className="border-b border-border pb-5">
           <form onSubmit={(event) => { event.preventDefault(); setOffset(0); setSubmittedQuery(query.trim()); }} className="flex flex-col gap-3 sm:flex-row">
-            <label className="flex min-h-11 min-w-0 flex-1 items-center rounded-lg border border-border bg-card shadow-sm transition-[border-color,box-shadow] focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20">
+            <label className="flex min-h-11 min-w-0 flex-1 items-center rounded-lg border border-border bg-card focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20">
               <span className="sr-only">Search blog articles</span>
               <Search className="ml-3 h-5 w-5 shrink-0 text-muted-foreground" />
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search audit and SEO guides" className="min-w-0 flex-1 bg-transparent px-3 py-3 text-sm font-medium outline-none placeholder:text-[var(--subtle-foreground)]" />
@@ -73,39 +72,35 @@ export default function BlogIndex() {
           {result?.topics?.length ? (
             <nav aria-label="Article topics" className="mt-4 flex gap-2 overflow-x-auto border-t border-border pt-4">
               {result.topics.slice(0, 12).map((topic) => (
-                <a key={topic.slug} href={`/blog/topic/${topic.slug}`} className="shrink-0 rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:border-accent hover:text-accent">
+                <a key={topic.slug} href={`/blog/topic/${topic.slug}`} className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-md border border-border px-3 text-xs font-semibold text-muted-foreground hover:border-accent hover:text-accent">
                   {topic.name} <span className="tabular-nums">({topic.articleCount})</span>
                 </a>
               ))}
             </nav>
           ) : null}
-        </Panel>
+        </div>
 
         {error && <Notice tone="danger" title="Blog unavailable">{error}</Notice>}
         {loading ? <LoadingSkeleton rows={6} /> : result?.posts.length ? (
-          <section aria-labelledby="latest-articles-title" className="space-y-6">
-            <div>
-              <h2 id="latest-articles-title" className="text-2xl font-semibold">{submittedQuery ? `Results for "${submittedQuery}"` : 'Latest articles'}</h2>
-              <p className="mt-2 text-sm text-muted-foreground">{result.total} published article{result.total === 1 ? '' : 's'}</p>
+          <section aria-labelledby="latest-articles-title">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 id="latest-articles-title" className="break-words text-base font-semibold">{submittedQuery ? `Results for "${submittedQuery}"` : 'Latest articles'}</h2>
+              <p className="text-xs text-muted-foreground">{result.total} published article{result.total === 1 ? '' : 's'}</p>
             </div>
-            <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+            <div>
               {result.posts.map((post, index) => (
-                <article key={post.id} className={`suite-panel blog-article-card flex min-w-0 flex-col overflow-hidden ${index === 0 && post.ogImageUrl ? 'blog-featured' : ''}`}>
-                  {post.ogImageUrl ? <img src={post.ogImageUrl} alt={`Featured image for ${post.title}`} className="aspect-[16/9] w-full border-b border-border object-cover" loading="lazy" /> : (
-                    <div className="flex aspect-[16/7] items-end border-b border-border bg-muted p-5">
-                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent/10 text-accent"><BookOpen className="h-5 w-5" /></div>
-                    </div>
-                  )}
-                  <div className="flex flex-1 flex-col p-5 sm:p-6">
-                    <div className="flex flex-wrap gap-2">{post.tags.slice(0, 3).map((tag) => <StatusBadge key={tag} tone="accent">{tag}</StatusBadge>)}</div>
-                    <h3 className="mt-4 text-xl font-semibold leading-snug"><a href={`/blog/${post.slug}`} className="hover:text-accent">{post.title}</a></h3>
+                <article key={post.id} className={`blog-article-card ${index === 0 && !submittedQuery ? 'blog-featured' : ''}`}>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap gap-2">{post.tags.slice(0, 3).map((tag) => <StatusBadge key={tag} tone="neutral">{tag}</StatusBadge>)}</div>
+                    <h3 className="mt-3 break-words text-xl font-semibold leading-snug"><a href={`/blog/${post.slug}`} className="hover:text-accent">{post.title}</a></h3>
                     <p className="mt-3 line-clamp-3 text-sm leading-6 text-muted-foreground">{post.excerpt}</p>
-                    <div className="mt-6 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+                    <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
                       <span className="inline-flex items-center gap-1.5"><CalendarDays className="h-4 w-4" />{formatDate(post.publishedAt)}</span>
                       <span className="inline-flex items-center gap-1.5"><Clock className="h-4 w-4" />{post.readingTimeMinutes} min read</span>
                     </div>
-                    <a href={`/blog/${post.slug}`} className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-accent hover:underline">Read article <ArrowRight className="h-4 w-4" /></a>
+                    <a href={`/blog/${post.slug}`} aria-label={`Read ${post.title}`} className="mt-3 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-accent hover:underline">Read article <ArrowRight className="h-4 w-4" /></a>
                   </div>
+                  {post.ogImageUrl && <img src={post.ogImageUrl} alt={post.ogImageAlt || `Featured image for ${post.title}`} loading={index === 0 ? 'eager' : 'lazy'} decoding="async" />}
                 </article>
               ))}
             </div>
@@ -118,10 +113,10 @@ export default function BlogIndex() {
             )}
           </section>
         ) : (
-          <Panel className="p-8"><EmptyState icon={BookOpen} title="No published articles found" description={submittedQuery ? 'Try a broader search phrase.' : 'Published Crawlio guides will appear here.'} /></Panel>
+          <EmptyState icon={BookOpen} title="No published articles found" description={submittedQuery ? 'Try a broader search phrase.' : 'Published Crawlio guides will appear here.'} />
         )}
+        <nav aria-label="Article feeds" className="flex flex-wrap items-center gap-x-5 border-t border-border pt-3 text-sm text-muted-foreground"><span className="font-semibold">Article feeds</span><a href="/sitemap.xml" className="inline-flex min-h-11 items-center hover:text-accent">Sitemap</a><a href="/rss.xml" className="inline-flex min-h-11 items-center hover:text-accent">RSS</a></nav>
       </div>
-      <footer className="border-t border-border bg-card"><div className="section-shell flex flex-col gap-3 py-8 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between"><span>Crawlio practical audit guidance</span><div className="flex flex-wrap gap-4"><a href="/" className="hover:text-accent">Product</a><a href="/#pricing" className="hover:text-accent">Plans</a><a href="/sitemap.xml" className="hover:text-accent">Sitemap</a><a href="/rss.xml" className="hover:text-accent">RSS</a></div></div></footer>
     </main>
   );
 }

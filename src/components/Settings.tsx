@@ -7,6 +7,7 @@ import { safeJsonFetch } from '../lib/http/safe-json';
 import { useAccessibilityPreferences } from '../contexts/AccessibilityContext';
 import { useAuditEntitlements } from '../hooks/useAuditEntitlements';
 import { AUDIT_MODES, getAuditModeConfig } from '../lib/audit/audit-config';
+import { Link } from '../app/router';
 
 export default function Settings() {
   const { user, logout } = useAuth();
@@ -76,15 +77,15 @@ export default function Settings() {
         eyebrow="Account"
         icon={SettingsIcon}
         title="Settings"
-        description="Manage accessibility, review plan-controlled audit access, and control your account data."
+        description="Your account, display preferences, and audit access."
       />
 
-      <div className="grid gap-8 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <nav className="h-fit space-y-1 lg:sticky lg:top-24" aria-label="Settings sections">
+      <div className="space-y-8">
+        <nav className="workspace-section-nav" aria-label="Settings sections">
           {[
-            ['accessibility-preferences', Accessibility, 'Display and accessibility'],
-            ['scan-preferences', ShieldCheck, 'Audit preferences'],
-            ['account-plan', UserRound, 'Account and plan'],
+            ['account-plan', UserRound, 'Account'],
+            ['accessibility-preferences', Accessibility, 'Display'],
+            ['scan-preferences', ShieldCheck, 'Audit access'],
             ['data-sources', Database, 'Data sources'],
             ['data-control', Trash2, 'Data and deletion'],
           ].map(([id, Icon, label]) => (
@@ -95,28 +96,32 @@ export default function Settings() {
         </nav>
 
         <div className="space-y-10">
-          <PageSection id="accessibility-preferences" title="Display and accessibility" description="Adjust readability and motion on this device. Changes apply immediately and remain available after you return.">
-            <Panel className="p-5 sm:p-6">
+          <PageSection id="account-plan" title="Account and plan">
+            <dl className="grid gap-6 rounded-lg bg-muted p-6 sm:grid-cols-2 lg:grid-cols-4">{[['Email', user?.email || 'Not signed in'], ['Plan', planLabel], ['Daily audits used', `${user?.auditQuotaUsedDaily ?? 0} / ${user?.auditEntitlements?.dailyAudits ?? 'Unavailable'}`], ['Monthly audits used', `${user?.auditQuotaUsedMonthly ?? 0} / ${user?.auditEntitlements?.monthlyAudits ?? 'Unavailable'}`]].map(([label,value]) => <div key={label}><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-2 break-words text-sm font-semibold">{value}</dd></div>)}</dl>
+            <Link to="/pricing" className="inline-flex min-h-11 items-center text-sm font-semibold text-accent">Compare published plans</Link>
+          </PageSection>
+          <PageSection id="accessibility-preferences" title="Display and accessibility" description="Saved on this device. Changes apply immediately.">
+            <div>
               <div className="grid gap-6 md:grid-cols-2">
-                <FormField label="Text size" htmlFor="accessibility-text-size" hint="Large text increases the base interface size without using browser zoom.">
+                <FormField label="Text size" htmlFor="accessibility-text-size">
                   <select id="accessibility-text-size" className="suite-input" value={accessibility.textScale} onChange={(event) => updateAccessibility({ textScale: event.target.value as 'default' | 'large' })}>
                     <option value="default">Default</option>
                     <option value="large">Large</option>
                   </select>
                 </FormField>
-                <FormField label="Interface spacing" htmlFor="accessibility-density" hint="Compact mode reduces non-essential spacing in data-heavy workspaces.">
+                <FormField label="Interface spacing" htmlFor="accessibility-density">
                   <select id="accessibility-density" className="suite-input" value={accessibility.density} onChange={(event) => updateAccessibility({ density: event.target.value as 'comfortable' | 'compact' })}>
                     <option value="comfortable">Comfortable</option>
                     <option value="compact">Compact</option>
                   </select>
                 </FormField>
-                <FormField label="Motion" htmlFor="accessibility-motion" hint="Reduced motion pauses decorative loops and shortens non-essential transitions.">
+                <FormField label="Motion" htmlFor="accessibility-motion">
                   <select id="accessibility-motion" className="suite-input" value={accessibility.motion} onChange={(event) => updateAccessibility({ motion: event.target.value as 'system' | 'reduced' })}>
                     <option value="system">Follow device setting</option>
                     <option value="reduced">Reduce motion</option>
                   </select>
                 </FormField>
-                <FormField label="Chart contrast" htmlFor="accessibility-chart-contrast" hint="High contrast adds stronger chart colors and visible bar boundaries.">
+                <FormField label="Chart contrast" htmlFor="accessibility-chart-contrast">
                   <select id="accessibility-chart-contrast" className="suite-input" value={accessibility.chartContrast} onChange={(event) => updateAccessibility({ chartContrast: event.target.value as 'standard' | 'high' })}>
                     <option value="standard">Standard</option>
                     <option value="high">High contrast</option>
@@ -127,13 +132,13 @@ export default function Settings() {
                 <p className="text-sm text-muted-foreground">Press <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">Ctrl</kbd> + <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs">K</kbd> to open quick navigation.</p>
                 <button type="button" className="quiet-button" onClick={resetAccessibility}><RotateCcw className="h-4 w-4" /> Reset display preferences</button>
               </div>
-            </Panel>
+            </div>
           </PageSection>
 
           <PageSection
             id="scan-preferences"
             title="Audit access"
-            description="These limits come from your active plan and the deployed audit engine. Administrators can change plan availability; the server enforces the values shown here."
+            description="Current plan limits, enforced by the server."
             action={user ? (
               <button type="button" className="quiet-button" onClick={refreshAuditAccess} disabled={refreshingAuditAccess}>
                 <RefreshCw className={`h-4 w-4 ${refreshingAuditAccess ? 'animate-spin' : ''}`} />
@@ -145,7 +150,6 @@ export default function Settings() {
               <div className="flex flex-col gap-2 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
                 <div>
                   <p className="text-sm font-semibold">{planLabel} plan</p>
-                  <p className="mt-1 text-xs text-muted-foreground">Select an available mode when starting an audit. There is no separate browser-only page limit.</p>
                 </div>
                 <span className="w-fit rounded-full border border-border bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground">
                   {auditEntitlements.selectableModes.length} of {AUDIT_MODES.length} modes available
@@ -184,12 +188,8 @@ export default function Settings() {
             </Panel>
           </PageSection>
 
-          <PageSection id="account-plan" title="Account and plan" description="Review your current usage, plan access, and account role.">
-            <Panel className="p-5 sm:p-6"><Notice tone="info">Open the Overview page to see current daily and monthly usage. Plan upgrades are shown only when a billing or administrator path is configured.</Notice></Panel>
-          </PageSection>
-
-          <PageSection id="data-sources" title="Optional data sources" description="Ranking, backlink, and search-performance views require user-provided data. Crawlio does not invent missing provider values.">
-            <Panel className="p-5 sm:p-6"><Notice tone="warning" title="Provider credentials are not entered here">Use Data Imports for CSV, Google Search Console, or Bing exports. Service credentials remain server-side and are never accepted by this browser form.</Notice></Panel>
+          <PageSection id="data-sources" title="Data sources" description="Connect verified Search Console data or import your CSV exports. Credentials remain server-side.">
+            <div className="flex flex-wrap gap-3"><Link to="/app/search-data" className="quiet-button">Search Console</Link><Link to="/app/imports" className="quiet-button">Import data</Link><Link to="/app/rankings" className="quiet-button">Imported rankings</Link></div>
           </PageSection>
 
           <PageSection id="data-control" title="Data export and account deletion" description="Download your account data or permanently remove private account records.">

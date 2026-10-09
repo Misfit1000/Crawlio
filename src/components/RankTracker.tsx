@@ -127,8 +127,8 @@ export default function RankTracker() {
       <PageHeader
         eyebrow="Rankings data"
         icon={BarChart3}
-        title="Actual SERP positions from your imported data"
-        description="Import Google Search Console, Bing Webmaster Tools, or provider CSV exports. Crawlio does not scrape Google results or invent ranking rows."
+        title="Rankings"
+        description="Positions from your Search Console, Bing, or provider exports."
         actions={
           <button type="button" onClick={() => fileRef.current?.click()} className="trust-button">
             <Upload className="h-4 w-4" /> Import rankings CSV
@@ -148,16 +148,15 @@ export default function RankTracker() {
       </div>
 
       {rows.length === 0 ? (
-        <SurfaceCard className="grid gap-6 p-6 lg:grid-cols-[0.7fr_1.3fr] lg:items-center">
-          <div className="flex h-24 w-24 items-center justify-center rounded-[2rem] bg-accent/10 text-accent">
-            <BarChart3 className="h-12 w-12" />
+        <SurfaceCard className="flex flex-col items-start gap-6 p-6 sm:flex-row">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
+            <BarChart3 className="h-6 w-6" />
           </div>
           <div>
             <div className="flex flex-wrap gap-2">
               <StatusBadge tone="warning">Import required</StatusBadge>
-              <StatusBadge tone="accent">No fake rankings</StatusBadge>
             </div>
-            <h3 className="mt-4 text-2xl font-bold">Connect real ranking data to see SERP movement.</h3>
+            <h3 className="mt-3 text-xl font-semibold">Add your ranking data</h3>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
               Export query or ranking rows from a verified source, then upload the CSV here. Supported headers include keyword/query, URL/page, position/average position, clicks, impressions, and date.
             </p>

@@ -1,4 +1,4 @@
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Braces, FileSearch, Link2, ShieldCheck } from 'lucide-react';
 import { Link } from '../app/router';
 import type { AuditMode } from '../lib/audit/audit-config';
 import type { AuditScope } from '../lib/audit/audit-scope';
@@ -24,23 +24,24 @@ export default function LandingPage({ onStartAudit, onExploreFeatures }: Props) 
     <section id="product" className="clarity-hero">
       <AuditConceptScene />
       <div className="clarity-hero-content section-shell">
-        <h1 data-route-focus-target>Crawlio website audits</h1>
-        <p className="clarity-hero-description">Find the problem. See the evidence. Know what to fix.</p>
+        <h1 data-route-focus-target>Crawlio <span>website audits.</span></h1>
+        <p className="clarity-hero-description">Find the issues. See the evidence. Know what to fix.</p>
         <AuditStartForm id="start-audit" onStartAudit={onStartAudit} />
         <Link to="/reports/example" className="clarity-example-link">Explore a sample report <ArrowRight className="h-4 w-4" /></Link>
       </div>
     </section>
-    <section id="features" className="section-shell py-11 md:py-16">
-      <div className="mb-7 flex flex-wrap items-start justify-between gap-5"><h2 className="text-2xl font-semibold md:text-3xl">Check what matters now</h2><Link to="/audits" className="quiet-button">All audits <ArrowRight className="h-4 w-4" /></Link></div>
-      <div className="grid gap-6 md:grid-cols-3">{[
-        ['On-page SEO', 'Titles, headings, images and content signals.', '/audits/seo'],
-        ['Crawlability', 'Robots rules, indexing, canonicals and sitemaps.', '/audits/crawlability'],
-        ['Passive security', 'HTTPS and browser-protection observations.', '/audits/security'],
-      ].map(([title, description, path]) => <article key={path} className="border-t border-border pt-5"><h3 className="text-lg font-semibold"><Link to={path}>{title}</Link></h3><p className="mt-2 text-sm leading-7 text-muted-foreground">{description}</p></article>)}</div>
+    <section id="features" className="section-shell home-section">
+      <div className="home-section-heading"><div><h2>One website. The checks you need.</h2><p>Run a complete audit or focus on one area.</p></div><Link to="/audits" className="quiet-button">All audits <ArrowRight className="h-4 w-4" /></Link></div>
+      <div className="home-capabilities">{[
+        { title: 'On-page SEO', description: 'Make titles, headings and content work together.', path: '/audits/seo', icon: FileSearch, tone: 'cobalt' },
+        { title: 'Crawlability', description: 'Inspect access, index directives and canonicals.', path: '/audits/crawlability', icon: Link2, tone: 'teal' },
+        { title: 'Structured data', description: 'Review markup and social metadata.', path: '/audits/structured-data', icon: Braces, tone: 'cyan' },
+        { title: 'Passive security', description: 'Check public HTTPS and protection headers.', path: '/audits/security', icon: ShieldCheck, tone: 'violet' },
+      ].map(({title,description,path,icon:Icon,tone}) => <Link key={path} to={path} className="home-capability" data-tone={tone}><span className="home-capability-icon"><Icon className="h-6 w-6" aria-hidden="true" /></span><h3>{title}</h3><p>{description}</p><ArrowRight className="h-4 w-4 mt-5" aria-hidden="true" /></Link>)}</div>
     </section>
-    <section id="how-it-works" className="border-y border-border bg-[var(--surface-inset)]"><div className="section-shell py-11 md:py-16"><div className="mb-7 flex flex-wrap items-center justify-between gap-5"><h2 className="text-2xl font-semibold">Check. Fix. Verify.</h2><button type="button" className="quiet-button" onClick={onExploreFeatures}>Open workspace <ArrowRight className="h-4 w-4" /></button></div><ol className="grid gap-6 md:grid-cols-3">{[['Choose your checks', 'Start with one page or discover more of your website.'], ['Work through evidence', 'Connect findings to affected pages and practical fixes.'], ['Verify your changes', 'Run the same scope again and review what changed.']].map(([title, description], index) => <li key={title}><span className="text-sm tabular-nums text-accent">0{index + 1}</span><h3 className="mt-3 text-lg font-semibold">{title}</h3><p className="mt-2 text-sm leading-7 text-muted-foreground">{description}</p></li>)}</ol></div></section>
-    <section id="example-report" className="section-shell py-11 md:py-16"><div id="reports" className="grid gap-8 md:grid-cols-2"><div><h2 className="text-2xl font-semibold">From finding to fix</h2><p className="my-3 max-w-md text-sm leading-7 text-muted-foreground">Inspect sample evidence, affected pages and recommended fixes.</p><Link to="/reports/example" className="quiet-button">View example report <ArrowRight className="h-4 w-4" /></Link></div><div id="pricing"><h2 className="text-2xl font-semibold">Choose your allowance</h2><p className="my-3 max-w-md text-sm leading-7 text-muted-foreground">Compare audit depth, coverage limits and report capabilities.</p><Link to="/pricing" className="quiet-button">Plans and limits <ArrowRight className="h-4 w-4" /></Link></div></div></section>
-    <section className="border-t border-border"><div className="section-shell flex flex-wrap items-center justify-between gap-5 py-8"><div><h2 className="text-xl font-semibold">Fix with local tools</h2><p className="mt-2 text-sm text-muted-foreground">Metadata, structured data, robots rules and headers.</p></div><Link to="/tools" className="quiet-button">Open tools <ArrowRight className="h-4 w-4" /></Link></div></section>
-    <section id="faq" className="section-shell border-t border-border py-11 md:py-16"><h2 className="mb-6 text-2xl font-semibold">Before you start</h2>{questions.map(([question, answer]) => <details key={question} className="border-b border-border py-4"><summary className="min-h-8 cursor-pointer text-sm font-semibold">{question}</summary><p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">{answer}</p></details>)}</section>
+    <section id="example-report" className="home-report-band"><div id="reports" className="section-shell home-section home-report-layout"><div><span className="home-sample-label">Example report · Sample data</span><h2>Less guesswork.<br />More useful evidence.</h2><p>See what happened, where it happened, and what to change.</p><Link to="/reports/example" className="trust-button">Explore the report <ArrowRight className="h-4 w-4" /></Link></div><article className="home-sample-finding"><header><span>Internal links</span><span className="text-muted-foreground">Sample finding</span></header><h3>Broken internal link</h3><p className="text-muted-foreground">A link points to a page that no longer exists.</p><dl><div><dt>Affected page</dt><dd>/services</dd></div><div><dt>Evidence</dt><dd>/old-offer returned HTTP 404</dd></div><div><dt>Recommended fix</dt><dd>Update the link to its replacement or remove the obsolete link.</dd></div></dl></article></div></section>
+    <section id="how-it-works" className="section-shell home-section"><div className="home-section-heading"><h2>Check. Fix. Verify.</h2><button type="button" className="quiet-button" onClick={onExploreFeatures}>Open workspace <ArrowRight className="h-4 w-4" /></button></div><ol className="home-process">{[['Choose your checks', 'One page or your website, within your allowance.'], ['Act on the evidence', 'Prioritized findings with affected pages and fixes.'], ['Verify the change', 'Rerun the same scope and compare results.']].map(([title, description], index) => <li key={title}><span>0{index + 1}</span><h3>{title}</h3><p>{description}</p></li>)}</ol></section>
+    <section className="home-destinations section-shell"><Link id="pricing" to="/pricing"><h2>Find your allowance</h2><p>Compare current plans and audit limits.</p><span>View plans <ArrowRight className="h-4 w-4" /></span></Link><Link to="/tools"><h2>Make the fix</h2><p>Metadata, structured data, robots and header tools.</p><span>Open tools <ArrowRight className="h-4 w-4" /></span></Link><Link to="/blog"><h2>Understand the why</h2><p>Practical guides to technical SEO.</p><span>Read the blog <ArrowRight className="h-4 w-4" /></span></Link></section>
+    <section id="faq" className="section-shell home-section"><h2 className="mb-6 text-2xl font-semibold">Before you start</h2><div className="home-faq">{questions.map(([question, answer]) => <article key={question}><h3>{question}</h3><p>{answer}</p></article>)}</div></section>
   </main>;
 }

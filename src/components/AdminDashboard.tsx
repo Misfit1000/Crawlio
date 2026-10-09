@@ -38,11 +38,10 @@ export default function AdminDashboard() {
   }
 
   return (
-    <AdminActionProvider key={user.id}><div className="admin-workspace min-w-0 max-w-full space-y-4 [&>.page-header]:pb-4">
-      <PageHeader eyebrow="Administration" icon={activeGroup.icon} title={activeTab === 'overview' ? 'Operations overview' : activeSection.label} metadata={<BlogNotificationInbox />} />
+    <AdminActionProvider key={user.id}><div className="admin-workspace min-w-0 max-w-full space-y-4">
+      <PageHeader icon={activeGroup.icon} title={activeTab === 'overview' ? 'Operations overview' : activeTab === 'blog' ? 'Blog studio' : activeSection.label} actions={<BlogNotificationInbox />} />
 
       {activeGroup.sections.length > 1 && <nav aria-label={`${activeGroup.label} sections`} className="flex min-w-0 flex-wrap items-center gap-1 border-b border-border pb-2">
-        <span className="mr-2 text-xs font-semibold text-muted-foreground">{activeGroup.label}</span>
         {activeGroup.sections.map(section => <Link key={section.id} to={currentNavigationPath(section.path, location)} aria-current={activeTab === section.id ? 'page' : undefined} className={`inline-flex min-h-11 items-center rounded-md px-3 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${activeTab === section.id ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>{section.label}</Link>)}
       </nav>}
 

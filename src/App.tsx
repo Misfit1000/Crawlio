@@ -5,7 +5,7 @@ import { useAuth } from './contexts/AuthContext';
 import { useTheme } from './contexts/ThemeContext';
 import { AuditLaunchProvider, useAuditLaunch } from './contexts/AuditLaunchContext';
 import { loadLiveAuditScreen } from './lib/audit/live-screen-loader';
-import { BrandMark, LoadingSkeleton, ThemeToggle } from './components/ui/visual-system';
+import { BrandMark, LoadingSkeleton, ThemeToggle } from './components/ui/chrome';
 import { MarketingShell } from './components/layout/ProductShells';
 import { useLocation, useNavigate } from './app/router';
 import { BRAND } from './lib/brand';

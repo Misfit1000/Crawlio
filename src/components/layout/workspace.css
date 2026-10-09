@@ -1,2 +1,24 @@
 .workspace-navigation { animation: navigation-enter 180ms ease-out; }
+.workspace-navigation > div:first-child { border: 0; padding-top: 24px; color: var(--muted-foreground); }
+.workspace-navigation > nav { padding-top: 0; }
+.workspace-nav-link.is-active { background: color-mix(in srgb,var(--accent) 8%,var(--card)); box-shadow: inset 3px 0 var(--accent); }
+.workspace-section-nav { display: flex; gap: 8px; overflow-x: auto; border-bottom: 1px solid var(--border); }
+.workspace-section-nav a { display: flex; min-height: 44px; flex-shrink: 0; align-items: center; padding: 8px 12px; border-bottom: 2px solid transparent; font-size: 14px; color: var(--muted-foreground); font-weight: 600; }
+.workspace-section-nav a[aria-current="page"] { border-color: var(--accent); color: var(--accent); }
+.workspace-shell .suite-page > nav + * { margin-top: 24px; }
+.dashboard-usage { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 32px; padding: 16px 0; border-block: 1px solid var(--border); }
+.dashboard-usage > div { min-width: 0; }
+.dashboard-usage .usage-item { display: flex; flex: 1; align-items: center; gap: 12px; min-width: 200px; }
+.dashboard-usage meter { width: 80px; height: 8px; accent-color: var(--accent); }
+.project-selector { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; }
+.project-selector > label { flex: 1; min-width: min(100%,240px); }
+.project-result { display: grid; grid-template-columns: minmax(0,1fr) minmax(240px,.4fr); gap: 32px; align-items: stretch; padding-block: 24px; border-block: 1px solid var(--border); }
+.project-result > section { border-left: 1px solid var(--border); padding-left: 32px; }
+.project-score { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; margin-top: 24px; }
+.project-score > div:last-child { flex: 1; min-width: min(100%,220px); }
+.project-metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; }
+.project-metrics > section { border: 0; border-top: 3px solid var(--accent); border-radius: 0; }
+.project-metrics > section:nth-child(2) { border-color: var(--category-teal); }
+.project-metrics > section:nth-child(3) { border-color: var(--category-cyan); }
+@media (max-width: 767px) { .project-result { grid-template-columns: minmax(0,1fr); gap: 24px; } .project-result > section { border-left: 0; padding-left: 0; } .project-metrics { grid-template-columns: minmax(0,1fr); } }
 @keyframes navigation-enter { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }

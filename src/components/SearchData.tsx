@@ -7,6 +7,7 @@ import { getAuthHeaders } from '../lib/api/auth-headers';
 import { safeJsonFetch } from '../lib/http/safe-json';
 import { inflightRead } from '../lib/http/inflight-read';
 import { useAuth } from '../contexts/AuthContext';
+import { Link } from '../app/router';
 
 type SearchRow = Record<string, any>;
 
@@ -203,43 +204,39 @@ function AccountSearchData({ accountId }: { accountId: string }) {
       <PageHeader
         eyebrow="Search data"
         icon={BarChart3}
-        title="Search Console and Bing performance"
-        description="View real query, page, clicks, impressions, CTR, and position data after importing CSV exports. No search volume or traffic is estimated."
+        title="Search performance"
+        description="Clicks, impressions, and positions from connected or imported search data."
+        actions={<Link to="/app/imports" className="quiet-button">Import CSV</Link>}
       />
 
-      <SurfaceCard className="p-5 md:p-6">
+      <section className="border-b border-border pb-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div><div className="flex items-center gap-2"><Cable className="h-5 w-5 text-accent" /><h2 className="text-lg font-semibold">Google Search Console</h2></div><p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">Connect an account you control to load real clicks, impressions, CTR, and average position. OAuth credentials and tokens remain server-only.</p></div>
+          <div><div className="flex items-center gap-2"><Cable className="h-5 w-5 text-accent" /><h2 className="text-lg font-semibold">Google Search Console</h2></div><p className="mt-2 text-sm text-muted-foreground">Connect a property you manage, or import a Google or Bing CSV.</p></div>
           {connectionError ? <StatusBadge tone="danger">Status unavailable</StatusBadge> : configured === null ? <StatusBadge tone="neutral"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking connection</StatusBadge> : configured === false ? <StatusBadge tone="warning">Server setup required</StatusBadge> : properties.length ? <div className="flex flex-col gap-2 sm:flex-row"><select aria-label="Search Console property" className="suite-input min-w-64" value={propertyId} onChange={(event) => setPropertyId(event.target.value)}>{properties.map((property) => <option value={property.id} key={property.id}>{property.siteUrl}</option>)}</select><button type="button" className="trust-button" onClick={() => void sync()} disabled={!propertyId || Boolean(busy)}>{busy === 'sync' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Sync 28 days</button><button type="button" className="quiet-button" onClick={() => void disconnect()} disabled={Boolean(busy)} aria-label="Disconnect Search Console"><Unplug className="h-4 w-4" /></button></div> : <button type="button" className="trust-button" onClick={() => void connect()} disabled={Boolean(busy)}>{busy === 'connect' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Cable className="h-4 w-4" />} Connect Search Console</button>}
         </div>
         {configured === false && <p className="mt-3 text-xs text-muted-foreground">Add the three documented Search Console server variables in Vercel, then redeploy. CSV imports continue to work without them.</p>}
         {connectionError && <p role="status" className="mt-3 text-sm text-muted-foreground">{connectionError}</p>}
         {error && <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-sm text-red-700 dark:text-red-300">{error}</div>}
-      </SurfaceCard>
+      </section>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="Measured rows" value={rows.length} detail={source === 'search-console' ? `From ${rowProperty || 'Google Search Console'}${busy === 'load' ? ' / Loading selected property...' : ''}` : 'From local CSV imports'} icon={<BarChart3 className="h-6 w-6" />} tone="accent" />
-        <MetricCard label="Queries" value={summary.queries || '-'} detail="Unique measured queries" icon={<Search className="h-6 w-6" />} tone="green" />
-        <MetricCard label="Clicks" value={rows.length ? summary.clicks : '-'} detail={`${summary.impressions} impressions`} icon={<MousePointerClick className="h-6 w-6" />} tone="green" />
-        <MetricCard label="Average position" value={summary.avgPosition ? summary.avgPosition.toFixed(1) : '-'} detail="Only when present in measured data" icon={<TrendingUp className="h-6 w-6" />} tone="yellow" />
+        <MetricCard label="Queries" value={summary.queries || '-'} detail="Unique measured queries" icon={<Search className="h-6 w-6" />} tone="teal" />
+        <MetricCard label="Clicks" value={rows.length ? summary.clicks : '-'} detail={`${summary.impressions} impressions`} icon={<MousePointerClick className="h-6 w-6" />} tone="cyan" />
+        <MetricCard label="Average position" value={summary.avgPosition ? summary.avgPosition.toFixed(1) : '-'} detail="Only when present in measured data" icon={<TrendingUp className="h-6 w-6" />} tone="violet" />
       </div>
 
       {rows.length === 0 ? (
-        <SurfaceCard className="grid gap-6 p-8 text-center lg:grid-cols-[0.7fr_1.3fr] lg:text-left">
-          <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-[2rem] bg-accent/10 text-accent lg:mx-0">
-            <Eye className="h-12 w-12" />
+        <div className="flex items-start gap-4 rounded-lg bg-muted/40 p-6">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
+            <Eye className="h-6 w-6" />
           </div>
           <div>
-            <div className="flex flex-wrap justify-center gap-2 lg:justify-start">
-              <StatusBadge tone="warning">Data connection required</StatusBadge>
-              <StatusBadge tone="accent">Verified data only</StatusBadge>
-            </div>
-            <h3 className="mt-4 text-2xl font-bold">No imported search data yet.</h3>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-              Connect Google Search Console above or go to Data Sources and import a Search Console or Bing Webmaster Tools CSV. Crawlio will not estimate traffic, search volume, or rankings.
-            </p>
+            <h2 className="text-xl font-semibold">Add your search data</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Connect Search Console above or import an export from Google or Bing. Rankings and traffic are never estimated.</p>
+            <Link to="/app/imports" className="trust-button mt-4">Import search data</Link>
           </div>
-        </SurfaceCard>
+        </div>
       ) : (
         <>
           {losingPages.length > 0 && <SurfaceCard className="p-6"><div className="flex items-start justify-between gap-3"><div><h3 className="text-xl font-semibold">Pages losing clicks</h3><p className="mt-1 text-sm text-muted-foreground">Current 28-day Search Console clicks compared with the previous 28 days.</p></div><TrendingDown className="h-5 w-5 text-red-600" /></div><div className="mt-5 divide-y divide-border">{losingPages.map((item) => <div key={item.page} className="grid gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_100px_100px]"><span className="truncate text-sm font-semibold">{item.page}</span><span className="text-sm tabular-nums text-muted-foreground">{item.previousClicks} → {item.currentClicks}</span><span className="text-sm font-semibold tabular-nums text-red-600">{item.change}</span></div>)}</div></SurfaceCard>}
@@ -282,7 +279,7 @@ function AccountSearchData({ accountId }: { accountId: string }) {
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                 <div>
                   <h3 className="text-xl font-bold">Imported performance rows</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">Showing the first 100 rows from your local import.</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Showing {Math.min(rows.length, 100)} of {rows.length.toLocaleString()} measured rows.</p>
                 </div>
                 <StatusBadge tone="success">Real imported data</StatusBadge>
               </div>

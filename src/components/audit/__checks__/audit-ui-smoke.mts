@@ -1,0 +1,190 @@
+import assert from 'node:assert/strict';
+import { mkdir } from 'node:fs/promises';
+import { chromium, expect as baseExpect } from '@playwright/test';
+import { AUDIT_ID, publicPlanFixture } from '../../../../tests/e2e/helpers';
+import { auditFixture as result, historyFixture as history, startAuditUiFixture } from './audit-ui-fixture.mts';
+
+const server = process.env.AUDIT_UI_ORIGIN ? null : await startAuditUiFixture();
+const origin = process.env.AUDIT_UI_ORIGIN || 'http://127.0.0.1:5176';
+const output = 'test-results/audit-redesign';
+const expect = baseExpect.configure({ timeout: 20000 });
+await mkdir(output, { recursive: true });
+const browser = await chromium.launch({ headless: true, ...(process.platform === 'win32' ? { channel: 'msedge' } : {}) });
+const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, ...(process.env.UI_RECORD_VIDEO ? { recordVideo: { dir: process.env.UI_RECORD_VIDEO, size: { width: 1440, height: 1000 } } } : {}) });
+const errors: string[] = [];
+page.on('pageerror', error => errors.push(error.message));
+page.on('console', message => { if (message.type() === 'error') console.error('Console:', message.text()); });
+page.on('requestfailed', request => console.error('Request failed:', request.url(), request.failure()));
+const requests: string[] = [];
+await page.addInitScript(() => { localStorage.setItem('crawlio-theme-v1', 'light'); localStorage.setItem('crawlio_selected_report_id', '11111111-1111-4111-8111-111111111111'); });
+await page.route(`${origin}/api/**`, async route => {
+  const url = new URL(route.request().url());
+  requests.push(url.pathname + url.search);
+  if (url.pathname.includes('/plans/public')) return route.fulfill({ json: { success: true, data: publicPlanFixture() } });
+  if (url.pathname.includes('/audits/history')) return route.fulfill({ json: { success: true, data: history() } });
+  if (url.pathname.includes('/shared-reports/')) return route.fulfill({ json: { success: true, data: { audit: result.audit, report: result.finalReport, pages: result.latestPages, issues: result.latestIssues, expiresAt: '2026-12-01T00:00:00.000Z' } } });
+  if (url.pathname.includes('/finding-workflow')) return route.fulfill({ status: 401, json: { success: false, error: 'Guest workflow.' } });
+  if (url.pathname.includes('/evidence/')) {
+    const items = url.pathname.endsWith('/pages') ? result.latestPages.slice(0, 50) : url.searchParams.get('section') === 'security' ? [] : result.latestIssues;
+    return route.fulfill({ json: { success: true, data: { items, total: items.length, nextCursor: null } } });
+  }
+  if (url.pathname.includes('/audit/compare/')) return route.fulfill({ json: { success: true, data: { scoreDelta: 3, newIssues: [], resolvedIssues: [], persistentIssues: result.latestIssues } } });
+  if (url.pathname.includes('/audit/export/')) return route.fulfill({ contentType: 'application/json', headers: { 'content-disposition': 'attachment; filename="audit.json"' }, body: JSON.stringify(result) });
+  if (/\/audit\/(result|status|events)\//.test(url.pathname)) return route.fulfill({ json: { success: true, data: result } });
+  return route.fulfill({ status: 503, json: { success: false, error: 'No optional fixture data.' } });
+});
+
+async function layout(label: string, fullPage = true) {
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, `${label}: no document overflow`);
+  const smallText = await page.locator('.audit-customer-workspace').first().evaluate(root => [...root.querySelectorAll('*')].filter(node => node.getClientRects().length && [...node.childNodes].some(child => child.nodeType === Node.TEXT_NODE && child.textContent?.trim()) && Number.parseFloat(getComputedStyle(node).fontSize) < 12).map(node => `${node.tagName}: ${node.textContent?.slice(0, 60)}`));
+  assert.deepEqual(smallText, [], `${label}: all report text is at least 12px`);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.screenshot({ path: `${output}/${label}.png`, fullPage });
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+}
+async function overview() {
+  await expect(page.getByRole('heading', { name: 'example.com', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Delivery and crawl evidence' })).toBeVisible();
+  await expect(page.getByText('0 ms', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Desktop, mobile, and search context' })).toBeVisible();
+  await expect(page.locator('.audit-map-node')).toHaveCount(48);
+  assert.equal(requests.filter(url => /\/evidence\/|tool-evidence|\/domain\//.test(url)).length, 0, 'Overview makes no new evidence/provider calls');
+}
+
+try {
+  await page.goto(`${origin}/audit/live/${AUDIT_ID}`);
+  await overview();
+  await expect(page.getByRole('navigation', { name: 'Audit workspace views' })).toHaveCount(1);
+  await layout('live-desktop');
+  await expect(page.getByRole('link', { name: 'Open Tools workspace' })).toHaveAttribute('href', '/app/tools');
+  await page.getByRole('region', { name: 'Domain strength and external signals' }).scrollIntoViewIfNeeded();
+  await expect(page.getByRole('heading', { name: 'Domain strength', exact: true })).toBeVisible();
+  await expect.poll(() => requests.filter(url => url.includes('/domain/')).length).toBeGreaterThan(0);
+  assert.equal(await page.getByRole('heading', { name: 'Domain strength', exact: true }).evaluate(node => Boolean(node.closest('details'))), false, 'Domain strength is not collapsed');
+  await page.getByRole('navigation', { name: 'Audit workspace views' }).getByRole('link', { name: 'Findings', exact: true }).click();
+  await expect(page.getByText('Recommended fix:', { exact: false })).toBeVisible();
+  const before = await page.locator('[aria-labelledby="finding-workspace-title"]').boundingBox();
+  const trigger = page.getByRole('button', { name: 'Open details for Missing page title' });
+  await trigger.click();
+  const dialog = page.getByRole('dialog', { name: 'Missing page title' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAttribute('aria-modal', 'true');
+  assert.equal((await page.locator('[aria-labelledby="finding-workspace-title"]').boundingBox())?.width, before?.width, 'Drawer does not shrink findings');
+  await page.keyboard.press('Shift+Tab');
+  assert.equal(await dialog.evaluate(node => node.contains(document.activeElement)), true, 'Drawer traps keyboard focus');
+  assert.equal((await dialog.boundingBox())?.y, 0, 'Desktop drawer starts at viewport top');
+  await layout('findings-desktop', false);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await page.getByRole('combobox', { name: 'Filter all findings by report section' }).selectOption('security');
+  await expect(page.getByText('No findings match the selected filters.')).toBeVisible();
+  await page.getByRole('navigation', { name: 'Audit workspace views' }).getByRole('link', { name: 'Pages', exact: true }).click();
+  await page.getByRole('button', { name: 'Page 0 https://example.com/0' }).click();
+  await expect(page.getByRole('dialog', { name: 'Page 0' })).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await page.goto(`${origin}/app/audits/${AUDIT_ID}/overview`);
+  await expect(page.getByRole('heading', { name: 'Compare with an earlier audit' })).toBeVisible();
+  await page.getByRole('button', { name: 'Compare', exact: true }).click();
+  await expect(page.getByText('Score change', { exact: true })).toBeVisible();
+  await layout('workspace-desktop');
+  await page.goto(`${origin}/app/reports`);
+  await expect(page.getByRole('heading', { name: 'Audit reports', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Delivery and crawl evidence' })).toBeVisible();
+  await expect(page.locator('#recommendations').getByText('Recommended fix', { exact: true })).toBeVisible();
+  await layout('reports-desktop');
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'JSON', exact: true }).click();
+  assert.equal((await download).suggestedFilename().endsWith('.json'), true);
+  await page.goto(`${origin}/app/audits/history`);
+  await expect(page.getByRole('heading', { name: 'Your audits' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Stored audit runs' }).locator('article')).toHaveCount(2);
+  await layout('history-desktop');
+  await page.goto(`${origin}/share/${'a'.repeat(48)}`);
+  await expect(page.getByText('Read-only report', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Delivery and crawl evidence' })).toBeVisible();
+  await layout('shared-desktop');
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const [route, label] of [[`/audit/live/${AUDIT_ID}`, 'live-mobile'], ['/app/reports', 'reports-mobile'], ['/app/audits/history', 'history-mobile'], [`/share/${'a'.repeat(48)}`, 'shared-mobile']]) {
+    await page.goto(origin + route);
+    await expect(page.locator('.audit-customer-workspace').first()).toBeVisible();
+    if (label === 'history-mobile') await expect(page.getByRole('region', { name: 'Stored audit runs' }).locator('article')).toHaveCount(2);
+    else await expect(page.getByRole('heading', { name: 'Delivery and crawl evidence' })).toBeVisible();
+    await layout(label);
+  }
+  await page.goto(`${origin}/audit/live/${AUDIT_ID}?view=findings`);
+  await page.getByRole('button', { name: 'Open details for Missing page title' }).click();
+  await expect(page.getByRole('dialog', { name: 'Missing page title' })).toBeVisible();
+  assert.equal((await page.getByRole('dialog', { name: 'Missing page title' }).boundingBox())?.y, 0, 'Mobile drawer starts at viewport top');
+  await layout('findings-mobile', false);
+  await page.keyboard.press('Escape');
+  await page.goto(`${origin}/audit/live/${AUDIT_ID}`);
+  await expect(page.getByRole('heading', { name: 'Delivery and crawl evidence' })).toBeVisible();
+  await page.getByRole('button', { name: 'Switch to dark mode' }).click();
+  await expect.poll(() => page.locator('body').evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgb(0, 0, 0)');
+  await layout('live-vanta-mobile');
+  const storedReport = result.finalReport;
+  result.finalReport = null;
+  Object.assign(result.audit, { status: 'running', progress: 45, completedAt: null, updatedAt: new Date().toISOString(), startedAt: new Date(Date.now() - 20000).toISOString(), currentPhase: 'Checking pages', currentCheck: 'Page titles' });
+  result.latestEvents = [{ id: 'progress', type: 'progress_update', timestamp: result.audit.updatedAt, message: 'Checking pages', phase: 'Checking pages', progress: 45 }];
+  await page.goto(`${origin}/audit/live/${AUDIT_ID}`);
+  const map = page.locator('.audit-evidence-map');
+  await map.scrollIntoViewIfNeeded();
+  await expect(map).toHaveAttribute('data-active', 'true');
+  const evidenceBefore = requests.filter(url => url.includes('/evidence/')).length;
+  await page.getByRole('button', { name: 'Pause animation', exact: true }).click();
+  await expect(map).toHaveAttribute('data-active', 'false');
+  await page.getByRole('button', { name: 'Resume animation', exact: true }).click();
+  await expect(map).toHaveAttribute('data-active', 'true');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(map).toHaveAttribute('data-active', 'false');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(map).toHaveAttribute('data-active', 'false');
+  await map.scrollIntoViewIfNeeded();
+  result.latestPages.push({ ...result.latestPages[0], id: 'arrival-page', url: 'https://example.com/arrival', sourceUrl: 'https://example.com/0', crawlDepth: 2 });
+  result.audit.updatedAt = new Date(Date.now() + 1000).toISOString();
+  await expect(map.locator('.audit-map-arrival')).toHaveCount(1);
+  await expect(map.locator('.audit-map-link-arrival')).toHaveCount(1);
+  Object.assign(result.audit, { status: 'completed', completedAt: new Date().toISOString(), updatedAt: new Date(Date.now() + 2000).toISOString() });
+  result.finalReport = storedReport;
+  await expect(map).toHaveAttribute('data-active', 'false');
+  await expect(page.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0);
+  assert.equal(requests.filter(url => url.includes('/evidence/')).length, evidenceBefore, 'Motion and terminal updates do not fetch evidence');
+  const scope = { version: 1, focus: 'seo', coverage: 'page', checkGroups: ['seo'] };
+  Object.assign(result.audit, { scope, pagesCrawled: 1, pagesDiscovered: 1, pageLimit: 1, planPageLimit: 50, presentationSummary: undefined });
+  result.finalReport.scope = scope;
+  delete result.finalReport.presentationSummary;
+  result.latestPages = result.latestPages.slice(0, 1);
+  await page.goto(`${origin}/audit/live/${AUDIT_ID}`);
+  await expect(page.getByText('Single-page coverage. 50 pages in your plan allowance.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Observed delivery', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Desktop, mobile, and search context' })).toHaveCount(0);
+  await expect(page.locator('.audit-score-factors .category-score-bar')).toHaveCount(1);
+  await layout('focused-mobile');
+  await page.goto(`${origin}/app/audits/${AUDIT_ID}/performance`);
+  await expect(page.getByRole('heading', { name: 'Not included in this audit' })).toBeVisible();
+  result.audit.scope = undefined;
+  result.finalReport.scope = undefined;
+  Object.assign(result.audit, { status: 'completed_with_warnings', warningCount: 1 });
+  await page.goto(`${origin}/audit/live/${AUDIT_ID}`);
+  await expect(page.getByText('The report is ready. Some checks could not run,', { exact: false })).toBeVisible();
+  result.finalReport = null;
+  Object.assign(result.audit, { status: 'failed', error: 'Target response timed out.' });
+  await page.goto(`${origin}/audit/live/${AUDIT_ID}`);
+  await expect(page.getByRole('heading', { name: 'Audit could not be completed' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0);
+  await layout('failed-mobile');
+  assert.deepEqual(errors, [], 'No browser runtime errors');
+  console.log('Audit UI smoke passed: all owned routes, desktop/mobile, typography, filters, focus, comparisons, JSON export, Vanta Black, evidence arrivals, motion controls, completion/warning/failure states, focused scope and plan allowance.');
+} catch (error) {
+  console.error('Browser errors:', errors);
+  console.error((await page.locator('body').innerText()).slice(0, 4000));
+  await page.screenshot({ path: `${output}/failure.png`, fullPage: true });
+  throw error;
+} finally {
+  await browser.close();
+  await server?.close();
+}

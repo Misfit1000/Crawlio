@@ -1,4 +1,4 @@
-import { Gauge,Loader2,RefreshCw } from 'lucide-react';
+import { Gauge,Loader2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { AUDIT_MODES, type AuditMode } from '../../lib/audit/audit-config';
 import { planPageCeiling } from '../../lib/audit/scalable-policy';
@@ -47,7 +47,7 @@ export default function AdminPlans(_props: { adminUserId: string }) {
   };
   if (plans.loading && !plans.data) return <Loading />;
   return (
-    <Panel title="Plan limits" description="Edit audit quotas, page limits, and queue priority using current supported plan fields." icon={Gauge} action={<button type="button" onClick={plans.refresh} className="quiet-button min-h-11 px-3 py-1.5 text-xs"><RefreshCw className="h-3.5 w-3.5" /> Refresh</button>}>
+    <Panel title="Plan limits" description="Edit audit quotas, page limits, and queue priority using current supported plan fields." icon={Gauge}>
       <DataNotice {...plans} />
       {error && <Notice tone="danger" className="mb-4">{error}</Notice>}
       {result && <div className="mb-4"><ActionFeedback result={result} /></div>}
@@ -64,9 +64,9 @@ export default function AdminPlans(_props: { adminUserId: string }) {
                 </td>
                 <td><NumberInput label={`${plan.label || plan.plan} daily audits`} value={plan.dailyAudits} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'dailyAudits', value)} /></td>
                 <td><NumberInput label={`${plan.label || plan.plan} monthly audits`} value={plan.monthlyAudits} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'monthlyAudits', value)} /></td>
-                <td><NumberInput label={`${plan.label || plan.plan} Quick page limit`} value={plan.maxPagesQuick} max={planPageCeiling(plan.plan)} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'maxPagesQuick', value)} />{<div className="mt-1 max-w-28 text-[11px] text-muted-foreground">Maximum supported: {planPageCeiling(plan.plan)}</div>}</td>
-                <td><NumberInput label={`${plan.label || plan.plan} Standard page limit`} value={plan.maxPagesStandard} max={planPageCeiling(plan.plan)} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'maxPagesStandard', value)} />{<div className="mt-1 max-w-28 text-[11px] text-muted-foreground">Maximum supported: {planPageCeiling(plan.plan)}</div>}</td>
-                <td><NumberInput label={`${plan.label || plan.plan} Deep page limit`} value={plan.maxPagesDeep} max={planPageCeiling(plan.plan)} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'maxPagesDeep', value)} />{<div className="mt-1 max-w-28 text-[11px] text-muted-foreground">Maximum supported: {planPageCeiling(plan.plan)}</div>}</td>
+                <td><NumberInput label={`${plan.label || plan.plan} Quick page limit`} value={plan.maxPagesQuick} max={planPageCeiling(plan.plan)} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'maxPagesQuick', value)} />{<div className="mt-1 max-w-28 text-xs text-muted-foreground">Maximum supported: {planPageCeiling(plan.plan)}</div>}</td>
+                <td><NumberInput label={`${plan.label || plan.plan} Standard page limit`} value={plan.maxPagesStandard} max={planPageCeiling(plan.plan)} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'maxPagesStandard', value)} />{<div className="mt-1 max-w-28 text-xs text-muted-foreground">Maximum supported: {planPageCeiling(plan.plan)}</div>}</td>
+                <td><NumberInput label={`${plan.label || plan.plan} Deep page limit`} value={plan.maxPagesDeep} max={planPageCeiling(plan.plan)} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'maxPagesDeep', value)} />{<div className="mt-1 max-w-28 text-xs text-muted-foreground">Maximum supported: {planPageCeiling(plan.plan)}</div>}</td>
                 <td><NumberInput label={`${plan.label || plan.plan} queue priority`} value={plan.priority} max={1000} disabled={updatingPlan === plan.plan} onBlur={(value) => update(plan.plan, 'priority', value)} /></td>
                 <td className="text-xs">
                   <label className="flex min-h-11 items-center gap-2"><input type="checkbox" checked={Boolean(plan.exportsEnabled)} disabled={updatingPlan === plan.plan} onChange={(event) => void update(plan.plan, 'exportsEnabled', event.target.checked)} /> Exports</label>
