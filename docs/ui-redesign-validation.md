@@ -37,7 +37,7 @@ These are local build bytes, not production loading times or field Web Vitals.
 
 | Metric | Before | Final candidate | Change |
 | --- | ---: | ---: | ---: |
-| Initial JavaScript, gzip | 88,246 B | 80,360 B | -8.94% |
+| Initial JavaScript, gzip | 88,246 B | 80,362 B | -8.93% |
 | Initial CSS | 97,349 B | 96,039 B | -1.35% |
 | Total CSS | 114,885 B | 111,022 B | -3.36% |
 
@@ -52,6 +52,7 @@ The final CSS remains below the 115,000 B budget. Initial JavaScript contains on
 - Homepage accessibility/overflow checks passed at 390, 768, and 1440px in light and black themes, including reduced motion. A dark-mode FAQ issue was found and corrected by avoiding content-visibility on that small section.
 - Audit UI smoke passed for desktop/mobile, scope and allowance display, filters, drawers, comparisons, JSON export, black theme, evidence arrivals, and completed/warning/failed states. Optional-service 401/503 responses in this fixture are intentional, not production calls.
 - Focused admin/blog suites passed during implementation. Not every provider-connected screen was exercised with live production data.
+- Production dashboard review identified a sampled findings count beside full severity totals; the metric now uses the latest audit's recorded total and is labeled Findings.
 
 ## Visual evidence
 
