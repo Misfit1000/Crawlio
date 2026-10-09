@@ -1,6 +1,6 @@
 # UI redesign validation
 
-Local release candidate, 10 October 2026. No production deployment, database migration, worker release, or article publication was performed for this UI-only change.
+UI release validation, 10 October 2026. The release is based on production commit `d329aef`, with only the UI redesign cherry-picked from the executor branch. No database migration, worker release, or article publication is required.
 
 ## Presentation changes
 
@@ -47,6 +47,7 @@ The final CSS remains below the 115,000 B budget. Initial JavaScript contains on
 
 - TypeScript passed.
 - Production build, public HTML generation, bundle budget, and Sentry asset verification passed.
+- All 11 critical/redesign Playwright tests passed on the isolated production release checkout (30.3 seconds).
 - Focused browser checks passed for startup deduplication, terminal report refresh, live motion, visible controls, mobile navigation, focus restoration, public direct routes, and scope choices.
 - Homepage accessibility/overflow checks passed at 390, 768, and 1440px in light and black themes, including reduced motion. A dark-mode FAQ issue was found and corrected by avoiding content-visibility on that small section.
 - Audit UI smoke passed for desktop/mobile, scope and allowance display, filters, drawers, comparisons, JSON export, black theme, evidence arrivals, and completed/warning/failed states. Optional-service 401/503 responses in this fixture are intentional, not production calls.
@@ -64,6 +65,6 @@ Audit interaction recordings are in `motion/`. After screenshots of private scre
 
 ## Release status and limits
 
-Changes are local on `feat/multi-executor-audit-engine`; they are not yet public. No backend source, API contract, migration, plan allowance, audit calculation, or executor was changed. Generated API files produced by the build were restored to avoid unrelated build churn.
+The UI release branch is `release/ui-redesign-20261010`, based directly on `origin/main`. The secondary Cloudflare executor changes are excluded. No backend source, API contract, migration, plan allowance, audit calculation, or executor was changed. Generated API files produced by the build were restored to avoid unrelated build churn.
 
-Remaining release work: commit/review and deploy the UI, then verify public asset delivery and authenticated navigation on the deployed version. Production latency and field Web Vitals have not been measured for this candidate. Screen-reader behavior was checked through semantics and keyboard automation, not a full manual assistive-technology session.
+Production deployment and HTTP verification results are recorded separately in the evidence directory's `production-release.json`, with request measurements in `production-before.json` and `production-after.json`. These local browser samples are not field Web Vitals. Screen-reader behavior was checked through semantics and keyboard automation, not a full manual assistive-technology session. Authenticated management workflows were validated with synthetic data; production mutations are not part of this release check.
