@@ -166,7 +166,7 @@ export async function recordSecondaryProjectAuditOutcome(
     || !env.SUPABASE_SERVICE_ROLE_KEY) {
     throw new ProjectCompletionError('PROJECT_COMPLETION_CONFIGURATION');
   }
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const fetchImpl = options.fetchImpl ?? ((input, init) => globalThis.fetch(input, init));
   const controller = new AbortController();
   const onAbort = () => controller.abort(new ProjectCompletionError('PROJECT_COMPLETION_CANCELLED'));
   options.signal?.addEventListener('abort', onAbort, { once: true });
@@ -185,7 +185,7 @@ export async function recordSecondaryProjectAuditOutcome(
     const url = new URL(`/rest/v1/${table}`, origin);
     url.search = new URLSearchParams(query).toString();
     const operation = fetchImpl(url, {
-      method, redirect: 'error', cache: 'no-store', signal: controller.signal,
+      method, redirect: 'manual', cache: 'no-store', signal: controller.signal,
       headers: {
         apikey: env.SUPABASE_SERVICE_ROLE_KEY!, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
         Accept: 'application/json', 'Content-Type': 'application/json', Prefer: 'return=minimal',

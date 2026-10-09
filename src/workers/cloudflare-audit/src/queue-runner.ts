@@ -37,14 +37,14 @@ function aggregate(run: CrawlRun, groups: CommittedScoreGroup[]): AuditScoreAggr
     groups: groups.map(group => ({ ...group, affectedPages: group.affected_pages })) };
 }
 
-export async function runSecondarySlice(env: SecondaryEnvironment, fetchImpl: typeof fetch = fetch): Promise<SliceOutcome> {
+export async function runSecondarySlice(env: SecondaryEnvironment, fetchImpl: typeof fetch = (input, init) => globalThis.fetch(input, init)): Promise<SliceOutcome> {
   const origin = new URL(env.SUPABASE_URL || 'https://invalid.local');
   if (origin.protocol !== 'https:' || !/^[a-z0-9]+\.supabase\.co$/.test(origin.hostname) || origin.port || !env.SUPABASE_SERVICE_ROLE_KEY) throw fail('SUPABASE_NOT_CONFIGURED');
   const network = createCloudflareFetchBudget(40);
   const db = async <T>(path: string, args?: Record<string, unknown>): Promise<T> => {
     try {
     network.consume();
-    const response = await fetchImpl(new URL(`/rest/v1/${path}`, origin), { method: args ? 'POST' : 'GET', redirect: 'error',
+    const response = await fetchImpl(new URL(`/rest/v1/${path}`, origin), { method: args ? 'POST' : 'GET', redirect: 'manual',
       headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY!, authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, 'content-type': 'application/json' },
       ...(args ? { body: JSON.stringify(args) } : {}), signal: AbortSignal.timeout(8_000) });
     const reader = response.body?.getReader();
@@ -65,13 +65,17 @@ export async function runSecondarySlice(env: SecondaryEnvironment, fetchImpl: ty
     const text = new TextDecoder().decode(body);
     if (!response.ok) {
       const code = /AUDIT_OWNERSHIP_LOST/.test(text) ? 'AUDIT_OWNERSHIP_LOST' : /SECONDARY_EXECUTOR_INCOMPATIBLE/.test(text) ? 'SECONDARY_EXECUTOR_INCOMPATIBLE' : 'DATABASE_REQUEST_FAILED';
-      throw fail(code);
+      let databaseCode: string | undefined;
+      try { const parsed = JSON.parse(text); if (/^[A-Z0-9_]{1,20}$/.test(parsed.code)) databaseCode = parsed.code; } catch { /* Never log response bodies. */ }
+      throw Object.assign(fail(code), { httpStatus: response.status, databaseCode });
     }
     return text ? JSON.parse(text) as T : null as T;
     } catch (error) {
-      const code = (error as { code?: string })?.code;
-      if (['AUDIT_OWNERSHIP_LOST', 'SECONDARY_EXECUTOR_INCOMPATIBLE', 'DATABASE_RESPONSE_TOO_LARGE', 'DATABASE_REQUEST_FAILED', 'SUBREQUEST_BUDGET_EXCEEDED'].includes(code || '')) throw fail(code!);
-      throw fail('DATABASE_REQUEST_FAILED');
+      const details = error as { code?: string; httpStatus?: number; databaseCode?: string; name?: string; message?: string };
+      const code = ['AUDIT_OWNERSHIP_LOST', 'SECONDARY_EXECUTOR_INCOMPATIBLE', 'DATABASE_RESPONSE_TOO_LARGE', 'DATABASE_REQUEST_FAILED', 'SUBREQUEST_BUDGET_EXCEEDED'].includes(details?.code || '') ? details.code! : 'DATABASE_REQUEST_FAILED';
+      const transportCategory = /cache/i.test(details.message || '') ? 'cache' : /abort|timeout/i.test(details.message || '') ? 'timeout' : /not implemented|unsupported/i.test(details.message || '') ? 'unsupported' : /fetch|network|connection/i.test(details.message || '') ? 'network' : 'unknown';
+      throw Object.assign(fail(code), { httpStatus: details.httpStatus, databaseCode: details.databaseCode,
+        transportType: ['TypeError', 'AbortError', 'TimeoutError', 'Error'].includes(details.name || '') ? details.name : 'other', transportCategory });
     }
   };
   const rpc = <T>(name: string, args: Record<string, unknown>) => db<T>(`rpc/${name}`, args);

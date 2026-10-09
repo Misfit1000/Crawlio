@@ -302,7 +302,7 @@ function allowedMime(contentType: string, allowed: string[], missing: boolean) {
  * Injected fetch implementations must retain Fetch's decoded-body semantics.
  */
 export async function cloudflareSafeFetch(
-  value: string, options: CloudflareSafeFetchOptions = {}, fetchImpl: FetchImplementation = fetch,
+  value: string, options: CloudflareSafeFetchOptions = {}, fetchImpl: FetchImplementation = (input, init) => globalThis.fetch(input, init),
 ): Promise<SafePublicResponse> {
   const startedAt = Date.now();
   const requestedUrl = parseTarget(value).toString();

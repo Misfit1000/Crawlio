@@ -59,8 +59,11 @@ export class AuditExecutor extends DurableObject<Env> {
     } catch (error) {
       failures++;
       const code = String((error as { code?: string }).code || 'SECONDARY_SLICE_FAILED').slice(0, 80);
-      console.error(JSON.stringify({ event: 'secondary_slice_failed', code }));
-      await this.ctx.storage.put('status', { lastRunAt: new Date().toISOString(), durationMs: Date.now() - started, lastOutcome: 'error', lastErrorCode: code });
+      const details = error as { httpStatus?: number; databaseCode?: string; transportType?: string; transportCategory?: string };
+      console.error(JSON.stringify({ event: 'secondary_slice_failed', code, httpStatus: details.httpStatus,
+        databaseCode: details.databaseCode, transportType: details.transportType, transportCategory: details.transportCategory }));
+      await this.ctx.storage.put('status', { lastRunAt: new Date().toISOString(), durationMs: Date.now() - started, lastOutcome: 'error', lastErrorCode: code,
+        httpStatus: details.httpStatus, databaseCode: details.databaseCode, transportType: details.transportType, transportCategory: details.transportCategory });
     } finally {
       this.running = false;
       await this.ctx.storage.put('failures', failures);

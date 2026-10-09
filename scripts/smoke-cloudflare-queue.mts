@@ -58,7 +58,7 @@ function fixture(scope: AuditScope = makeAuditScope('security'), pageLimit = 1) 
     if (url.hostname === 'fixtureproject.supabase.co') {
       assert.equal(headers.get('apikey'), serviceKey);
       assert.equal(headers.get('authorization'), `Bearer ${serviceKey}`);
-      assert.equal(init.redirect, 'error');
+      assert.equal(init.redirect, 'manual');
       const name = url.pathname.replace('/rest/v1/', '').replace(/^rpc\//, '');
       const args = init.body ? JSON.parse(String(init.body)) as Row : undefined;
       if (args) rpcs.push({ name, args: structuredClone(args) });
@@ -189,6 +189,14 @@ try {
     const state = fixture(); state.idle = true;
     assert.deepEqual(await runSecondarySlice(env, state.fetchImpl), { worked: false, completed: false, pages: 0 });
     assert.equal(state.requests.length, 1); assertClaimContract(state.rpcs[0]);
+  });
+
+  await test('fixed-host database redirects are rejected without following their location', async () => {
+    const state = fixture();
+    state.hooks.database = () => new Response(null, { status: 307, headers: { location: 'https://untrusted.example/collect' } });
+    assertRedacted(await caught(runSecondarySlice(env, state.fetchImpl)), 'DATABASE_REQUEST_FAILED');
+    assert.equal(state.requests.length, 1);
+    assert.equal(state.requests[0].init.redirect, 'manual');
   });
 
   await test('one-page security audit observes robots, publishes the first score and a scoped final report', async () => {
