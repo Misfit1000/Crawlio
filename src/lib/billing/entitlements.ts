@@ -248,18 +248,55 @@ function rowToProfile(row: any): UserProfileEntitlement {
   };
 }
 
+interface RequestAuthentication {
+  token: string;
+  user: Promise<SupabaseAuthUser | null>;
+  profile?: Promise<UserProfileEntitlement>;
+}
+
+// Keys are request/user objects, never tokens or user IDs shared across requests.
+const requestAuthentication = new WeakMap<object, RequestAuthentication>();
+const authenticatedUserRequests = new WeakMap<SupabaseAuthUser, RequestAuthentication>();
+
 export async function getAuthenticatedUserFromRequest(req: any) {
   const header = String(req.headers?.authorization || req.headers?.Authorization || '');
   const token = header.startsWith('Bearer ') ? header.slice('Bearer '.length).trim() : '';
-  if (!token) return null;
-  const client = getSupabaseAdminClient();
-  if (!client) return null;
-  const { data, error } = await client.auth.getUser(token);
-  if (error || !data.user) return null;
-  return data.user;
+  if (!token) {
+    requestAuthentication.delete(req);
+    return null;
+  }
+  const previous = requestAuthentication.get(req);
+  if (previous?.token === token) return previous.user;
+  const authentication: RequestAuthentication = {
+    token,
+    user: (async () => {
+      const client = getSupabaseAdminClient();
+      if (!client) return null;
+      const { data, error } = await client.auth.getUser(token);
+      if (error || !data.user) return null;
+      const user = { ...data.user };
+      authenticatedUserRequests.set(user, authentication);
+      return user;
+    })(),
+  };
+  requestAuthentication.set(req, authentication);
+  return authentication.user;
 }
 
 export async function ensureUserProfileFromAuthUser(user: SupabaseAuthUser) {
+  const authentication = authenticatedUserRequests.get(user);
+  if (!authentication) return initializeUserProfile(user);
+  if (!authentication.profile) {
+    const pending = initializeUserProfile(user);
+    authentication.profile = pending;
+    void pending.catch(() => {
+      if (authentication.profile === pending) authentication.profile = undefined;
+    });
+  }
+  return authentication.profile;
+}
+
+async function initializeUserProfile(user: SupabaseAuthUser) {
   const client = requireSupabaseAdminClient();
   const email = user.email ?? null;
   const isAdminEmail = isBootstrapAdminEmail(email);

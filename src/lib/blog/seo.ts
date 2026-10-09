@@ -7,10 +7,16 @@ function cleanText(value: string) {
 
 export function truncateAtWord(value: string, maxLength: number) {
   const text = cleanText(value);
-  if (text.length <= maxLength) return text;
-  const sliced = text.slice(0, Math.max(1, maxLength - 1));
+  const maximum = Math.max(0, Math.floor(maxLength));
+  if (text.length <= maximum) return text;
+  if (maximum <= 3) return '.'.repeat(maximum);
+  const sliced = text.slice(0, maximum - 3);
   const boundary = sliced.lastIndexOf(' ');
-  return `${(boundary > maxLength * 0.6 ? sliced.slice(0, boundary) : sliced).trim()}...`;
+  return `${(boundary > maximum * 0.6 ? sliced.slice(0, boundary) : sliced).trim()}...`;
+}
+
+export function blogArticleUrl(origin: string, slug: string) {
+  return `${new URL(origin).origin}/blog/${encodeURIComponent(slug)}`;
 }
 
 export function estimateReadingTime(contentText: string) {

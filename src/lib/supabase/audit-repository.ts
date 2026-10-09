@@ -24,8 +24,24 @@ import {
   SCORING_VERSION,
   deploymentVersionRow,
 } from '../platform/version';
+import { readAuditPresentationSummary } from '../audit/audit-presentation-summary';
+import { readToolEvidence } from '../tools/audit-tools';
+import { auditScopeFingerprint, auditScopesComparable, normalizeAuditScope, type AuditScope } from '../audit/audit-scope';
+import { ApiError } from '../api/errors';
 
 type DbRow = Record<string, any>;
+const AUDIT_HISTORY_SUMMARY_SELECT = [
+  'id', 'processing_version', 'audit_scope', 'scope_fingerprint', 'plan_page_limit', 'presentation_summary', 'user_id', 'project_id',
+  'submitted_input', 'normalized_url', 'final_url', 'hostname', 'mode', 'plan',
+  'requested_mode', 'effective_mode', 'queue_priority', 'processing_tier',
+  'quota_counted', 'worker_runtime', 'estimated_wait_seconds', 'status', 'progress',
+  'current_phase', 'current_url', 'current_check', 'page_limit', 'pages_discovered',
+  'pages_crawled', 'checks_total', 'checks_completed', 'issues_found', 'critical_count',
+  'high_count', 'medium_count', 'low_count', 'created_at', 'updated_at', 'started_at',
+  'completed_at', 'expires_at', 'cancelled_at', 'error', 'used_http_fallback',
+  'warning_count', 'failure_counts', 'archived_at', 'deleted_at', 'recovery_attempts',
+  'last_recovered_at', 'checkpoint_pages_crawled', 'checkpoint_updated_at',
+].join(',');
 export type WorkerHeartbeatStatus = 'starting' | 'idle' | 'running' | 'stopping' | 'stopped' | 'failed';
 
 export interface WorkerHeartbeat {
@@ -35,6 +51,7 @@ export interface WorkerHeartbeat {
   pollIntervalMs: number;
   currentAuditId: string | null;
   version: string;
+  apiSchemaVersion?: number;
   auditEngineVersion?: string;
   scoringVersion?: string;
   checkRegistryVersion?: string;
@@ -164,6 +181,10 @@ export function toAuditDocument(row: DbRow | null | undefined): ResourceAuditDoc
   return {
     id: row.id,
     processingVersion: row.processing_version === 2 ? 2 : 1,
+    scope: normalizeAuditScope(row.audit_scope) || null,
+    scopeFingerprint: row.scope_fingerprint || auditScopeFingerprint(normalizeAuditScope(row.audit_scope)),
+    planPageLimit: row.plan_page_limit ?? row.page_limit,
+    presentationSummary: readAuditPresentationSummary(row.presentation_summary),
     userId: row.user_id ?? null,
     guestKeyHash: row.guest_key_hash ?? null,
     projectId: row.project_id ?? null,
@@ -229,6 +250,7 @@ function auditToRow(audit: ResourceAuditDocument) {
   return {
     id: audit.id,
     ...(audit.processingVersion === 2 ? { processing_version: 2 } : {}),
+    ...(audit.scope ? { audit_scope: audit.scope, plan_page_limit: audit.planPageLimit || audit.pageLimit } : {}),
     user_id: audit.userId,
     guest_key_hash: audit.guestKeyHash,
     project_id: audit.projectId,
@@ -374,6 +396,7 @@ function eventToRow(auditId: string, event: ResourceAuditEvent) {
 
 export function toAuditPage(row: DbRow): ResourceAuditPage {
   return {
+    toolEvidence: readToolEvidence(row.tool_evidence),
     id: row.id,
     url: row.url,
     statusCode: row.status_code ?? 0,
@@ -408,6 +431,7 @@ export function toAuditPage(row: DbRow): ResourceAuditPage {
 
 export function pageToRow(auditId: string, page: ResourceAuditPage) {
   return {
+    ...(page.toolEvidence ? { tool_evidence: readToolEvidence(page.toolEvidence) } : {}),
     id: page.id,
     audit_id: auditId,
     url: page.url,
@@ -442,6 +466,7 @@ export function pageToRow(auditId: string, page: ResourceAuditPage) {
 }
 
 const PREVIEW_METADATA_COLUMNS = new Set([
+  'tool_evidence',
   'canonical_url',
   'site_name',
   'favicon_url',
@@ -562,6 +587,8 @@ async function insertAuditIssues(
 function toAuditReport(row: DbRow | null | undefined): ResourceAuditReport | null {
   if (!row) return null;
   return {
+    scope: normalizeAuditScope(row.scores?.scope) || null,
+    presentationSummary: readAuditPresentationSummary(row.presentation_summary),
     scores: row.scores ?? {},
     summary: typeof row.summary === 'string' ? row.summary : row.summary?.text ?? '',
     topIssues: (row.top_issues ?? []) as ResourceAuditIssue[],
@@ -574,7 +601,8 @@ function toAuditReport(row: DbRow | null | undefined): ResourceAuditReport | nul
 export function reportToRow(auditId: string, report: ResourceAuditReport) {
   return {
     audit_id: auditId,
-    scores: report.scores,
+    ...(report.presentationSummary ? { presentation_summary: report.presentationSummary } : {}),
+    scores: { ...report.scores, ...(report.scope ? { scope: report.scope } : {}) },
     summary: { text: report.summary },
     top_issues: report.topIssues,
     pages: report.pages,
@@ -631,6 +659,7 @@ export const auditRepository = {
       pollIntervalMs: heartbeat.pollIntervalMs,
       currentAuditId: heartbeat.currentAuditId ?? null,
       version: heartbeat.version || 'unknown',
+      apiSchemaVersion: heartbeat.apiSchemaVersion,
       auditEngineVersion: heartbeat.auditEngineVersion,
       scoringVersion: heartbeat.scoringVersion,
       checkRegistryVersion: heartbeat.checkRegistryVersion,
@@ -643,6 +672,7 @@ export const auditRepository = {
       lastCompletedAuditAt: heartbeat.lastCompletedAuditAt,
       lastFatalWorkerError: heartbeat.lastFatalWorkerError,
       maintenanceMode: heartbeat.maintenanceMode,
+      sentryConfigured: heartbeat.sentryConfigured,
     };
 
     const { error } = await client
@@ -711,6 +741,8 @@ export const auditRepository = {
   async createAuditJob(input: {
     id?: string;
     processingVersion?: 1 | 2;
+    scope?: AuditScope;
+    planPageLimit?: number;
     submittedInput: string;
     normalizedUrl: string;
     hostname: string;
@@ -735,6 +767,9 @@ export const auditRepository = {
     const audit: ResourceAuditDocument = {
       id,
       processingVersion: input.processingVersion || 1,
+      scope: input.scope || null,
+      scopeFingerprint: auditScopeFingerprint(input.scope),
+      planPageLimit: input.planPageLimit ?? input.pageLimit ?? config.pageLimit,
       userId: input.userId ?? null,
       guestKeyHash: input.guestKeyHash ?? null,
       projectId: input.projectId ?? null,
@@ -810,6 +845,8 @@ export const auditRepository = {
     guestKeyHash?: string | null;
     normalizedUrl: string;
     createdAfterIso: string;
+    mode?: AuditMode;
+    scopeFingerprint?: string;
   }): Promise<ResourceAuditDocument | null> {
     const client = getSupabaseAdminClient();
     if (client) {
@@ -819,6 +856,8 @@ export const auditRepository = {
         .eq('normalized_url', input.normalizedUrl)
         .in('status', ['queued', 'running'])
         .gte('created_at', input.createdAfterIso);
+      if (input.mode) query = query.eq('effective_mode', input.mode);
+      if (input.scopeFingerprint) query = query.eq('scope_fingerprint', input.scopeFingerprint);
 
       if (input.userId) {
         query = query.eq('user_id', input.userId);
@@ -835,6 +874,8 @@ export const auditRepository = {
 
     return Array.from(memory.audits.values())
       .filter((audit) => audit.normalizedUrl === input.normalizedUrl)
+      .filter((audit) => !input.mode || audit.effectiveMode === input.mode)
+      .filter((audit) => !input.scopeFingerprint || auditScopeFingerprint(audit.scope) === input.scopeFingerprint)
       .filter((audit) => audit.status === 'queued' || audit.status === 'running')
       .filter((audit) => audit.createdAt >= input.createdAfterIso)
       .filter((audit) => {
@@ -889,6 +930,16 @@ export const auditRepository = {
 
   async getAudit(id: string) {
     return this.getAuditJob(id);
+  },
+
+  async getAuditStatusDocument(id: string): Promise<ResourceAuditDocument | null> {
+    const client = getSupabaseAdminClient();
+    if (!client) return this.getAuditJob(id);
+    // The guest identity is read for authorization only; the route withholds it.
+    const { data, error } = await client.from('audits').select(`${AUDIT_HISTORY_SUMMARY_SELECT},guest_key_hash`)
+      .eq('id', id).maybeSingle();
+    assertNoError(error, 'Get audit status summary');
+    return toAuditDocument(data);
   },
 
   async updateAuditJob(id: string, patch: Partial<ResourceAuditDocument>) {
@@ -1384,7 +1435,7 @@ export const auditRepository = {
     if (client) {
       let query = client
         .from('audits')
-        .select('*', { count: 'exact' })
+        .select(input.summaryOnly ? AUDIT_HISTORY_SUMMARY_SELECT : '*', { count: 'exact' })
         .eq('user_id', input.userId)
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);
@@ -1398,12 +1449,12 @@ export const auditRepository = {
       if (audits.length) {
         const auditIds = audits.map((audit) => audit.id);
         const reports = input.summaryOnly
-          ? await client.from('audit_reports').select('audit_id,scores,summary,generated_at').in('audit_id', auditIds)
+          ? await client.from('audit_reports').select('audit_id,scores,summary,generated_at,presentation_summary').in('audit_id', auditIds)
           : await client.from('audit_reports').select('*').in('audit_id', auditIds);
         assertNoError(reports.error, 'Load audit history reports');
         for (const row of reports.data ?? []) {
           const report = toAuditReport(row);
-          if (report) reportByAudit.set(String(row.audit_id), input.summaryOnly ? { scores: report.scores, summary: report.summary, generatedAt: report.generatedAt } : report);
+          if (report) reportByAudit.set(String(row.audit_id), input.summaryOnly ? { scores: report.scores, summary: report.summary, generatedAt: report.generatedAt, presentationSummary: report.presentationSummary } : report);
         }
       }
       return {
@@ -1423,7 +1474,7 @@ export const auditRepository = {
     return {
       items: all.slice(offset, offset + limit).map((audit) => {
         const report = memory.reports.get(audit.id) ?? null;
-        return { audit, finalReport: report && input.summaryOnly ? { scores: report.scores, summary: report.summary, generatedAt: report.generatedAt } : report };
+        return { audit, finalReport: report && input.summaryOnly ? { scores: report.scores, summary: report.summary, generatedAt: report.generatedAt, presentationSummary: report.presentationSummary } : report };
       }),
       total: all.length,
       limit,
@@ -1449,6 +1500,7 @@ export const auditRepository = {
       this.getAuditJob(baselineAuditId),
     ]);
     if (!currentAudit || !baselineAudit) return null;
+    if (!auditScopesComparable(currentAudit, baselineAudit)) throw new ApiError('AUDIT_COMPARISON_SCOPE_MISMATCH', 'Compare audits with the same checks, coverage and depth. These scores are not directly comparable.', 409);
     if (currentAudit.processingVersion === 2 || baselineAudit.processingVersion === 2) {
       const client = getSupabaseAdminClient();
       if (!client) return null;

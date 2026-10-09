@@ -1,0 +1,7 @@
+.blog-article-card { transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease; }
+.blog-article-card:hover { border-color: color-mix(in srgb, var(--accent) 28%, var(--border)); box-shadow: 0 14px 32px -24px rgb(var(--shadow-color) / 0.42); transform: translateY(-2px); }
+@media (min-width: 1024px) {
+  .blog-featured { grid-column: span 2; display: grid; grid-template-columns: minmax(0, 46%) minmax(0, 1fr); }
+  .blog-featured img { width: 100%; height: 100%; aspect-ratio: auto; border-bottom: 0; border-right: 1px solid var(--border); }
+  .blog-featured h3 { font-size: 1.65rem; line-height: 1.25; }
+}

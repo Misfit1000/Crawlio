@@ -79,10 +79,11 @@ export async function admitAuditSubmission(input: {
   activeLimit: number;
   globalActiveLimit: number;
   botVerified?: boolean;
+  scopeFingerprint?: string;
 }) {
   const client = requireSupabaseAdminClient('Audit admission is temporarily unavailable.');
   const auditId = input.auditId || randomUUID();
-  const { data, error } = await client.rpc('admit_audit_submission', {
+  const parameters = {
     p_audit_id: auditId,
     p_user_id: input.userId,
     p_guest_key_hash: input.guestKeyHash,
@@ -96,7 +97,9 @@ export async function admitAuditSubmission(input: {
     p_active_limit: input.activeLimit,
     p_global_active_limit: input.globalActiveLimit,
     p_bot_verified: Boolean(input.botVerified),
-  });
+    ...(input.scopeFingerprint ? { p_scope_fingerprint: input.scopeFingerprint } : {}),
+  };
+  const { data, error } = await client.rpc(input.scopeFingerprint ? 'admit_scoped_audit_submission' : 'admit_audit_submission', parameters);
   if (error) throw new ApiError('AUDIT_ADMISSION_UNAVAILABLE', 'The audit service is being updated. Please try again shortly.', 503);
   return data as AuditAdmissionDecision;
 }

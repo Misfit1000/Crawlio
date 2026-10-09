@@ -15,8 +15,9 @@ Configure GitHub production environment variables:
 - `PRODUCTION_APP_URL`
 - `PRODUCTION_WORKER_HEALTH_URL`
 - optional `PRODUCTION_SMOKE_TARGET_URL`
+- optional `EXPECTED_BLOG_AUTOMATION_ENABLED` and `EXPECTED_BLOG_PROVIDER_ENABLED` (`true` or `false`) to assert the intended rollout state.
 
-Run the **Production release smoke** workflow manually. The default run does not create an audit. It verifies homepage, blog, sitemap, robots, version fields, disabled blog provider, engine/database health, release compatibility, anonymous admin rejection, protected report/export JSON errors, and absence of platform error pages.
+Run the **Production release smoke** workflow manually. The default run does not create an audit. It verifies homepage, blog, sitemap, robots, version fields, declared blog capability flags, engine/database health, release compatibility, anonymous admin rejection, protected report/export JSON errors, and absence of platform error pages. Set both expected blog flags to `false` for an initial disabled-provider rollout or to the intended configured values for subsequent releases; enabled generation does not bypass publication gates.
 
 Enable the Quick Audit input only when the smoke target is controlled and stable. The runner enforces a five-page limit, bounded polling, terminal state, worker-claim evidence, final score/unavailable state, inactive terminal language, and best-effort cleanup. Never schedule this audit-producing mode as uptime monitoring.
 

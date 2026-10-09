@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import './blog-content.css';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Bold, Braces, Heading2, Heading3, Italic, Link as LinkIcon, List, ListOrdered, Quote, Redo2, Strikethrough, Underline, Undo2, Unlink } from 'lucide-react';

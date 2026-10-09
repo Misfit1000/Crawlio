@@ -33,9 +33,19 @@ function check(id: string, label: string, passed: boolean, detail: string, criti
 
 export function inspectBlogLinks(contentHtml: string) {
   return [...contentHtml.matchAll(/<a\b[^>]*\bhref=(?:"([^"]*)"|'([^']*)')[^>]*>([\s\S]*?)<\/a>/gi)].map((match) => ({
-    href: String(match[1] || match[2] || ''),
+    // Serialized HTML escapes query separators; compare the URL readers actually follow.
+    href: blogTextFromHtml(match[1] || match[2] || ''),
     anchor: blogTextFromHtml(match[3] || '').replace(/\s+/g, ' ').trim(),
   }));
+}
+
+function normalizedHttpHref(value: string) {
+  try {
+    const url = new URL(value);
+    return ['http:', 'https:'].includes(url.protocol) ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function evaluateBlogOriginality(contentHtml: string, sourceTexts: string[]) {
@@ -94,7 +104,10 @@ export function evaluateBlogQuality(input: BlogPostInput, options: {
   const externalLinks = links.filter((link) => /^https?:\/\//i.test(link.href));
   const internalLinks = links.filter((link) => /^\/(?!\/)/.test(link.href));
   const sourceUrls = new Set((input.sources || []).map((source) => source.url));
-  const sourceLinksPresent = [...sourceUrls].every((url) => externalLinks.some((link) => link.href === url));
+  const sourceLinksPresent = [...sourceUrls].every((url) => {
+    const normalized = normalizedHttpHref(url);
+    return Boolean(normalized && externalLinks.some((link) => normalizedHttpHref(link.href) === normalized));
+  });
   const sentenceList = sentences(text);
   const longSentences = sentenceList.filter((sentence) => words(sentence).length > 35);
   const paragraphTexts = [...contentHtml.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)].map((match) => blogTextFromHtml(match[1] || ''));

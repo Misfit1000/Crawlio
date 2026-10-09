@@ -1,5 +1,7 @@
 import type { ResourceAuditLiveData } from '../audit/resource-types';
 import { BRAND } from '../brand';
+import { auditFocusLabel, auditScopeScoreLabel } from '../audit/audit-scope';
+import { scopeEvents, scopeFindings, scopePageEvidence, scopePresentationSummary, scopeScoreMetadata } from './scope-presentation';
 
 const FORMULA_PREFIX = /^[\t\r ]*[=+\-@]/;
 
@@ -16,6 +18,16 @@ export function csvRow(values: unknown[]) {
 export function buildPublicAuditExport(data: ResourceAuditLiveData) {
   const audit = data.audit;
   if (!audit) return null;
+  const scope = audit.scope;
+  const report = data.finalReport;
+  const publicReport = report && scope ? {
+    ...report,
+    scope,
+    scores: scopeScoreMetadata(scope, report.scores),
+    topIssues: scopeFindings(scope, report.topIssues),
+    pages: report.pages.map(page => scopePageEvidence(scope, { ...page })),
+    presentationSummary: scopePresentationSummary(scope, report.presentationSummary || null) || undefined,
+  } : report;
   return {
     generator: {
       name: BRAND.name,
@@ -34,6 +46,7 @@ export function buildPublicAuditExport(data: ResourceAuditLiveData) {
       status: audit.status,
       progress: audit.progress,
       pageLimit: audit.pageLimit,
+      ...(scope ? { scope, focusLabel: auditFocusLabel(scope), scoreLabel: auditScopeScoreLabel(scope), planPageLimit: audit.planPageLimit } : {}),
       pagesDiscovered: audit.pagesDiscovered,
       pagesCrawled: audit.pagesCrawled,
       checksTotal: audit.checksTotal,
@@ -52,9 +65,9 @@ export function buildPublicAuditExport(data: ResourceAuditLiveData) {
       cancelledAt: audit.cancelledAt,
       updatedAt: audit.updatedAt,
     },
-    report: data.finalReport ?? null,
-    pages: data.latestPages,
-    issues: data.latestIssues,
-    events: data.latestEvents,
+    report: publicReport ?? null,
+    pages: scope ? data.latestPages.map(page => scopePageEvidence(scope, { ...page })) : data.latestPages,
+    issues: scopeFindings(scope, data.latestIssues),
+    events: scopeEvents(scope, data.latestEvents),
   };
 }

@@ -6,15 +6,16 @@ export function DetailDrawer({ title, children, onClose }: { title: string; chil
   const titleId = useId();
   useEffect(() => {
     const element = dialog.current;
+    const trigger = document.activeElement as HTMLElement | null;
     element?.showModal();
-    return () => element?.close();
+    return () => { element?.close(); if (trigger?.isConnected) trigger.focus(); };
   }, []);
   return (
-    <dialog ref={dialog} aria-labelledby={titleId} onCancel={onClose} onClose={onClose}
-      className="fixed inset-y-0 left-auto right-0 m-0 h-dvh max-h-dvh w-full max-w-lg border-l border-border bg-card p-0 text-foreground shadow-xl backdrop:bg-black/40">
-      <header className="flex items-center justify-between gap-4 border-b border-border p-5">
+    <dialog ref={dialog} aria-labelledby={titleId} onCancel={event => { event.preventDefault(); onClose(); }}
+      className="fixed inset-y-0 left-auto right-0 m-0 h-dvh max-h-dvh w-full max-w-lg overflow-y-auto border-l border-border bg-card p-0 text-foreground shadow-xl backdrop:bg-black/40">
+      <header className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-border bg-card p-5">
         <h2 id={titleId} className="text-lg">{title}</h2>
-        <button type="button" autoFocus onClick={onClose} className="quiet-button p-2" aria-label="Close details"><X className="h-5 w-5" /></button>
+        <button type="button" autoFocus onClick={onClose} className="quiet-button min-h-11 min-w-11 p-2" aria-label="Close details" title="Close details"><X className="h-5 w-5" /></button>
       </header>
       <div className="space-y-5 break-words p-5">{children}</div>
     </dialog>

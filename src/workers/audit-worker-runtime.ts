@@ -1,7 +1,7 @@
 import { AUDIT_LIMITS } from '../lib/audit/audit-config';
 import { normalizeSupabaseProjectUrl } from '../lib/supabase/url';
 import type { WorkerHeartbeat, WorkerHeartbeatStatus } from '../lib/supabase/audit-repository';
-import { AUDIT_ENGINE_VERSION, CHECK_REGISTRY_VERSION, SCORING_VERSION } from '../lib/platform/version';
+import { API_SCHEMA_VERSION, AUDIT_ENGINE_VERSION, CHECK_REGISTRY_VERSION, SCORING_VERSION } from '../lib/platform/version';
 import { isNodeMonitoringConfigured } from '../lib/monitoring/sentry-node';
 
 export { type WorkerHeartbeatStatus };
@@ -137,6 +137,7 @@ export function buildWorkerHeartbeat(state: AuditWorkerRuntimeState): WorkerHear
     pollIntervalMs: state.pollIntervalMs,
     currentAuditId: state.currentAuditId,
     version: state.version,
+    apiSchemaVersion: API_SCHEMA_VERSION,
     auditEngineVersion: state.auditEngineVersion,
     scoringVersion: state.scoringVersion,
     checkRegistryVersion: state.checkRegistryVersion,

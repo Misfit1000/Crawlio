@@ -37,7 +37,19 @@ async function fetchReference(url: string) {
 }
 
 export async function researchSourceUrls(urls: string[]): Promise<BlogSource[]> {
+  return (await researchSourceEvidence(urls)).sources;
+}
+
+export interface BlogSourceEvidence {
+  url: string;
+  text: string;
+  headings: string[];
+}
+
+export async function researchSourceEvidence(urls: string[]): Promise<{ sources: BlogSource[]; evidence: BlogSourceEvidence[] }> {
   const sources: BlogSource[] = [];
+  const evidence: BlogSourceEvidence[] = [];
+  let remainingCharacters = 24_000;
   for (const url of unique(urls, 12)) {
     const reference = await fetchReference(url);
     const hostname = new URL(reference.response.finalUrl).hostname.replace(/^www\./, '');
@@ -47,8 +59,16 @@ export async function researchSourceUrls(urls: string[]): Promise<BlogSource[]> 
       accessedAt: new Date().toISOString(), sourceType: 'editorial reference', supportedClaims: [], primary: false,
       reliability: 'unverified', citationStatus: 'verified',
     });
+    const $ = reference.$;
+    $('script,style,noscript,nav,header,footer,aside,form,button,iframe').remove();
+    const root = $('main article,article,main,[role="main"]').first();
+    const paragraphs = (root.length ? root : $('body')).find('h1,h2,h3,p,li').toArray()
+      .map((node) => $(node).text().replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const text = unique(paragraphs, 160).join('\n').slice(0, Math.min(8_000, remainingCharacters));
+    remainingCharacters -= text.length;
+    evidence.push({ url: reference.response.finalUrl, text, headings: unique((root.length ? root : $('body')).find('h2,h3').toArray().map((node) => $(node).text()), 20) });
   }
-  return sources;
+  return { sources, evidence };
 }
 
 export async function researchCompetitorReferences(urls: string[]): Promise<CompetitorReferenceSnapshot[]> {

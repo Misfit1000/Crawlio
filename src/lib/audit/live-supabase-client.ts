@@ -3,8 +3,11 @@ import { getAuditAccessHeaders } from '../api/auth-headers';
 import { getSupabaseBrowserClient } from '../supabase/client';
 import { safeJsonFetch } from '../http/safe-json';
 import { AUDIT_LIMITS } from './audit-config';
-import { mergeAuditLiveData } from './audit-lifecycle';
+import { FINAL_REPORT_RETRY_DELAYS_MS, mergeAuditLiveData } from './audit-lifecycle';
+import { readAuditPresentationSummary } from './audit-presentation-summary';
+import { readToolEvidence } from '../tools/audit-tools';
 import { hasUsableAuditReport, isTerminalAuditStatus } from './audit-time';
+import { createLiveEmissionScheduler } from './live-emission';
 import type {
   ResourceAuditDocument,
   ResourceAuditEvent,
@@ -29,6 +32,8 @@ function toAuditDocument(row: DbRow | null | undefined): ResourceAuditDocument |
   if (!row) return null;
   return {
     id: row.id,
+    processingVersion: row.processing_version === 2 ? 2 : 1,
+    presentationSummary: readAuditPresentationSummary(row.presentation_summary),
     userId: row.user_id ?? null,
     guestKeyHash: row.guest_key_hash ?? null,
     projectId: row.project_id ?? null,
@@ -105,6 +110,7 @@ function toAuditPage(row: DbRow): ResourceAuditPage {
     metaDescription: row.meta_description ?? '',
     h1: row.h1 ?? '',
     canonicalUrl: row.canonical_url ?? '',
+    toolEvidence: readToolEvidence(row.tool_evidence),
     siteName: row.site_name ?? '',
     faviconUrl: row.favicon_url ?? '',
     openGraphImage: row.open_graph_image ?? '',
@@ -311,6 +317,9 @@ export function subscribeToAuditLiveData(
   let closed = false;
   let fallbackUnsubscribe: (() => void) | null = null;
   let websocketConnected = false;
+  let reconciliation: AbortController | null = null;
+  let finalHintTimer: number | undefined;
+  let finalHintAttempts = 0;
 
   onConnectionChange?.({
     transport: 'websocket',
@@ -318,9 +327,13 @@ export function subscribeToAuditLiveData(
     message: 'Opening live updates for this audit.',
   });
 
-  const emitLiveData = () => {
-    emit();
+  const emission = createLiveEmissionScheduler({
+    hidden: () => document.hidden,
+    requestFrame: callback => window.requestAnimationFrame(callback),
+    cancelFrame: id => window.cancelAnimationFrame(id),
+    emit: () => {
     if (closed) return;
+    emit();
     const usingFallback = Boolean(fallbackUnsubscribe);
     onConnectionChange?.({
       transport: usingFallback ? 'polling' : 'websocket',
@@ -332,10 +345,33 @@ export function subscribeToAuditLiveData(
           : 'Loaded the audit snapshot. Waiting for the WebSocket subscription.',
       lastUpdateAt: Date.now(),
     });
+    },
+  });
+  const emitLiveData = () => {
+    emission.request(isTerminalAuditStatus(liveData.audit?.status) || Boolean(liveData.finalReport));
+    queueFinalReconciliation();
   };
+
+  function queueFinalReconciliation() {
+    if (closed || fallbackUnsubscribe || document.hidden || finalHintTimer != null ||
+      isTerminalAuditStatus(liveData.audit?.status) || finalHintAttempts >= FINAL_REPORT_RETRY_DELAYS_MS.length) return;
+    const hasFinalHint = Boolean(liveData.finalReport) || liveData.latestEvents.some(event =>
+      event.type === 'score_updated' && event.data !== null && typeof event.data === 'object' &&
+      'scoreState' in event.data && event.data.scoreState === 'final');
+    if (!hasFinalHint) return;
+    // Report evidence can arrive before the terminal row; reconcile only this bounded gap.
+    finalHintTimer = window.setTimeout(() => {
+      finalHintTimer = undefined;
+      void reconcile();
+    }, FINAL_REPORT_RETRY_DELAYS_MS[finalHintAttempts++]);
+  }
 
   const startPollingFallback = (message: string) => {
     if (closed || fallbackUnsubscribe) return;
+    reconciliation?.abort();
+    reconciliation = null;
+    window.clearTimeout(finalHintTimer);
+    finalHintTimer = undefined;
     fallbackUnsubscribe = pollAuditLiveData(auditId, (snapshot) => {
       if (closed) return;
       liveData = snapshot;
@@ -343,28 +379,56 @@ export function subscribeToAuditLiveData(
     }, onError, onConnectionChange, message, false, liveData);
   };
 
-  if (!initialSnapshot) getAuditAccessHeaders()
-    .then((headers) => safeJsonFetch<any>(API_ROUTES.auditStatus(auditId), { headers }))
-    .then((response) => {
-      if (!closed && response.success) {
-        liveData = response.data.data || response.data;
-        emitLiveData();
-        if (!liveData.audit?.userId) {
-          startPollingFallback('Guest audit updates use secure HTTP polling. Sign in to use owner-scoped Realtime updates.');
-        }
-      } else if (!closed && !response.success) {
-        onError?.(new Error((response as any).error || 'Failed to load audit status snapshot.'));
+  const reconcile = async () => {
+    if (closed || reconciliation || document.hidden || fallbackUnsubscribe) return;
+    const controller = new AbortController();
+    reconciliation = controller;
+    const audit = liveData.audit;
+    const url = audit ? API_ROUTES.auditStatusDelta(auditId, {
+      updatedAt: audit.updatedAt, status: audit.status, pagesCrawled: audit.pagesCrawled,
+      issuesFound: audit.issuesFound, hasReport: Boolean(liveData.finalReport),
+    }) : API_ROUTES.auditStatus(auditId);
+    try {
+      const response = await safeJsonFetch<any>(url, { headers: await getAuditAccessHeaders(), signal: controller.signal });
+      if (closed || controller.signal.aborted) return;
+      if (response.success === false) {
+        onError?.(new Error(response.error));
+        if ([401, 403, 404, 410].includes(response.status || 0)) {
+          closed = true;
+          emission.dispose();
+          client.removeChannel(channel);
+          onConnectionChange?.({ transport: 'websocket', status: 'closed', message: response.error });
+        } else startPollingFallback('Updates are reconnecting with automatic refresh.');
+        return;
       }
-    })
-    .catch((error: any) => onError?.(error instanceof Error ? error : new Error(String(error))));
+      const payload = response.data.data || response.data;
+      liveData = mergeAuditLiveData(liveData, payload.partial ? {
+        audit: payload.audit, latestEvents: payload.latestEvents || [], latestPages: payload.latestPages || [],
+        latestIssues: payload.latestIssues || [], finalReport: payload.finalReport,
+      } : payload);
+      emitLiveData();
+      if (!liveData.audit?.userId) startPollingFallback('Guest audits use secure automatic refresh.');
+    } catch (error) {
+      if (!closed && !controller.signal.aborted) {
+        onError?.(error instanceof Error ? error : new Error('Live updates could not be refreshed.'));
+        startPollingFallback('Updates are reconnecting with automatic refresh.');
+      }
+    } finally {
+      if (reconciliation === controller) reconciliation = null;
+    }
+  };
+  const visible = () => { if (!document.hidden && websocketConnected) { emitLiveData(); void reconcile(); } };
+  document.addEventListener('visibilitychange', visible);
 
   const channel = client
     .channel(`audit-live:${auditId}`)
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'audits', filter: `id=eq.${auditId}` }, (payload) => {
-      liveData = { ...liveData, audit: toAuditDocument(payload.new as DbRow) };
+      if (closed || fallbackUnsubscribe) return;
+      liveData = mergeAuditLiveData(liveData, { ...liveData, audit: toAuditDocument(payload.new as DbRow) });
       emitLiveData();
     })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audit_events', filter: `audit_id=eq.${auditId}` }, (payload) => {
+      if (closed || fallbackUnsubscribe) return;
       liveData = {
         ...liveData,
         latestEvents: upsertById(liveData.latestEvents, toAuditEvent(payload.new as DbRow), 50),
@@ -372,6 +436,7 @@ export function subscribeToAuditLiveData(
       emitLiveData();
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'audit_pages', filter: `audit_id=eq.${auditId}` }, (payload) => {
+      if (closed || fallbackUnsubscribe) return;
       if (payload.eventType === 'DELETE') return;
       liveData = {
         ...liveData,
@@ -380,6 +445,7 @@ export function subscribeToAuditLiveData(
       emitLiveData();
     })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audit_issues', filter: `audit_id=eq.${auditId}` }, (payload) => {
+      if (closed || fallbackUnsubscribe) return;
       liveData = {
         ...liveData,
         latestIssues: upsertById(liveData.latestIssues, toAuditIssue(payload.new as DbRow), 100),
@@ -387,11 +453,23 @@ export function subscribeToAuditLiveData(
       emitLiveData();
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'audit_reports', filter: `audit_id=eq.${auditId}` }, (payload) => {
+      if (closed || fallbackUnsubscribe) return;
       if (payload.eventType === 'DELETE') return;
       liveData = { ...liveData, finalReport: toAuditReport(payload.new as DbRow) };
       emitLiveData();
-    })
-    .subscribe((status, error) => {
+    });
+
+  void (async () => {
+    const { data, error } = await client.auth.getSession();
+    if (closed) return;
+    if (error || !data.session) {
+      startPollingFallback('Live updates are using secure automatic refresh.');
+      return;
+    }
+    await client.realtime.setAuth(data.session.access_token);
+    if (closed) return;
+    channel.subscribe((status, error) => {
+      if (closed) return;
       if (error) {
         onError?.(error);
       }
@@ -401,6 +479,8 @@ export function subscribeToAuditLiveData(
           fallbackUnsubscribe();
           fallbackUnsubscribe = null;
         }
+        // Reconcile after the subscription is live so changes in the setup gap are not lost.
+        void reconcile();
         onConnectionChange?.({
           transport: 'websocket',
           status: 'connected',
@@ -440,9 +520,18 @@ export function subscribeToAuditLiveData(
         startPollingFallback('Live updates are using automatic refresh while the connection recovers.');
       }
     });
+  })().catch(error => {
+    if (closed) return;
+    onError?.(error instanceof Error ? error : new Error('Live updates could not connect.'));
+    startPollingFallback('Live updates are reconnecting with automatic refresh.');
+  });
 
   return () => {
     closed = true;
+    emission.dispose();
+    reconciliation?.abort();
+    window.clearTimeout(finalHintTimer);
+    document.removeEventListener('visibilitychange', visible);
     fallbackUnsubscribe?.();
     client.removeChannel(channel);
   };

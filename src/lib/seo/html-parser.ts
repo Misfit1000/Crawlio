@@ -10,10 +10,10 @@ export interface ParsedPageData {
   h2: string[];
   h3: string[];
   wordCount: number;
-  internalLinks: { href: string; text: string; rawHref?: string }[];
-  externalLinks: { href: string; text: string; rel: string; rawHref?: string }[];
-  imageCount: number;
-  imagesWithoutAlt: number;
+  internalLinks?: { href: string; text: string; rawHref?: string }[];
+  externalLinks?: { href: string; text: string; rel: string; rawHref?: string }[];
+  imageCount?: number;
+  imagesWithoutAlt?: number;
   imagesWithEmptyAlt?: number;
   canonical: string;
   canonicalRaw?: string;
@@ -27,12 +27,12 @@ export interface ParsedPageData {
   faviconUrl: string;
   themeColor: string;
   twitterCard: string;
-  jsonLd: string[];
+  jsonLd?: string[];
   viewport: string;
   lang: string;
-  topKeywords: string[];
-  topPhrases: string[];
-  accessibility: {
+  topKeywords?: string[];
+  topPhrases?: string[];
+  accessibility?: {
     unnamedLinks: number;
     unnamedButtons: number;
     unlabeledFields: number;
@@ -82,7 +82,20 @@ function getTopPhrases(text: string): { topKeywords: string[], topPhrases: strin
   return { topKeywords, topPhrases };
 }
 
-export function parseHtml(html: string, baseUrl: string): ParsedPageData {
+export interface HtmlExtractionOptions {
+  links?: boolean;
+  images?: boolean;
+  structuredData?: boolean;
+  accessibility?: boolean;
+  security?: boolean;
+  keywords?: boolean;
+}
+
+type CompleteParsedPageData = ParsedPageData & Required<Pick<ParsedPageData,
+  'internalLinks' | 'externalLinks' | 'imageCount' | 'imagesWithoutAlt' | 'jsonLd' | 'topKeywords' | 'topPhrases' | 'accessibility'>>;
+export function parseHtml(html: string, baseUrl: string): CompleteParsedPageData;
+export function parseHtml(html: string, baseUrl: string, options: HtmlExtractionOptions): ParsedPageData;
+export function parseHtml(html: string, baseUrl: string, options: HtmlExtractionOptions = {}): ParsedPageData {
   const $ = cheerio.load(html);
   let documentBaseUrl = baseUrl;
   const baseHref = $('base[href]').first().attr('href');
@@ -120,10 +133,8 @@ export function parseHtml(html: string, baseUrl: string): ParsedPageData {
   const themeColor = $('meta[name="theme-color"]').attr('content')?.trim() || '';
   const twitterCard = $('meta[name="twitter:card"]').attr('content') || '';
 
-  const jsonLd: string[] = [];
-  $('script[type="application/ld+json"]').each((_, el) => {
-    jsonLd.push($(el).html() || '');
-  });
+  const jsonLd = options.structuredData === false ? undefined
+    : $('script[type="application/ld+json"]').map((_, el) => $(el).html() || '').get();
 
   const h1 = $('h1').map((_, el) => $(el).text().trim()).get();
   const h2 = $('h2').map((_, el) => $(el).text().trim()).get();
@@ -134,10 +145,10 @@ export function parseHtml(html: string, baseUrl: string): ParsedPageData {
   const bodyText = textBody.text();
   const wordCount = bodyText.split(/\s+/).filter(w => w.length > 0).length;
   
-  const internalLinks: ParsedPageData['internalLinks'] = [];
-  const externalLinks: ParsedPageData['externalLinks'] = [];
+  const internalLinks: NonNullable<ParsedPageData['internalLinks']> = [];
+  const externalLinks: NonNullable<ParsedPageData['externalLinks']> = [];
   
-  $('a').each((_, el) => {
+  if (options.links !== false) $('a').each((_, el) => {
     const rawHref = $(el).attr('href') || '';
     const href = resolvePublicAssetUrl(rawHref);
     const text = $(el).text().trim();
@@ -151,10 +162,10 @@ export function parseHtml(html: string, baseUrl: string): ParsedPageData {
     }
   });
 
-  const imageCount = $('img').length;
+  const imageCount = options.images === false ? undefined : $('img').length;
   let imagesWithoutAlt = 0;
   let imagesWithEmptyAlt = 0;
-  $('img').each((_, el) => {
+  if (options.images !== false) $('img').each((_, el) => {
     const alt = $(el).attr('alt');
     if (alt === undefined) {
       imagesWithoutAlt++;
@@ -165,9 +176,10 @@ export function parseHtml(html: string, baseUrl: string): ParsedPageData {
 
   const canonicalRaw = $('link[rel~="canonical"]').first().attr('href') || '';
   const canonical = resolvePublicAssetUrl(canonicalRaw);
-  const insecureResourceUrls = collectInsecureResourceUrls($, baseUrl, documentBaseUrl);
-  const insecureFormActionUrls = collectInsecureFormActionUrls($, baseUrl, documentBaseUrl);
+  const insecureResourceUrls = options.security === false ? undefined : collectInsecureResourceUrls($, baseUrl, documentBaseUrl);
+  const insecureFormActionUrls = options.security === false ? undefined : collectInsecureFormActionUrls($, baseUrl, documentBaseUrl);
 
+  const accessibility = options.accessibility === false ? undefined : (() => {
   const ids = new Map<string, number>();
   const idText = new Map<string, string>();
   $('[id]').each((_, element) => {
@@ -215,7 +227,7 @@ export function parseHtml(html: string, baseUrl: string): ParsedPageData {
   const viewportLower = viewport.toLowerCase();
   const maximumScale = Number(viewportLower.match(/maximum-scale\s*=\s*([0-9.]+)/)?.[1]);
   const zoomRestricted = /user-scalable\s*=\s*(?:no|0)/.test(viewportLower) || (Number.isFinite(maximumScale) && maximumScale < 2);
-  const accessibility = {
+  return {
     unnamedLinks: $('a[href]').filter((_, element) => !elementName(element)).length,
     unnamedButtons: $('button,[role="button"]').filter((_, element) => !elementName(element)).length,
     unlabeledFields,
@@ -226,12 +238,13 @@ export function parseHtml(html: string, baseUrl: string): ParsedPageData {
     hiddenFocusableElements,
     zoomRestricted,
   };
+  })();
   const likelyJavascriptShell = wordCount < 40
     && $('script[src],script[type="module"]').length >= 2
     && $('#root,#app,#__next,[data-reactroot],[ng-version]').length > 0;
   
-  const allText = `${title} ${metaDescription} ${h1.join(' ')} ${h2.join(' ')} ${textBody.find('p').text()}`;
-  const { topKeywords, topPhrases } = getTopPhrases(allText);
+  const { topKeywords, topPhrases } = options.keywords === false ? {}
+    : getTopPhrases(`${title} ${metaDescription} ${h1.join(' ')} ${h2.join(' ')} ${textBody.find('p').text()}`);
 
   return {
     title,
@@ -240,11 +253,11 @@ export function parseHtml(html: string, baseUrl: string): ParsedPageData {
     h2,
     h3,
     wordCount,
-    internalLinks,
-    externalLinks,
+    internalLinks: options.links === false ? undefined : internalLinks,
+    externalLinks: options.links === false ? undefined : externalLinks,
     imageCount,
-    imagesWithoutAlt,
-    imagesWithEmptyAlt,
+    imagesWithoutAlt: options.images === false ? undefined : imagesWithoutAlt,
+    imagesWithEmptyAlt: options.images === false ? undefined : imagesWithEmptyAlt,
     canonical,
     canonicalRaw,
     insecureResourceUrls,

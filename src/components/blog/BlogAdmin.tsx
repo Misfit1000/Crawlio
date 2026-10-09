@@ -8,6 +8,7 @@ import BlogAutomationPanel from './BlogAutomationPanel';
 import BlogManualEditor from './BlogManualEditor';
 import BlogProviderFreeWorkspace from './BlogProviderFreeWorkspace';
 import BlogStudioStart from './BlogStudioStart';
+import { useLocation, useNavigate } from '../../app/router';
 
 type WorkspaceTab = 'start' | 'articles' | 'automation' | 'operations';
 
@@ -30,6 +31,8 @@ function statusTone(status: BlogPostStatus): 'success' | 'warning' | 'danger' | 
 }
 
 export default function BlogAdmin() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [posts, setPosts] = useState<BlogPost[]>([]);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('start');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -57,8 +60,7 @@ export default function BlogAdmin() {
   useEffect(() => { void loadPosts(); }, []);
 
   useEffect(() => {
-    if (!posts.length) return;
-    const params = new URLSearchParams(window.location.search);
+    const params = new URLSearchParams(location.search);
     const articleId = params.get('articleId');
     const jobId = params.get('jobId');
     if (articleId && posts.some((post) => post.id === articleId)) {
@@ -68,7 +70,7 @@ export default function BlogAdmin() {
     } else if (jobId) {
       setActiveTab('automation');
     }
-  }, [posts]);
+  }, [posts, location.search]);
 
   const selectedPost = posts.find((post) => post.id === selectedId);
   const filteredPosts = useMemo(() => {
@@ -81,12 +83,14 @@ export default function BlogAdmin() {
   }, [posts, search, statusFilter]);
 
   const openArticle = (post: BlogPost) => {
+    navigate(`/admin/blog?articleId=${encodeURIComponent(post.id)}`);
     setSelectedId(post.id);
     setEditorOpen(true);
     setActiveTab('articles');
   };
 
   const startManual = () => {
+    navigate('/admin/blog', { replace: true });
     setSelectedId(null);
     setEditorOpen(true);
     setActiveTab('articles');
@@ -95,7 +99,7 @@ export default function BlogAdmin() {
   const closeEditor = () => {
     setEditorOpen(false);
     setSelectedId(null);
-    window.history.replaceState({}, '', '/admin/blog');
+    navigate('/admin/blog', { replace: true });
   };
 
   return <section className="space-y-6" aria-labelledby="blog-studio-title">

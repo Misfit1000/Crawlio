@@ -1,61 +1,46 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, FileCheck2, Globe, Search, ShieldCheck, Waypoints } from 'lucide-react';
-
-const stages = [
-  { icon: Globe, title: 'Discover', detail: 'Find public pages and follow their links.', items: ['Homepage', 'Linked pages', 'Sitemap'] },
-  { icon: Search, title: 'Understand', detail: 'Collect evidence across each page.', items: ['Search presentation', 'Website health', 'Browser protections'] },
-  { icon: FileCheck2, title: 'Prioritize', detail: 'Turn observations into a clear next step.', items: ['Affected pages', 'Supporting evidence', 'Recommended fixes'] },
-];
+import { Pause, Play } from 'lucide-react';
 
 export function AuditConceptScene() {
   const root = useRef<HTMLDivElement>(null);
   const [paused, setPaused] = useState(false);
   const [visible, setVisible] = useState(false);
   useEffect(() => {
-    const element = root.current;
-    if (!element) return;
-    let intersecting = false;
-    const update = () => setVisible(intersecting && !document.hidden);
-    const observer = new IntersectionObserver(([entry]) => { intersecting = entry.isIntersecting; update(); });
-    observer.observe(element);
+    let inView = false;
+    const update = () => setVisible(inView && !document.hidden);
+    const observer = new IntersectionObserver(([entry]) => { inView = entry.isIntersecting; update(); });
+    if (root.current) observer.observe(root.current);
     document.addEventListener('visibilitychange', update);
     return () => { observer.disconnect(); document.removeEventListener('visibilitychange', update); };
   }, []);
-
-  return <div ref={root} className="audit-concept" data-paused={paused || !visible}>
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-5">
-      <div className="flex items-center gap-3"><Waypoints className="h-5 w-5 text-accent" /><h2 className="text-base font-semibold">How an audit works</h2><span className="text-xs text-muted-foreground">Illustrative workflow</span></div>
-      <button type="button" className="quiet-button min-h-10 px-3 text-xs" onClick={() => setPaused(!paused)} aria-pressed={paused}>{paused ? 'Play animation' : 'Pause animation'}</button>
-    </div>
-    <svg className="concept-network" viewBox="0 0 1120 190" role="img" aria-label="Illustration: a website connects to discovered pages, checks, and an actionable report">
-      <g className="concept-wires" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M180 95 H240 Q260 95 260 65 V40 H340 M260 95 H340 M260 95 V150 H340" />
-        <path d="M470 40 H530 V95 H600 M470 95 H600 M470 150 H530 V95" />
-        <path d="M750 95 H870" />
+  return <div ref={root} className="clarity-audit-scene" data-paused={paused || !visible}>
+    <svg className="clarity-scene-desktop" viewBox="0 0 1200 660" role="img" aria-label="Illustrative audit flow: discover website pages, check evidence, and prioritize fixes">
+      <g fill="none" stroke="var(--border-strong)" strokeWidth="1.5">
+        <path d="M175 345 V510 Q175 530 195 530 H490 M1025 345 V510 Q1025 530 1005 530 H710" />
+        <path d="M175 300 H105 V240 M175 300 V215 M175 300 H245 V240 M1025 300 H950 V235 M1025 300 V205 M1025 300 H1100 V235" />
       </g>
       <g fill="var(--card)" stroke="var(--border)" strokeWidth="1.5">
-        <rect x="15" y="48" width="165" height="94" rx="8" />
-        <rect x="340" y="20" width="130" height="40" rx="6" /><rect x="340" y="75" width="130" height="40" rx="6" /><rect x="340" y="130" width="130" height="40" rx="6" />
-        <rect x="600" y="48" width="150" height="94" rx="8" />
-        <rect x="870" y="28" width="230" height="134" rx="8" />
+        <rect x="95" y="275" width="160" height="70" rx="8" />
+        <rect x="945" y="275" width="160" height="70" rx="8" />
+        <rect x="490" y="480" width="220" height="100" rx="8" />
+        <rect x="70" y="205" width="70" height="40" rx="6" /><rect x="140" y="175" width="70" height="40" rx="6" /><rect x="210" y="205" width="70" height="40" rx="6" />
+        <rect x="925" y="195" width="50" height="40" rx="6" /><rect x="1000" y="165" width="50" height="40" rx="6" /><rect x="1075" y="195" width="50" height="40" rx="6" />
       </g>
-      <g fill="var(--muted-foreground)" fontSize="13" fontFamily="inherit">
-        <text x="34" y="75">Your website</text><text x="359" y="46">Public pages</text><text x="359" y="101">Internal links</text><text x="359" y="156">Sitemap</text>
-        <text x="622" y="76">Evidence checks</text><text x="890" y="56">Your next steps</text>
-      </g>
-      <g fill="var(--accent)"><rect x="34" y="89" width="65" height="7" rx="3" /><rect x="34" y="105" width="120" height="5" rx="2" opacity=".25" /><rect x="34" y="117" width="86" height="5" rx="2" opacity=".25" /></g>
-      <g fill="var(--success)"><circle cx="625" cy="101" r="5" /><circle cx="644" cy="101" r="5" /><circle cx="663" cy="101" r="5" /><circle cx="890" cy="82" r="4" /><circle cx="890" cy="109" r="4" /><circle cx="890" cy="136" r="4" /></g>
-      <g fill="var(--foreground)" fontSize="12" fontFamily="inherit"><text x="904" y="86">Understand the finding</text><text x="904" y="113">Inspect its evidence</text><text x="904" y="140">Plan the fix</text></g>
+      <g fill="var(--muted-foreground)" fontSize="12" fontFamily="inherit" textAnchor="middle"><text x="175" y="305">Discover pages</text><text x="1025" y="305">Check evidence</text><text x="600" y="512">Prioritize fixes</text></g>
+      <g fill="var(--accent)"><rect x="85" y="219" width="35" height="4" rx="2" /><rect x="155" y="188" width="35" height="4" rx="2" /><rect x="225" y="219" width="35" height="4" rx="2" /><rect x="118" y="320" width="70" height="5" rx="2" /><rect x="525" y="531" width="125" height="5" rx="2" /><rect x="525" y="547" width="85" height="5" rx="2" opacity=".4" /></g>
+      <g fill="var(--success)"><circle cx="950" cy="215" r="5" /><circle cx="1025" cy="185" r="5" /><circle cx="1100" cy="215" r="5" /><circle cx="975" cy="322" r="4" /><circle cx="996" cy="322" r="4" /><circle cx="1017" cy="322" r="4" /></g>
+      <circle className="clarity-flow-left" cx="210" cy="530" r="4" fill="var(--accent)" />
+      <circle className="clarity-flow-right" cx="990" cy="530" r="4" fill="var(--success)" />
+      <g className="clarity-check-pulse" fill="var(--success)"><circle cx="975" cy="322" r="7" opacity=".2" /><circle cx="996" cy="322" r="7" opacity=".2" /><circle cx="1017" cy="322" r="7" opacity=".2" /></g>
     </svg>
-    <ol className="concept-stages">
-      {stages.map((stage, index) => <li key={stage.title} className="concept-stage" style={{ '--stage': index } as React.CSSProperties}>
-        <div className="concept-route" aria-hidden="true"><ArrowRight className="rotate-90 md:rotate-0" /></div>
-        <div className="flex items-center gap-4"><span className="concept-icon"><stage.icon className="h-6 w-6" /></span><span className="text-xs font-semibold uppercase text-muted-foreground">Step {index + 1}</span></div>
-        <h3 className="mt-5 text-2xl font-semibold">{stage.title}</h3>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">{stage.detail}</p>
-        <ul className="mt-5 space-y-2">{stage.items.map((item) => <li key={item} className="flex items-center gap-3 text-sm"><span className="concept-evidence" aria-hidden="true" />{item}</li>)}</ul>
-      </li>)}
-    </ol>
-    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5 text-xs text-muted-foreground"><span className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-emerald-600" />Public evidence. Passive checks. No invented results.</span><a href="#features" className="inline-flex items-center gap-2 font-semibold text-accent">Explore the checks <ArrowRight className="h-4 w-4" /></a></div>
+    <svg className="clarity-scene-mobile" viewBox="0 0 360 170" role="img" aria-label="Illustrative audit flow: discover, check, then prioritize fixes">
+      <path d="M90 85 H135 M225 85 H270" fill="none" stroke="var(--border-strong)" strokeWidth="1.5" />
+      <g fill="var(--card)" stroke="var(--border)" strokeWidth="1.5"><rect x="5" y="48" width="95" height="76" rx="6" /><rect x="132" y="48" width="95" height="76" rx="6" /><rect x="260" y="48" width="95" height="76" rx="6" /></g>
+      <g fill="var(--muted-foreground)" textAnchor="middle" fontSize="12" fontFamily="inherit"><text x="52" y="104">Discover</text><text x="179" y="104">Check</text><text x="307" y="104">Fix</text></g>
+      <g fill="var(--accent)"><rect x="30" y="64" width="44" height="4" rx="2" /><rect x="30" y="74" width="32" height="4" rx="2" /><rect x="285" y="64" width="44" height="4" rx="2" /><rect x="285" y="74" width="30" height="4" rx="2" opacity=".4" /></g>
+      <path d="m169 71 7 7 13-15" fill="none" stroke="var(--success)" strokeWidth="3" />
+      <g className="clarity-check-pulse" fill="var(--success)"><circle cx="117" cy="85" r="3" /><circle cx="243" cy="85" r="3" /></g>
+    </svg>
+    <div className="clarity-scene-caption"><span>How an audit works · Illustration</span><button type="button" onClick={() => setPaused(value => !value)} aria-pressed={paused} aria-label={paused ? 'Play audit illustration' : 'Pause audit illustration'} title={paused ? 'Play animation' : 'Pause animation'}>{paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}</button></div>
   </div>;
 }

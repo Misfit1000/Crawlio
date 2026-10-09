@@ -1,6 +1,6 @@
-export type TabType = 'projects' | 'dashboard' | 'website-analyzer' | 'seo-audit' | 'seo-findings' | 'technical-seo' | 'crawlability' | 'performance' | 'pages' | 'audit-history' | 'security-audit' | 'rank-tracker' | 'imports' | 'reports' | 'settings' | 'admin-dashboard' | 'search-data';
+export type TabType = 'projects' | 'dashboard' | 'website-analyzer' | 'seo-audit' | 'seo-findings' | 'technical-seo' | 'crawlability' | 'performance' | 'pages' | 'audit-history' | 'security-audit' | 'rank-tracker' | 'imports' | 'reports' | 'settings' | 'admin-dashboard' | 'search-data' | 'tools';
 
-export type AuditWorkspaceSection = 'overview' | 'seo' | 'technical' | 'crawlability' | 'links' | 'performance' | 'accessibility' | 'security' | 'pages';
+export type AuditWorkspaceSection = 'overview' | 'seo' | 'technical' | 'crawlability' | 'links' | 'performance' | 'structured-data' | 'accessibility' | 'security' | 'pages';
 
 export const TAB_PATHS: Record<TabType, string> = {
   projects: '/app/projects',
@@ -18,6 +18,7 @@ export const TAB_PATHS: Record<TabType, string> = {
   imports: '/app/imports',
   reports: '/app/reports',
   settings: '/app/settings',
+  tools: '/app/tools',
   'admin-dashboard': '/admin',
   'search-data': '/app/search-data',
 };
@@ -32,6 +33,7 @@ const workspaceSectionTabs: Record<AuditWorkspaceSection, TabType> = {
   performance: 'performance',
   security: 'security-audit',
   accessibility: 'reports',
+  'structured-data': 'reports',
   pages: 'pages',
 };
 
@@ -47,7 +49,7 @@ export function tabForPath(pathname: string): TabType {
 }
 
 export function parseAuditWorkspacePath(pathname: string): { auditId: string; section: AuditWorkspaceSection } | null {
-  const match = pathname.match(/^\/app\/audits\/([^/]+)(?:\/(overview|seo|technical|crawlability|links|performance|accessibility|security|pages))?\/?$/);
+  const match = pathname.match(/^\/app\/audits\/([^/]+)(?:\/(overview|seo|technical|crawlability|links|performance|structured-data|accessibility|security|pages))?\/?$/);
   if (!match) return null;
   if (match[1] === 'new' || match[1] === 'history') return null;
   try {

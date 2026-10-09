@@ -12,6 +12,7 @@ test('private projects require sign in without overflowing on mobile', async ({ 
 test('report filters survive refresh', async ({ page }) => {
   await page.route('**/api/tools/audit/**', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ success: true, data: auditSnapshot() }) }));
   await page.goto(`/audit/live/${AUDIT_ID}`);
+  await page.getByRole('navigation', { name: 'Audit workspace views' }).getByRole('link', { name: 'Findings', exact: true }).click();
   const filter = page.getByRole('combobox', { name: 'Filter by priority' });
   await filter.selectOption('high');
   await expect(page).toHaveURL(/priority=high/);

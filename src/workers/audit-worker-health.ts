@@ -32,6 +32,7 @@ export function startWorkerHealthServer(
       scoringVersion: state.scoringVersion,
       checkRegistryVersion: state.checkRegistryVersion,
       apiSchemaVersion: API_SCHEMA_VERSION,
+      auditScopeVersion: 1,
       deepAuditEnabled: state.deepAuditEnabled,
       sentryConfigured: state.sentryConfigured,
       planLimitsSummary: {

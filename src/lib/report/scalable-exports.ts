@@ -1,14 +1,18 @@
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { Response } from 'express';
-import type { ResourceAuditDocument, ResourceAuditReport } from '../audit/resource-types';
+import type { ResourceAuditDocument, ResourceAuditPage, ResourceAuditReport } from '../audit/resource-types';
 import { requireSupabaseAdminClient } from '../supabase/server';
+import { readToolEvidence, sitemapEntry } from '../tools/audit-tools';
 import { buildPublicAuditExport, csvRow } from './export';
+import { type AuditScope, scopeIncludesGroup } from '../audit/audit-scope';
+import { pageCsvFields, scopeEvents, scopeFindings, scopePageEvidence } from './scope-presentation';
+import type { ResourceAuditEvent, ResourceAuditIssue } from '../audit/resource-types';
 
 export const EXPORT_BUCKET = 'audit-exports';
 export const EXPORT_CHUNK_SIZE = 50;
 export const EXPORT_LEASE_MS = 120_000;
-export type ExportFormat = 'json' | 'pages.csv' | 'issues.csv';
+export type ExportFormat = 'json' | 'pages.csv' | 'issues.csv' | 'sitemap.xml';
 export type ExportSection = 'pages' | 'issues' | 'events' | 'done';
 export interface ExportJob {
   id: string;
@@ -35,19 +39,22 @@ const CSV_FIELDS = {
 };
 
 export function isScalableExportFormat(value: string): value is ExportFormat {
-  return value === 'json' || value === 'pages.csv' || value === 'issues.csv';
+  return value === 'json' || value === 'pages.csv' || value === 'issues.csv' || value === 'sitemap.xml';
 }
 
 // Pick only public scalar evidence. Never serialize arbitrary row metadata or event data.
-export function publicExportEvidence(section: Exclude<ExportSection, 'done'>, item: unknown) {
+export function publicExportEvidence(section: Exclude<ExportSection, 'done'>, item: unknown, scope?: AuditScope | null) {
   const source = item as Record<string, unknown>;
   const fields = section === 'pages' ? PAGE_FIELDS : section === 'issues' ? ISSUE_FIELDS : EVENT_FIELDS;
-  return Object.fromEntries(fields.flatMap(key => {
+  const evidence = Object.fromEntries(fields.flatMap(key => {
     const value = source[key];
     if (value === null || ['string', 'number', 'boolean'].includes(typeof value)) return [[key, value]];
     if (key === 'sourceUrls' && Array.isArray(value)) return [[key, value.filter(v => typeof v === 'string')]];
     return [];
   }));
+  const toolEvidence = section === 'pages' ? readToolEvidence(source.toolEvidence) : undefined;
+  if (toolEvidence) evidence.toolEvidence = toolEvidence;
+  return section === 'pages' ? scopePageEvidence(scope, evidence) : evidence;
 }
 
 export function exportPartPath(prefix: string, part: number) {
@@ -62,10 +69,21 @@ export function exportDisposition(hostname: string, format: ExportFormat) {
 }
 
 export function exportJsonHeader(audit: ResourceAuditDocument, finalReport?: ResourceAuditReport | null) {
-  const value = buildPublicAuditExport({ audit, latestPages: [], latestIssues: [], latestEvents: [], finalReport: null })!;
+  const value = buildPublicAuditExport({ audit, latestPages: [], latestIssues: [], latestEvents: [], finalReport })!;
   // Keep canonical scores, but place complete evidence only in the streamed arrays.
-  const report = finalReport ? { scores: finalReport.scores, summary: finalReport.summary, generatedAt: finalReport.generatedAt } : null;
+  const report = value.report ? { ...(audit.scope ? { scope: audit.scope } : {}), scores: value.report.scores, summary: value.report.summary, generatedAt: value.report.generatedAt } : null;
   return `{"success":true,"data":${JSON.stringify({ generator: value.generator, audit: value.audit, report }).slice(0, -1)},"pages":[`;
+}
+
+export function exportSitemapHeader() {
+  return '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
+}
+
+export function exportSitemapOrigin(audit: Pick<ResourceAuditDocument, 'normalizedUrl'>) {
+  let url: URL;
+  try { url = new URL(audit.normalizedUrl); } catch { throw new Error('EXPORT_SITEMAP_ORIGIN_INVALID'); }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('EXPORT_SITEMAP_ORIGIN_INVALID');
+  return url.origin;
 }
 
 export interface ExportChunk {
@@ -80,22 +98,37 @@ export function formatExportChunk(
   job: Pick<ExportJob, 'format' | 'section' | 'cursor' | 'part'>,
   page: { items: unknown[]; nextCursor: string | null },
   header = '',
+  origin?: string,
+  scope?: AuditScope | null,
 ): ExportChunk {
   if (job.section === 'done' || page.items.length > EXPORT_CHUNK_SIZE) throw new Error('Invalid export chunk');
   if (page.nextCursor && (!page.items.length || page.nextCursor === job.cursor)) throw new Error('Export cursor did not advance');
   let section: ExportSection = job.section;
   let text: string;
   let ready = false;
-  if (job.format !== 'json') {
-    const fields = CSV_FIELDS[job.format];
+  // Findings are selected at persistence; retain retrieval failures when defending export output.
+  const items = job.section === 'issues' ? scopeFindings(scope, page.items as ResourceAuditIssue[])
+    : job.section === 'events' ? scopeEvents(scope, page.items as ResourceAuditEvent[]) : page.items;
+  if (job.format === 'sitemap.xml') {
+    if (!scopeIncludesGroup(scope, 'crawlability')) throw new Error('EXPORT_SCOPE_NOT_INCLUDED');
+    if (job.section !== 'pages') throw new Error('Sitemap export requires pages');
+    if (!origin) throw new Error('Sitemap export requires an origin');
+    const selectedOrigin = exportSitemapOrigin({ normalizedUrl: origin });
+    text = (job.part === 0 ? header || exportSitemapHeader() : '')
+      + page.items.map(item => sitemapEntry(item as ResourceAuditPage, selectedOrigin)).join('');
+    ready = page.nextCursor === null;
+    if (ready) { text += '</urlset>\n'; section = 'done'; }
+  } else if (job.format !== 'json') {
+    const fields = job.format === 'pages.csv' ? pageCsvFields(scope) : CSV_FIELDS[job.format];
     text = (job.part === 0 ? `${fields.join(',')}\n` : '')
-      + page.items.map(item => csvRow(fields.map(key => (item as Record<string, unknown>)[key])) + '\n').join('');
+      + items.map(item => csvRow(fields.map(key => (item as Record<string, unknown>)[key])) + '\n').join('');
     ready = page.nextCursor === null;
     if (ready) section = 'done';
   } else {
     if (job.part === 0 && !header) throw new Error('JSON export requires a header');
+    // Persisted findings/events are already selected. Do not drop rows here: the cursor is also the JSON comma checkpoint.
     text = (job.part === 0 ? header : '') + (job.cursor && page.items.length ? ',' : '')
-      + page.items.map(item => JSON.stringify(publicExportEvidence(job.section as Exclude<ExportSection, 'done'>, item))).join(',');
+      + page.items.map(item => JSON.stringify(publicExportEvidence(job.section as Exclude<ExportSection, 'done'>, item, scope))).join(',');
     if (page.nextCursor === null) {
       if (section === 'pages') { text += '],"issues":['; section = 'issues'; }
       else if (section === 'issues') { text += '],"events":['; section = 'events'; }
@@ -110,7 +143,8 @@ export function exportManifest(job: ExportJob) {
   if (job.state !== 'ready' || job.section !== 'done' || job.part < 1) throw new Error('Export is not ready');
   exportPartPath(job.object_prefix, job.part - 1);
   return { version: 1 as const, bucket: EXPORT_BUCKET, prefix: job.object_prefix, parts: job.part,
-    contentType: job.format === 'json' ? 'application/json; charset=utf-8' : 'text/csv; charset=utf-8' };
+    contentType: job.format === 'json' ? 'application/json; charset=utf-8'
+      : job.format === 'sitemap.xml' ? 'application/xml; charset=utf-8' : 'text/csv; charset=utf-8' };
 }
 
 /** Caller MUST authorize audit access and plan exports before invoking this helper. */
@@ -142,10 +176,20 @@ export async function* readExportParts(job: ExportJob, signal?: AbortSignal) {
 }
 
 /** Call only AFTER ownership and exportsEnabled checks, BEFORE getLiveData. */
-export async function handleScalableExportDownload(res: Response, audit: ResourceAuditDocument, format: ExportFormat) {
+export async function handleScalableExportDownload(res: Response, audit: ResourceAuditDocument, format: ExportFormat, options: { prepared?: boolean } = {}) {
   res.setHeader('Cache-Control', 'private, no-store');
   if (audit.status === 'queued' || audit.status === 'running') {
     return res.status(409).json({ success: false, error: 'Data export is available after the audit stops.' });
+  }
+  if (!options.prepared) {
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    res.once('close', cancel);
+    try {
+      const { tryImmediateExportDownload } = await import('./immediate-export');
+      if (await tryImmediateExportDownload(res, audit, format, undefined, controller.signal)) return res;
+      controller.signal.throwIfAborted();
+    } finally { res.off('close', cancel); }
   }
   const job = await enqueueOrGetScalableExport(audit, format);
   if (Date.parse(job.expires_at) <= Date.now()) {

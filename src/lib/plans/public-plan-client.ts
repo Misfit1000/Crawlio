@@ -1,10 +1,8 @@
 import { API_ROUTES } from '../api/routes';
 import { safeJsonFetch } from '../http/safe-json';
 import type { PublicPlanProjection } from './public-plan-presentation';
+import { inflightRead } from '../http/inflight-read';
 
-const CACHE_MS = 60_000;
-let cached: { expiresAt: number; value: PublicPlanProjection } | null = null;
-let inFlight: Promise<PublicPlanProjection> | null = null;
 
 function isProjection(value: unknown): value is PublicPlanProjection {
   const candidate = value as PublicPlanProjection;
@@ -12,21 +10,16 @@ function isProjection(value: unknown): value is PublicPlanProjection {
 }
 
 export function loadPublicPlanProjection(signal?: AbortSignal) {
-  if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.value);
-  if (inFlight) return inFlight;
-  inFlight = safeJsonFetch<{ success: true; data: PublicPlanProjection }>(API_ROUTES.publicPlans, { signal })
-    .then((response) => {
+  // HTTP cache age is authoritative; a second application TTL would extend stale plans.
+  return inflightRead(API_ROUTES.publicPlans, {}, async requestSignal => {
+      const response = await safeJsonFetch<{ success: true; data: PublicPlanProjection }>(API_ROUTES.publicPlans, { signal: requestSignal });
       if (!response.success) throw new Error(('error' in response && response.error) || 'Current plan limits are unavailable.');
       const value = response.data.data;
       if (!isProjection(value)) throw new Error('Current plan limits are invalid.');
-      cached = { expiresAt: Date.now() + CACHE_MS, value };
       return value;
-    })
-    .finally(() => { inFlight = null; });
-  return inFlight;
+    }, signal);
 }
 
 export function clearPublicPlanProjectionCache() {
-  cached = null;
-  inFlight = null;
+  // No resolved-response cache remains; subsequent reads revalidate through HTTP.
 }

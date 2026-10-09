@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Archive, ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, ExternalLink, FileCheck2, Globe2, Loader2, Plus, RotateCcw, Save, Trash2, WandSparkles, XCircle } from 'lucide-react';
 import {
-  archiveAdminBlogPost, deleteAdminBlogEditorDraft, getAdminBlogEditorDraft, importAdminBlogImage,
+  archiveAdminBlogPost, deleteAdminBlogEditorDraft, getAdminBlogEditorDraft, getAdminBlogGenerationReview, importAdminBlogImage,
   inspectAdminBlogSource, preflightAdminBlogDraft, saveAdminBlogEditorDraft, saveAdminBlogPost,
 } from '../../lib/blog/client';
 import { blogEditorHasMeaningfulChanges, blogEditorWordCount, buildBlogReadiness, deriveAutomaticBlogFields, type BlogAutosaveStatus, type BlogEditorStep } from '../../lib/blog/editor-experience';
 import { createBlogSlug } from '../../lib/blog/slug';
 import type { BlogPost, BlogPostInput, BlogPostStatus, BlogSource } from '../../lib/blog/types';
+import type { BlogGenerationReview } from '../../lib/blog/generation-review';
 import { Notice, Panel, FormField } from '../ui/page-system';
 import { StatusBadge } from '../ui/visual-system';
 import BlogEditorialReviewPanel from './BlogEditorialReviewPanel';
+import BlogGenerationReviewPanel from './BlogGenerationReviewPanel';
 import BlogSectionRevisionPanel from './BlogSectionRevisionPanel';
 import RichTextEditor from './RichTextEditor';
 
@@ -35,6 +37,7 @@ function fromPost(post?: BlogPost): Draft {
     metaDescription: post.metaDescription, canonicalUrl: post.canonicalUrl, ogImageUrl: post.ogImageUrl,
     ogImageAlt: post.ogImageAlt, ogImageAttribution: post.ogImageAttribution, imageVariants: post.imageVariants,
     status: post.status, origin: post.origin, articleType: post.articleType, topicCluster: post.topicCluster,
+    generationJobId: post.generationJobId, batchId: post.batchId,
     sources: post.sources, relatedArticles: post.relatedArticles, qualityStatus: post.qualityStatus,
     qualityResults: post.qualityResults, originalityStatus: post.originalityStatus, sourceStatus: post.sourceStatus,
     prerenderStatus: post.prerenderStatus, imageStatus: post.imageStatus,
@@ -84,6 +87,10 @@ export default function BlogManualEditor({ post, onClose, onSaved, onArchived }:
   const [busy, setBusy] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
   const [editorialReviewed, setEditorialReviewed] = useState(false);
+  const [generationReview, setGenerationReview] = useState<BlogGenerationReview | null>(null);
+  const [generationReviewError, setGenerationReviewError] = useState('');
+  const [generationReviewLoading, setGenerationReviewLoading] = useState(false);
+  const [generationReviewAttempt, setGenerationReviewAttempt] = useState(0);
   const [recovery, setRecovery] = useState<Record<string, unknown> | null>(null);
   const [headingPreview, setHeadingPreview] = useState<{ previousContentHtml: string; contentHtml: string; headings: string[] } | null>(null);
   const [headingUndo, setHeadingUndo] = useState<string | null>(null);
@@ -102,6 +109,26 @@ export default function BlogManualEditor({ post, onClose, onSaved, onArchived }:
   const readiness = useMemo(() => buildBlogReadiness(draft), [draft]);
   const previewHtml = useMemo(() => sanitizePreviewHtml(draft.contentHtml), [draft.contentHtml]);
   const unresolved = readiness.filter((item) => !item.passed && item.severity === 'required');
+  const needsGenerationReview = Boolean(post?.generationJobId);
+  const generationReviewBlocked = needsGenerationReview && !generationReview;
+  const reviewOpened = step !== 'write';
+
+  useEffect(() => {
+    if (!needsGenerationReview || !post || !reviewOpened || generationReview) return;
+    const controller = new AbortController();
+    setGenerationReviewLoading(true);
+    setGenerationReviewError('');
+    void getAdminBlogGenerationReview(post.id, controller.signal).then(({ review }) => {
+      if (!controller.signal.aborted) setGenerationReview(review);
+    }).catch(() => {
+      if (!controller.signal.aborted) setGenerationReviewError('The AI review could not be loaded. Retry before publishing; your draft is preserved.');
+    }).finally(() => {
+      if (!controller.signal.aborted) setGenerationReviewLoading(false);
+    });
+    return () => controller.abort();
+  }, [needsGenerationReview, post?.id, reviewOpened, generationReviewAttempt]);
+
+  const generationReviewPanel = needsGenerationReview ? <BlogGenerationReviewPanel review={generationReview} loading={generationReviewLoading} error={generationReviewError} onRetry={() => setGenerationReviewAttempt((attempt) => attempt + 1)} /> : null;
 
   const update = <K extends keyof Draft>(key: K, value: Draft[K], manual = true) => {
     dirtyRef.current = true;
@@ -227,7 +254,7 @@ export default function BlogManualEditor({ post, onClose, onSaved, onArchived }:
   };
 
   const persist = async (status: BlogPostStatus) => {
-    if (['published', 'scheduled'].includes(status) && (!editorialReviewed || unresolved.length)) { setError('Finish the required checks and confirm the final editorial review before publishing.'); return; }
+    if (['published', 'scheduled'].includes(status) && (!editorialReviewed || unresolved.length || generationReviewBlocked)) { setError('Finish the required checks, load the AI review if applicable, and confirm the final editorial review before publishing.'); return; }
     flushScheduledSave();
     setBusy(status); setError('');
     try {
@@ -320,18 +347,19 @@ export default function BlogManualEditor({ post, onClose, onSaved, onArchived }:
         </div></details>
         <div className="flex justify-between"><button type="button" onClick={() => void move('write')} className="quiet-button"><ArrowLeft className="h-4 w-4" /> Write</button><button type="button" onClick={() => void move('publish')} className="trust-button">Continue to publish <ArrowRight className="h-4 w-4" /></button></div>
       </div>
-      <BlogEditorialReviewPanel post={post} draft={draft} />
+      <div className="space-y-4">{generationReviewPanel}<BlogEditorialReviewPanel post={post} draft={draft} /></div>
     </div>}
 
     {step === 'publish' && <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
       <Panel className="p-5 sm:p-6"><h4 className="font-semibold">Final publication check</h4><p className="mt-1 text-sm text-muted-foreground">Only unresolved requirements are shown first. Passing technical details stay out of the way.</p>
-        <h5 className="mt-5 text-sm font-semibold">Needs your attention</h5><div className="mt-2 space-y-2">{unresolved.length ? unresolved.map((item) => <div key={item.id} className="flex flex-col gap-3 rounded-lg border border-amber-500/25 bg-amber-500/5 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex gap-3"><XCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" /><div><p className="text-sm font-semibold">{item.label}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{item.explanation}</p></div></div>{item.fixAction === 'suggest_headings' ? <button type="button" disabled={Boolean(busy)} onClick={() => { void suggestHeadings(); setStep('review'); }} className="quiet-button shrink-0">Fix this</button> : item.fixableAutomatically ? <button type="button" disabled={Boolean(busy)} onClick={() => void fixSafe()} className="quiet-button shrink-0">Fix this</button> : null}</div>) : <div className="flex items-center gap-3 rounded-lg border border-emerald-500/25 bg-emerald-500/5 p-4 text-sm text-emerald-800 dark:text-emerald-200"><CheckCircle2 className="h-5 w-5" /> Every required publication check is ready.</div>}</div>
+        {needsGenerationReview && <div className="mt-5">{generationReviewPanel}</div>}
+        <h5 className="mt-5 text-sm font-semibold">Needs your attention</h5><div className="mt-2 space-y-2">{unresolved.length ? unresolved.map((item) => <div key={item.id} className="flex flex-col gap-3 rounded-lg border border-amber-500/25 bg-amber-500/5 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex gap-3"><XCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" /><div><p className="text-sm font-semibold">{item.label}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{item.explanation}</p></div></div>{item.fixAction === 'suggest_headings' ? <button type="button" disabled={Boolean(busy)} onClick={() => { void suggestHeadings(); setStep('review'); }} className="quiet-button shrink-0">Fix this</button> : item.fixableAutomatically ? <button type="button" disabled={Boolean(busy)} onClick={() => void fixSafe()} className="quiet-button shrink-0">Fix this</button> : null}</div>) : <div className="flex items-center gap-3 rounded-lg border border-emerald-500/25 bg-emerald-500/5 p-4 text-sm text-emerald-800 dark:text-emerald-200"><CheckCircle2 className="h-5 w-5" /> Technical content requirements are ready. Final editorial review is still required.</div>}</div>
         {autoFixedIds.length > 0 && <div className="mt-5"><h5 className="text-sm font-semibold">Fixed automatically</h5><div className="mt-2 grid gap-2 rounded-lg border border-blue-500/20 bg-blue-500/5 p-4 sm:grid-cols-2">{readiness.filter((item) => autoFixedIds.includes(item.id)).map((item) => <div key={item.id} className="flex gap-2 text-xs text-muted-foreground"><WandSparkles className="h-4 w-4 shrink-0 text-accent" /><span>{item.label}</span></div>)}</div></div>}
         <details className="mt-5 rounded-lg border border-border"><summary className="cursor-pointer px-4 py-3 text-sm font-semibold">Ready checks and recommendations</summary><div className="grid gap-2 border-t border-border p-4 sm:grid-cols-2">{readiness.filter((item) => (item.passed && !autoFixedIds.includes(item.id)) || item.severity === 'warning').map((item) => <div key={item.id} className="flex gap-2 text-xs text-muted-foreground"><CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" /><span>{item.label}</span></div>)}</div></details>
         <details className="mt-4 rounded-lg border border-border"><summary className="cursor-pointer px-4 py-3 text-sm font-semibold">Final article preview</summary><article className="prose prose-slate max-w-none border-t border-border p-5 dark:prose-invert"><h1>{draft.title || 'Untitled article'}</h1><div dangerouslySetInnerHTML={{ __html: previewHtml }} /></article></details>
-        <label className="mt-5 flex items-start gap-3 rounded-lg border border-border bg-muted/20 p-4 text-sm"><input type="checkbox" checked={editorialReviewed} onChange={(event) => setEditorialReviewed(event.target.checked)} className="mt-1 h-4 w-4" /><span><strong>Final editorial review complete.</strong><span className="mt-1 block text-xs leading-5 text-muted-foreground">I checked the facts, claims, links, originality, and source attribution.</span></span></label>
+        <label className="mt-5 flex items-start gap-3 rounded-lg border border-border bg-muted/20 p-4 text-sm"><input type="checkbox" checked={editorialReviewed} disabled={generationReviewBlocked} onChange={(event) => setEditorialReviewed(event.target.checked)} className="mt-1 h-4 w-4" /><span><strong>Final editorial review complete.</strong><span className="mt-1 block text-xs leading-5 text-muted-foreground">I checked the facts, claims, links, originality, and source attribution, including any AI review notes.</span></span></label>
         <div className="mt-5 grid gap-4 sm:grid-cols-2"><FormField label="Public URL"><div className="suite-input text-muted-foreground">/blog/{draft.slug || 'article-slug'}</div></FormField><FormField label="Schedule for later" hint="Leave empty to publish now."><input type="datetime-local" value={draft.publishedAt} onChange={(event) => update('publishedAt', event.target.value, false)} className="suite-input" /></FormField></div>
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3"><button type="button" onClick={() => void move('review')} className="quiet-button"><ArrowLeft className="h-4 w-4" /> Review</button><div className="flex flex-wrap gap-2">{post && <button type="button" onClick={() => void archive()} disabled={Boolean(busy)} className="quiet-button text-red-600"><Archive className="h-4 w-4" /> Archive</button>}<button type="button" onClick={() => void savePrivateDraft()} disabled={Boolean(busy)} className="quiet-button"><Save className="h-4 w-4" /> Save private draft</button><button type="button" onClick={() => void persist('scheduled')} disabled={Boolean(busy) || !draft.publishedAt || !editorialReviewed || unresolved.length > 0} className="quiet-button"><CalendarDays className="h-4 w-4" /> Schedule</button><button type="button" onClick={() => void persist('published')} disabled={Boolean(busy) || !editorialReviewed || unresolved.length > 0} className="trust-button">{busy === 'published' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe2 className="h-4 w-4" />} {post?.status === 'published' ? 'Republish' : 'Publish now'}</button></div></div>
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3"><button type="button" onClick={() => void move('review')} className="quiet-button"><ArrowLeft className="h-4 w-4" /> Review</button><div className="flex flex-wrap gap-2">{post && <button type="button" onClick={() => void archive()} disabled={Boolean(busy)} className="quiet-button text-red-600"><Archive className="h-4 w-4" /> Archive</button>}<button type="button" onClick={() => void savePrivateDraft()} disabled={Boolean(busy)} className="quiet-button"><Save className="h-4 w-4" /> Save private draft</button><button type="button" onClick={() => void persist('scheduled')} disabled={Boolean(busy) || !draft.publishedAt || !editorialReviewed || unresolved.length > 0 || generationReviewBlocked} className="quiet-button"><CalendarDays className="h-4 w-4" /> Schedule</button><button type="button" onClick={() => void persist('published')} disabled={Boolean(busy) || !editorialReviewed || unresolved.length > 0 || generationReviewBlocked} className="trust-button">{busy === 'published' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe2 className="h-4 w-4" />} {post?.status === 'published' ? 'Republish' : 'Publish now'}</button></div></div>
       </Panel>
       <Panel className="p-5"><h4 className="flex items-center gap-2 font-semibold"><FileCheck2 className="h-4 w-4 text-accent" /> Public result</h4><div className="mt-4 rounded-lg bg-white p-4 text-slate-900"><p className="text-sm text-emerald-700">{window.location.hostname} / blog / {draft.slug || 'article-slug'}</p><p className="mt-1 text-lg text-[#1a0dab]">{draft.seoTitle || draft.title || 'Article title'}</p><p className="mt-1 text-sm leading-6 text-slate-700">{draft.metaDescription || draft.excerpt || 'Article description'}</p></div><div className="mt-5"><p className="text-sm font-semibold">Sources</p>{(draft.sources || []).map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer" className="mt-2 block break-all text-xs text-accent">{source.title}</a>)}{!(draft.sources || []).length && <p className="mt-2 text-xs text-muted-foreground">No verified source yet.</p>}</div><p className="mt-5 text-xs leading-5 text-muted-foreground">Published articles use <code>index,follow,max-image-preview:large</code>. Private drafts remain excluded from search engines.</p></Panel>
     </div>}

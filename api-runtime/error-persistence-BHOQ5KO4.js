@@ -1,0 +1,5 @@
+// Vercel API bundle. Rebuild with npm run build:vercel-api; PDFKit stays lazy-loaded.
+import { createRequire as __createRequire } from 'node:module';
+const require = __createRequire(import.meta.url);
+import{getCommitIdentifier}from"./chunk-WUP4HDOB.js";import{getSupabaseAdminClient}from"./chunk-OHW57JLD.js";import"./chunk-SJYBEHZK.js";function redactInternalDetails(value){const text=value instanceof Error?`${value.name}: ${value.message}
+${value.stack||""}`:String(value||"Unknown error");return text.replace(/Bearer\s+[A-Za-z0-9._~-]+/gi,"Bearer [redacted]").replace(/(service[_-]?role|api[_-]?key|password|authorization)\s*[:=]\s*\S+/gi,"$1=[redacted]").slice(0,12e3)}async function persistApiError(context,error){try{const client=getSupabaseAdminClient();if(!client)return;await client.from("api_error_logs").insert({...context,internal_details:redactInternalDetails(error),deployment_version:getCommitIdentifier()}).abortSignal(AbortSignal.timeout(1e3))}catch{}}export{persistApiError,redactInternalDetails};

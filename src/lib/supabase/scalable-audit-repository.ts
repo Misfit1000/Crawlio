@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto';
 import { requireSupabaseAdminClient } from './server';
 import { toAuditDocument, toAuditPage, toAuditIssue, reportToRow } from './audit-repository';
 import type { AuditScoreAggregate, AuditScoreCategory } from '../audit/audit-scoring';
-import type { ResourceAuditDocument, ResourceAuditReport, AuditSeverity } from '../audit/resource-types';
+import type { ResourceAuditDocument, ResourceAuditReport, AuditSeverity, AuditPresentationSummary } from '../audit/resource-types';
 import { EVIDENCE_MAX_PAGE_SIZE, EVIDENCE_PAGE_SIZE } from '../audit/scalable-policy';
+import { isAuditPresentationSection } from '../audit/audit-presentation-summary';
 
 export interface CrawlRun {
   audit_id: string;
@@ -29,6 +30,7 @@ export interface CrawlRun {
   last_score_pages: number;
   last_score_at: string | null;
   metadata: Record<string, unknown>;
+  presentation_summary?: AuditPresentationSummary | null;
 }
 
 export interface FrontierItem {
@@ -53,33 +55,75 @@ export async function scalableRpc<T>(name: string, args: Record<string, unknown>
   return data as T;
 }
 
-let readinessCache: { until: number; ready: boolean; deepReady: boolean } | undefined;
-export async function scalableReadiness(): Promise<{ ready: boolean; deepReady: boolean }> {
+let readinessCache: { until: number; ready: boolean; deepReady: boolean; scopeReady?: boolean; scopeDeepReady?: boolean } | undefined;
+export async function scalableReadiness(): Promise<{ ready: boolean; deepReady: boolean; scopeReady?: boolean; scopeDeepReady?: boolean }> {
   if (process.env.SCALABLE_AUDITS_ENABLED !== 'true') return { ready: false, deepReady: false };
   if (readinessCache && readinessCache.until > Date.now()) return readinessCache;
-  const { data, error } = await requireSupabaseAdminClient().from('audit_scalable_workers')
-    .select('worker_id,deep_enabled').eq('processing_version', 2).gte('seen_at', new Date(Date.now() - 90_000).toISOString()).limit(20);
-  if (error) return { ready: false, deepReady: false };
-  readinessCache = { ready: !!data?.length, deepReady: !!data?.some(row => row.deep_enabled), until: Date.now() + 10_000 };
+  const client = requireSupabaseAdminClient();
+  let result = await client.from('audit_scalable_workers')
+    .select('worker_id,deep_enabled,scope_version,scope_commit_id,commit_id').eq('processing_version', 2).gte('seen_at', new Date(Date.now() - 90_000).toISOString()).limit(20);
+  if (result.error && /scope_version|scope_commit_id/.test(result.error.message)) {
+    const legacy = await client.from('audit_scalable_workers').select('worker_id,deep_enabled').eq('processing_version', 2).gte('seen_at', new Date(Date.now() - 90_000).toISOString()).limit(20);
+    if (legacy.error) return { ready: false, deepReady: false, scopeReady: false };
+    readinessCache = { ready: !!legacy.data?.length, deepReady: !!legacy.data?.some(row => row.deep_enabled), scopeReady: false, until: Date.now()+10_000 };
+    return readinessCache;
+  }
+  if (result.error) return { ready: false, deepReady: false, scopeReady: false };
+  const scoped = result.data?.filter(row => row.scope_version === 1 && row.scope_commit_id === row.commit_id) || [];
+  readinessCache = { ready: !!result.data?.length, deepReady: !!result.data?.some(row => row.deep_enabled), scopeReady: !!scoped.length, scopeDeepReady: scoped.some(row => row.deep_enabled), until: Date.now() + 10_000 };
   return readinessCache;
 }
 
 export async function registerScalableWorker(workerId: string) {
-  const { error } = await requireSupabaseAdminClient().from('audit_scalable_workers').upsert({
+  const client = requireSupabaseAdminClient();
+  const commit = process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT_SHA || 'local';
+  const row = {
     worker_id: workerId, seen_at: new Date().toISOString(), processing_version: 2,
-    commit_id: process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT_SHA || 'local',
+    commit_id: commit,
     deep_enabled: process.env.DEEP_AUDIT_ENABLED === 'true',
-  });
+  };
+  let { error } = await client.from('audit_scalable_workers').upsert({ ...row, scope_version: 1, scope_commit_id: commit });
+  if (error && /scope_version|scope_commit_id/.test(error.message)) ({ error } = await client.from('audit_scalable_workers').upsert(row));
   if (error) throw new Error(`Scalable audit schema is unavailable: ${error.message}`);
 }
 
-export async function claimScalableAudit(worker: string): Promise<{ audit: ResourceAuditDocument; run: CrawlRun } | null> {
-  const result = await scalableRpc<{ audit: Record<string, unknown>; run: CrawlRun } | null>('claim_scalable_audit', { p_worker: worker, p_deep: process.env.DEEP_AUDIT_ENABLED === 'true' });
-  const audit = result && toAuditDocument(result.audit);
-  return result && audit ? { audit, run: result.run } : null;
+export interface CommittedScoreGroup {
+  key: string; category: AuditScoreCategory; title: string; severity: AuditSeverity; affected_pages: number;
+}
+export interface EfficientCommitResult {
+  run: CrawlRun; scoreGroups: CommittedScoreGroup[]; pending: boolean;
 }
 
-export async function readFrontier(auditId: string, limit = 2): Promise<FrontierItem[]> {
+export async function claimScalableAudit(worker: string): Promise<({ audit: ResourceAuditDocument } & EfficientCommitResult) | null> {
+  const client = requireSupabaseAdminClient();
+  const parameters = { p_worker: worker, p_deep: process.env.DEEP_AUDIT_ENABLED === 'true' };
+  const response = await client.rpc('claim_efficient_scoped_audit', parameters);
+  if (response.error) throw new Error(`Claim audit: ${response.error.message}`);
+  const result = response.data as ({ audit: Record<string, unknown> } & EfficientCommitResult) | null;
+  const audit = result && toAuditDocument(result.audit);
+  return result && audit ? { audit, run: result.run, scoreGroups: result.scoreGroups, pending: result.pending } : null;
+}
+
+const FRONTIER_RPC = 'read_scalable_audit_frontier';
+const missingFrontierRpcUntil = new WeakMap<ReturnType<typeof requireSupabaseAdminClient>, number>();
+
+export async function readFrontier(auditId: string, limit = 2, documentsFirst = false): Promise<FrontierItem[]> {
+  const client = requireSupabaseAdminClient();
+  if (documentsFirst) return scalableRpc<FrontierItem[]>('read_scoped_audit_frontier', { p_audit: auditId, p_limit: Math.min(2,limit) });
+  if ((missingFrontierRpcUntil.get(client) || 0) <= Date.now()) {
+    const { data, error } = await client.rpc(FRONTIER_RPC, { p_audit: auditId, p_limit: Math.min(2, limit) });
+    if (!error) {
+      missingFrontierRpcUntil.delete(client);
+      return (data || []) as FrontierItem[];
+    }
+    // Only an absent additive RPC permits rollback to the old indexed reads.
+    if (error.code !== 'PGRST202' || !error.message.includes(FRONTIER_RPC)) throw error;
+    missingFrontierRpcUntil.set(client, Date.now() + 60_000);
+  }
+  return readFrontierWithoutRpc(auditId, limit);
+}
+
+async function readFrontierWithoutRpc(auditId: string, limit: number): Promise<FrontierItem[]> {
   const client = requireSupabaseAdminClient();
   for (const kind of ['robots', 'root', 'sitemap', 'page']) {
     let query = client.from('audit_crawl_frontier').select('key,url,kind,depth,source_url,anchor,attempts,next_attempt_at,discovery_offset')
@@ -107,10 +151,14 @@ export async function readScoreAggregate(run: CrawlRun): Promise<AuditScoreAggre
     .eq('audit_id', run.audit_id).order('key').limit(1000);
   if (error) throw error;
   if (data?.length === 1000) throw new Error('Scoring group bound reached; finalization requires investigation.');
+  return scoreAggregateFromGroups(run, data || []);
+}
+
+export function scoreAggregateFromGroups(run: CrawlRun, groups: CommittedScoreGroup[]): AuditScoreAggregate {
   return {
     pageCount: run.page_count, errorPages: run.error_pages, redirectPages: run.redirect_pages,
     slowPages: run.slow_pages, largePages: run.large_pages,
-    groups: (data || []).map(row => ({ key: row.key, category: row.category as AuditScoreCategory, title: row.title, severity: row.severity as AuditSeverity, affectedPages: row.affected_pages })),
+    groups: groups.map(row => ({ key: row.key, category: row.category, title: row.title, severity: row.severity, affectedPages: row.affected_pages })),
   };
 }
 
@@ -134,16 +182,30 @@ export function buildEvidenceSearchFilter(query?: string): string | undefined {
   return ['title', 'description', 'affected_url'].map(column => `${column}.${filter.operator}.${value}`).join(',');
 }
 
-export async function readEvidencePage(auditId: string, kind: EvidenceKind, input: { cursor?: string; limit?: number; severity?: string; category?: string; query?: string } = {}) {
+export function validateEvidenceAffectedUrl(value?: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (!value || value.length > 2048 || !/^https?:\/\//i.test(value) || /[\u0000-\u0020\u007f]/.test(value)) throw new Error('Invalid affectedUrl');
+  let url: URL;
+  try { url = new URL(value); } catch { throw new Error('Invalid affectedUrl'); }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash) throw new Error('Invalid affectedUrl');
+  return value;
+}
+
+export async function readEvidencePage(auditId: string, kind: EvidenceKind, input: { cursor?: string; limit?: number; severity?: string; category?: string; query?: string; section?: string; affectedUrl?: string } = {}) {
   const limit = Math.min(EVIDENCE_MAX_PAGE_SIZE, Math.max(1, Math.floor(input.limit || EVIDENCE_PAGE_SIZE)));
   if (input.cursor && !/^[a-zA-Z0-9_-]{1,100}$/.test(input.cursor)) throw new Error('Invalid evidence cursor');
-  if (kind !== 'issues' && input.query !== undefined) throw new Error('Filters require issues');
+  if (kind !== 'issues' && [input.query, input.severity, input.category, input.section, input.affectedUrl].some(value => value !== undefined)) throw new Error('Filters require issues');
+  if (input.section !== undefined && !isAuditPresentationSection(input.section)) throw new Error('Invalid section');
+  const affectedUrl = validateEvidenceAffectedUrl(input.affectedUrl);
   const searchFilter = kind === 'issues' ? buildEvidenceSearchFilter(input.query) : undefined;
   const table = kind === 'pages' ? 'audit_pages' : kind === 'issues' ? 'audit_issues' : 'audit_events';
   let query = requireSupabaseAdminClient().from(table).select('*').eq('audit_id', auditId).order('id').limit(limit + 1);
   if (input.cursor) query = query.gt('id', input.cursor);
   if (kind === 'issues' && input.severity) query = query.eq('severity', input.severity);
   if (kind === 'issues' && input.category) query = query.eq('category', input.category.slice(0, 100));
+  // This immutable computed field is filtered by PostgreSQL before LIMIT and cursor pagination.
+  if (kind === 'issues' && input.section) query = query.eq('audit_report_section', input.section);
+  if (kind === 'issues' && affectedUrl) query = query.eq('affected_url', affectedUrl);
   if (searchFilter) query = query.or(searchFilter);
   const { data, error } = await query;
   if (error) throw error;

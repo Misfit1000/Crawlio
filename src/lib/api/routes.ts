@@ -2,7 +2,7 @@ export const API_ROUTES = {
   auditStart: "/api/tools/audit/start",
   auditStatus: (id: string) => `/api/tools/audit/status/${id}`,
   auditStatusDelta: (id: string, known: { updatedAt?: string; status?: string; pagesCrawled?: number; issuesFound?: number; hasReport?: boolean }) => {
-    const params = new URLSearchParams({ delta: '1' });
+    const params = new URLSearchParams({ delta: '1', compact: '1' });
     if (known.updatedAt) params.set('knownUpdatedAt', known.updatedAt);
     if (known.status) params.set('knownStatus', known.status);
     if (known.pagesCrawled != null) params.set('knownPagesCrawled', String(known.pagesCrawled));
@@ -22,6 +22,8 @@ export const API_ROUTES = {
   auditFindingWorkflow: (id: string) => `/api/tools/audit/${encodeURIComponent(id)}/finding-workflow`,
   auditFindingWorkflowItem: (id: string, findingKey: string) => `/api/tools/audit/${encodeURIComponent(id)}/finding-workflow/${encodeURIComponent(findingKey)}`,
   auditShare: (id: string) => `/api/tools/audit/${encodeURIComponent(id)}/share`,
+  auditToolEvidence: (id: string) => `/api/tools/audit/${encodeURIComponent(id)}/tool-evidence`,
+  auditScoreBadge: (id: string) => `/api/tools/audit/${encodeURIComponent(id)}/badge`,
   sharedReport: (token: string) => `/api/tools/shared-reports/${encodeURIComponent(token)}`,
   projectsOverview: '/api/tools/projects/overview',
   projects: '/api/tools/projects',
@@ -52,6 +54,7 @@ export const API_ROUTES = {
   blogPost: (slug: string) => `/api/tools/blog/posts/${encodeURIComponent(slug)}`,
   adminBlogPosts: "/api/tools/admin/blog/posts",
   adminBlogPost: (id: string) => `/api/tools/admin/blog/posts/${encodeURIComponent(id)}`,
+  adminBlogGenerationReview: (id: string) => `/api/tools/admin/blog/posts/${encodeURIComponent(id)}/generation-review`,
   adminBlogPostWorkflow: (id: string) => `/api/tools/admin/blog/posts/${encodeURIComponent(id)}/workflow`,
   adminBlogSourceInspect: "/api/tools/admin/blog/source/inspect",
   adminBlogPreflight: "/api/tools/admin/blog/preflight",

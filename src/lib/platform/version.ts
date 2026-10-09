@@ -1,5 +1,5 @@
 export const APPLICATION_VERSION = '1.0.0-beta';
-export const API_SCHEMA_VERSION = 15;
+export const API_SCHEMA_VERSION = 16;
 // Migration 022 is additive. Keep audit admission compatible with schema 13
 // while the database-first rollout reaches the API and worker deployments.
 export const MINIMUM_AUDIT_DATABASE_SCHEMA_VERSION = 13;
@@ -35,6 +35,7 @@ export function publicVersionPayload() {
     auditEngineVersion: AUDIT_ENGINE_VERSION,
     scoringVersion: SCORING_VERSION,
     checkRegistryVersion: CHECK_REGISTRY_VERSION,
+    auditScopeVersion: 1,
     blogAutomationEnabled: process.env.BLOG_AUTOMATION_ENABLED === 'true',
     blogProviderEnabled: process.env.GROQ_BLOG_ENABLED === 'true',
   };

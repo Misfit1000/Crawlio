@@ -1,5 +1,6 @@
 import type { AuditScoreCategory } from './audit-scoring';
 import type { ResourceAuditDocument } from './resource-types';
+import { scopeScoreCategories, type AuditScope } from './audit-scope';
 
 const MODULE_CATEGORIES: Record<string, AuditScoreCategory> = {
   images: 'onPage', 'on-page': 'onPage', content: 'onPage',
@@ -9,7 +10,11 @@ const MODULE_CATEGORIES: Record<string, AuditScoreCategory> = {
   accessibility: 'accessibility',
 };
 
-export function measuredAuditCategories(completedModules: string[]) {
+export function measuredAuditCategories(completedModules: string[], scope?: AuditScope | null) {
+  if (scope) {
+    const allowed = scopeScoreCategories(scope);
+    return [...new Set(completedModules.flatMap(id => MODULE_CATEGORIES[id] && allowed.includes(MODULE_CATEGORIES[id]) ? [MODULE_CATEGORIES[id]] : []))];
+  }
   // Mobile layout and Core Web Vitals require browser evidence, not just a viewport tag.
   return [...new Set<AuditScoreCategory>(['technical', 'security',
     ...completedModules.flatMap((id) => MODULE_CATEGORIES[id] ? [MODULE_CATEGORIES[id]] : []),

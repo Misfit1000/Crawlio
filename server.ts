@@ -1,6 +1,10 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import { readFile } from 'node:fs/promises';
+import { buildPublicPageHtml } from './scripts/build-public-metadata.mjs';
+import { publicPageForPath } from './src/components/public/public-pages.mjs';
+import { isKnownWorkspacePath } from './src/app/routes';
 import { apiRouter } from "./src/api/index";
 import { securityRouter } from "./src/lib/security/api/index";
 import { canonicalSiteOrigin, renderBlogNewsSitemap, renderBlogRss, renderBlogSitemap } from "./src/lib/blog/sitemap";
@@ -23,6 +27,10 @@ const dirName = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
 
 const configuredPort = Number(process.env.PORT || 3000);
 const PORT = Number.isInteger(configuredPort) && configuredPort >= 1 && configuredPort <= 65535 ? configuredPort : 3000;
+const legacyPaths = new Set(['/dashboard', '/seo-audit', '/audit-history', '/reports', '/settings']);
+const clientPath = (pathname: string) => isKnownWorkspacePath(pathname) || legacyPaths.has(pathname) || ['/login', '/register', '/blog'].includes(pathname)
+  || /^\/audit\/live\/[^/]+$/.test(pathname) || /^\/share\/[A-Za-z0-9_-]{40,80}$/.test(pathname);
+const missingPage = { path: '/404', title: 'Page not found', description: 'This page does not exist. Browse Crawlio audits and tools.', kind: 'not-found', noindex: true };
 
 async function startServer() {
   const app = express();
@@ -77,13 +85,28 @@ async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
-      appType: "spa",
+      appType: "custom",
     });
     app.use(vite.middlewares);
+    app.get('*', async (req, res, next) => {
+      try {
+        const pathname = req.path.replace(/\/$/, '') || '/';
+        const publicPage = publicPageForPath(pathname);
+        const known = Boolean(publicPage) || clientPath(pathname);
+        const page = publicPage || (known ? { path: pathname, title: pathname === '/blog' ? 'Crawlio blog' : 'Crawlio workspace', description: pathname === '/blog' ? 'Practical website auditing guides.' : 'Sign in to manage private audits and reports.', kind: 'private', noindex: pathname !== '/blog' } : missingPage);
+        const source = await readFile(path.join(dirName, 'index.html'), 'utf8');
+        const html = buildPublicPageHtml(source, page, canonicalSiteOrigin(req));
+        res.status(known ? 200 : 404).type('html').send(await vite.transformIndexHtml(req.originalUrl, html));
+      } catch (error) { next(error); }
+    });
   } else {
-    app.use(express.static(path.join(dirName, "dist")));
+    const dist = path.basename(dirName) === 'dist' ? dirName : path.join(dirName, 'dist');
+    app.use(express.static(dist, { redirect: false }));
     app.get("*", (req, res) => {
-      res.sendFile(path.join(dirName, "dist", "index.html"));
+      const pathname = req.path.replace(/\/$/, '') || '/';
+      if (publicPageForPath(pathname)) return res.sendFile(path.join(dist, pathname === '/' ? 'index.html' : `${pathname.slice(1)}/index.html`));
+      if (clientPath(pathname)) return res.sendFile(path.join(dist, 'app-shell.html'));
+      res.status(404).sendFile(path.join(dist, '404.html'));
     });
   }
 

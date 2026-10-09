@@ -2,6 +2,7 @@ import type { BlogPost } from './types';
 import { BRAND } from '../brand';
 import { getArticleSchemaType, getBlogTopicName, getBlogTopicSlug } from './publication';
 import { BLOG_PUBLIC_THEME_CSS } from './public-style';
+import { blogArticleUrl } from './seo';
 
 function escapeHtml(value: unknown) {
   return String(value || '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character] || character));
@@ -16,7 +17,7 @@ function formatDate(value: string, style: 'medium' | 'long' = 'medium') {
 }
 
 export function renderBlogArticleHtml(post: BlogPost, origin: string) {
-  const canonical = post.canonicalUrl || `${origin}/blog/${encodeURIComponent(post.slug)}`;
+  const canonical = blogArticleUrl(origin, post.slug);
   const published = !post.fixtureTest && post.status === 'published' && Boolean(post.publishedAt) && new Date(post.publishedAt || 0).getTime() <= Date.now();
   const robots = published ? post.robotsDirective || 'index,follow,max-image-preview:large' : 'noindex,nofollow';
   const description = post.metaDescription || post.excerpt;

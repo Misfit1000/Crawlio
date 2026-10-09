@@ -1,5 +1,6 @@
 import { sanitizeBlogHtml } from './sanitize';
 import { deriveAutomaticBlogFields } from './editor-experience';
+import { inspectBlogLinks } from './quality';
 import type { BlogPostInput, BlogSource } from './types';
 
 function escaped(value: unknown) {
@@ -10,9 +11,9 @@ function escaped(value: unknown) {
 
 export function completeManualArticleLinks(contentHtml: string, sources: BlogSource[]) {
   let html = sanitizeBlogHtml(contentHtml);
-  const hrefs = () => [...html.matchAll(/href=["']([^"']+)/gi)].map((match) => match[1]);
-  const missingSources = sources.filter((source) => source.url && !hrefs().includes(source.url));
-  const internal = hrefs().filter((href) => /^\/(?!\/)/.test(href));
+  const hrefs = inspectBlogLinks(html).map((link) => link.href);
+  const missingSources = sources.filter((source) => source.url && !hrefs.includes(source.url));
+  const internal = hrefs.filter((href) => /^\/(?!\/)/.test(href));
   const additions: string[] = [];
   if (missingSources.length) {
     additions.push(`<p>Review the original evidence from ${missingSources.map((source) => `<a href="${escaped(source.url)}">${escaped(source.title || source.publisher || 'the original source')}</a>`).join(' and ')}.</p>`);
@@ -25,7 +26,8 @@ export function completeManualArticleLinks(contentHtml: string, sources: BlogSou
 
 export function applySafeBlogFixes(input: BlogPostInput, overrides: string[] = []) {
   const automatic = deriveAutomaticBlogFields(input);
-  const patch = Object.fromEntries(Object.entries(automatic).filter(([key]) => !overrides.includes(key)));
+  const patch = Object.fromEntries(Object.entries(automatic).filter(([key]) =>
+    !overrides.includes(key) && (key !== 'slug' || !String(input.slug || '').trim())));
   return {
     ...input,
     ...patch,

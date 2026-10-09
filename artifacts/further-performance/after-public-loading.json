@@ -1,0 +1,83 @@
+{
+  "origin": "https://crawlio1.vercel.app",
+  "observedAt": "2026-10-08T13:44:25.528Z",
+  "visits": [
+    {
+      "kind": "fresh",
+      "domContentLoadedMs": 3052,
+      "lcpMs": 3100,
+      "cls": 0,
+      "transferredBytes": 112042,
+      "scriptEncodedBytes": 44724,
+      "browserRequests": 4,
+      "apiRequests": [],
+      "requestedScripts": [
+        "/assets/index-CvUjCIfQ.js",
+        "/assets/react-vendor-Bxu4apn9.js"
+      ],
+      "cdnResponses": [
+        {
+          "path": "/",
+          "cache": "HIT",
+          "status": 200
+        },
+        {
+          "path": "/assets/index-DWiSZCvd.css",
+          "cache": "HIT",
+          "status": 200
+        },
+        {
+          "path": "/assets/index-CvUjCIfQ.js",
+          "cache": "HIT",
+          "status": 200
+        },
+        {
+          "path": "/assets/react-vendor-Bxu4apn9.js",
+          "cache": "HIT",
+          "status": 200
+        }
+      ],
+      "note": "Unthrottled local browser sample, not field Core Web Vitals or origin execution counts."
+    },
+    {
+      "kind": "repeat",
+      "domContentLoadedMs": 59,
+      "lcpMs": 88,
+      "cls": 0,
+      "transferredBytes": 300,
+      "scriptEncodedBytes": 44724,
+      "browserRequests": 4,
+      "apiRequests": [],
+      "requestedScripts": [
+        "/assets/index-CvUjCIfQ.js",
+        "/assets/react-vendor-Bxu4apn9.js"
+      ],
+      "cdnResponses": [
+        {
+          "path": "/",
+          "cache": "HIT",
+          "status": 200
+        },
+        {
+          "path": "/assets/index-CvUjCIfQ.js",
+          "cache": "HIT",
+          "status": 200
+        },
+        {
+          "path": "/assets/react-vendor-Bxu4apn9.js",
+          "cache": "HIT",
+          "status": 200
+        },
+        {
+          "path": "/assets/index-DWiSZCvd.css",
+          "cache": "HIT",
+          "status": 200
+        }
+      ],
+      "note": "Unthrottled local browser sample, not field Core Web Vitals or origin execution counts."
+    }
+  ],
+  "pricingRequests": [
+    "/api/tools/plans/public"
+  ]
+}

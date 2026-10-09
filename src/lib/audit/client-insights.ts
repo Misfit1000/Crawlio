@@ -1,6 +1,6 @@
 import type { ResourceAuditDocument, ResourceAuditIssue, ResourceAuditLiveData, ResourceAuditPage } from './resource-types';
 import { extractReportScores, type ReportScoreSnapshot } from './report-insights';
-import { isCompletedAuditStatus } from './audit-time';
+import { isCompletedAuditStatus, isTerminalAuditStatus } from './audit-time';
 import { findingWorkflowKey, type FindingWorkflowStatus } from './finding-workflow';
 
 export type ChecklistStatus = FindingWorkflowStatus;
@@ -63,9 +63,18 @@ const CHECKLIST_PREFIX = 'crawlio_fix_checklist_v1:';
 const LEGACY_CHECKLIST_PREFIX = 'seointel_fix_checklist_v1:';
 const FINDING_NOTES_PREFIX = 'crawlio_finding_notes_v1:';
 const LEGACY_FINDING_NOTES_PREFIX = 'seointel_finding_notes_v1:';
+const HISTORY_LIMIT = 40;
+const HISTORY_PAGE_LIMIT = 48;
+const HISTORY_SIGNATURE_LIMIT = 512;
+const HISTORY_CHARACTER_LIMIT = 750_000;
+const HISTORY_WRITE_INTERVAL_MS = 5000;
+const pendingHistory = new Map<string, AuditHistoryEntry>();
+let historyTimer: number | undefined;
+let lastHistoryWrite = 0;
+let storageListenersInstalled = false;
 
 function hasStorage() {
-  return typeof window !== 'undefined' && !!window.localStorage;
+  try { return typeof window !== 'undefined' && !!window.localStorage; } catch { return false; }
 }
 
 export function issueSignature(issue: Pick<ResourceAuditIssue, 'findingKey' | 'title' | 'affectedUrl' | 'category'>) {
@@ -139,10 +148,13 @@ export function readAuditHistory(): AuditHistoryEntry[] {
   try {
     const raw = window.localStorage.getItem(HISTORY_KEY) || window.localStorage.getItem(LEGACY_HISTORY_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.map((entry) => ({
+    return Array.isArray(parsed) ? parsed.filter(entry => entry && typeof entry.auditId === 'string').slice(0, HISTORY_LIMIT).map((entry) => ({
       ...entry,
       score: entry?.scoreSource === 'final_report' && Number.isFinite(Number(entry.score)) ? Number(entry.score) : null,
       scoreSource: entry?.scoreSource === 'final_report' ? 'final_report' : 'unavailable',
+      issueSignatures: Array.isArray(entry.issueSignatures) ? entry.issueSignatures.slice(0, HISTORY_SIGNATURE_LIMIT) : [],
+      topIssues: Array.isArray(entry.topIssues) ? entry.topIssues.slice(0, 12) : [],
+      pageSummaries: Array.isArray(entry.pageSummaries) ? entry.pageSummaries.slice(0, HISTORY_PAGE_LIMIT) : [],
     })) : [];
   } catch {
     return [];
@@ -151,7 +163,13 @@ export function readAuditHistory(): AuditHistoryEntry[] {
 
 function writeAuditHistory(entries: AuditHistoryEntry[]) {
   if (!hasStorage()) return;
-  window.localStorage.setItem(HISTORY_KEY, JSON.stringify(entries.slice(0, 40)));
+  const bounded = entries.slice(0, HISTORY_LIMIT);
+  while (bounded.length) {
+    const serialized = JSON.stringify(bounded);
+    if (serialized.length > HISTORY_CHARACTER_LIMIT) { bounded.pop(); continue; }
+    try { window.localStorage.setItem(HISTORY_KEY, serialized); return; }
+    catch { bounded.pop(); }
+  }
 }
 
 export function buildHistoryEntry(data: Omit<ResourceAuditLiveData, 'finalReport'> & { finalReport?: Pick<NonNullable<ResourceAuditLiveData['finalReport']>, 'scores'> | null }): AuditHistoryEntry | null {
@@ -187,18 +205,18 @@ export function buildHistoryEntry(data: Omit<ResourceAuditLiveData, 'finalReport
     mode: audit.effectiveMode || audit.mode,
     processingTier: audit.processingTier,
     updatedAt: audit.updatedAt,
-    issueSignatures: data.latestIssues.map(issueSignature),
-    topIssues: data.latestIssues.slice(0, 12),
-    pageSummaries: data.latestPages.map((page) => ({
+    issueSignatures: data.latestIssues.slice(0, HISTORY_SIGNATURE_LIMIT).map(issueSignature),
+    topIssues: data.latestIssues.slice(0, 12).map(issue => ({ ...issue, description: String(issue.description || '').slice(0, 1000), evidence: String(issue.evidence || '').slice(0, 1000), recommendation: String(issue.recommendation || '').slice(0, 1000), sourceUrls: issue.sourceUrls?.slice(0, 12) })),
+    pageSummaries: data.latestPages.slice(0, HISTORY_PAGE_LIMIT).map((page) => ({
       url: page.url,
       statusCode: page.statusCode,
       crawlDepth: page.crawlDepth,
       issueCount: page.issueCount,
       responseTimeMs: page.responseTimeMs,
       pageSizeBytes: page.pageSizeBytes,
-      title: page.title,
-      metaDescription: page.metaDescription,
-      h1: page.h1,
+      title: String(page.title || '').slice(0, 256),
+      metaDescription: String(page.metaDescription || '').slice(0, 512),
+      h1: String(page.h1 || '').slice(0, 512),
       canonicalUrl: page.canonicalUrl,
       siteName: page.siteName,
       faviconUrl: page.faviconUrl,
@@ -210,10 +228,42 @@ export function buildHistoryEntry(data: Omit<ResourceAuditLiveData, 'finalReport
 }
 
 export function upsertAuditHistory(data: ResourceAuditLiveData) {
+  if (!hasStorage()) return;
   const entry = buildHistoryEntry(data);
   if (!entry || !entry.normalizedUrl) return;
-  const existing = readAuditHistory().filter((item) => item.auditId !== entry.auditId);
-  writeAuditHistory([entry, ...existing].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()));
+  pendingHistory.set(entry.auditId, entry);
+  if (pendingHistory.size > HISTORY_LIMIT) pendingHistory.delete(pendingHistory.keys().next().value!);
+  if (!storageListenersInstalled) {
+    window.addEventListener('pagehide', flushAuditHistory);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) flushAuditHistory(); });
+    storageListenersInstalled = true;
+  }
+  if (isTerminalAuditStatus(data.audit!.status) || Date.now() - lastHistoryWrite >= HISTORY_WRITE_INTERVAL_MS) {
+    flushAuditHistory();
+  } else if (historyTimer == null) {
+    historyTimer = window.setTimeout(flushAuditHistory, HISTORY_WRITE_INTERVAL_MS - (Date.now() - lastHistoryWrite));
+  }
+}
+
+export function flushAuditHistory() {
+  if (historyTimer != null) window.clearTimeout(historyTimer);
+  historyTimer = undefined;
+  if (!pendingHistory.size || !hasStorage()) return;
+  const existing = readAuditHistory();
+  const merged = new Map(existing.map(entry => [entry.auditId, entry]));
+  for (const entry of pendingHistory.values()) {
+    const stored = merged.get(entry.auditId);
+    if (stored && isTerminalAuditStatus(stored.status as ResourceAuditDocument['status']) && !isTerminalAuditStatus(entry.status as ResourceAuditDocument['status'])) continue;
+    // A delayed live snapshot must not remove a saved final score.
+    const next = stored?.scoreSource === 'final_report' && entry.scoreSource !== 'final_report'
+      ? { ...entry, score: stored.score, scores: stored.scores, scoreSource: stored.scoreSource }
+      : entry;
+    merged.set(entry.auditId, next);
+  }
+  const next = [...merged.values()].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  pendingHistory.clear();
+  if (JSON.stringify(next) !== JSON.stringify(existing)) writeAuditHistory(next);
+  lastHistoryWrite = Date.now();
 }
 
 export function findPreviousAudit(current: AuditHistoryEntry | null, history = readAuditHistory()) {

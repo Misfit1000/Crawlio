@@ -89,7 +89,7 @@ export function normalizedIssueKey(issue: ResourceAuditIssue) {
   return `${SECTION_CATEGORY[classifyReportSection(issue)]}|${issue.title}`.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
-export function categoryForIssue(issue: ResourceAuditIssue) {
+export function categoryForIssue(issue: Pick<ResourceAuditIssue, 'category' | 'title' | 'description'>) {
   return SECTION_CATEGORY[classifyReportSection(issue)];
 }
 
@@ -157,10 +157,11 @@ export function calculateTransparentAuditScore(input: {
   limitations?: string[];
   aggregate?: AuditScoreAggregate;
   scoringVersion?: '2.1' | '2.2';
+  selectedCategories?: AuditScoreCategory[];
 }): TransparentAuditScore {
   const pageUrls = uniquePublicPages(input.pages);
   const pageCount = Math.max(1, input.aggregate?.pageCount ?? (pageUrls.size || input.pages.length));
-  const measured = new Set(input.measuredCategories || DEFAULT_MEASURED);
+  const measured = new Set((input.measuredCategories || DEFAULT_MEASURED).filter(category => !input.selectedCategories || input.selectedCategories.includes(category)));
   const grouped = new Map<string, { category: AuditScoreCategory; title: string; severity: AuditSeverity; urls: Set<string> }>();
   const severityRank: Record<AuditSeverity, number> = { critical: 5, high: 4, medium: 3, low: 2, info: 1 };
 
@@ -184,6 +185,7 @@ export function calculateTransparentAuditScore(input: {
   const deductions: ScoreDeduction[] = [];
   const groups = input.aggregate?.groups ?? Array.from(grouped, ([key, group]) => ({ ...group, key, affectedPages: group.urls.size }));
   for (const group of groups) {
+    if (input.selectedCategories && !input.selectedCategories.includes(group.category)) continue;
     const key = group.key;
     const affectedPages = group.affectedPages || pageCount;
     const affectedPercentage = Math.min(100, Math.round((affectedPages / pageCount) * 100));
@@ -212,6 +214,7 @@ export function calculateTransparentAuditScore(input: {
     largePages: input.pages.filter((page) => page.pageSizeBytes > 1_000_000).length,
   }, pageCount);
   deductions.push(...derived.filter((deduction) => {
+    if (input.selectedCategories && !input.selectedCategories.includes(deduction.category)) return false;
     if (input.scoringVersion !== '2.2') return true;
     // Explicit findings already account for these observations. One observation
     // must not be charged again through the page aggregate.
@@ -234,7 +237,7 @@ export function calculateTransparentAuditScore(input: {
       grade: scoreToGrade(score),
       measured: isMeasured,
       deductions: categoryDeductions,
-      unavailableChecks: input.unavailableChecks?.[category] || [],
+      unavailableChecks: input.selectedCategories && !input.selectedCategories.includes(category) ? [] : input.unavailableChecks?.[category] || [],
     } satisfies CategoryScoreResult];
   })) as Record<AuditScoreCategory, CategoryScoreResult>;
 

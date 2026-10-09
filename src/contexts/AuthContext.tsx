@@ -4,6 +4,7 @@ import { AccountActionError, AccountProfileError, accountActionError, finishRegi
 import type { PlanLimits, UserProfileEntitlement } from '../lib/billing/entitlements';
 import { API_ROUTES } from "../lib/api/routes";
 import { safeJsonFetch } from "../lib/http/safe-json";
+import { clearInflightReads } from '../lib/http/inflight-read';
 import {
   AUDIT_MODES,
   AUDIT_MODE_PAGE_CEILINGS,
@@ -237,6 +238,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (retry || sessionRef.current?.user.id !== session?.user.id || sessionRef.current?.access_token !== session?.access_token) {
       generationRef.current += 1;
       clearRecentHydration();
+      clearInflightReads();
     }
     sessionRef.current = session;
     const generation = generationRef.current;

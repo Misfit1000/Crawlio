@@ -1,10 +1,14 @@
-import { Activity,BookOpen,Database,Gauge,Loader2,Settings,ShieldAlert,SlidersHorizontal,Users,Wifi } from 'lucide-react';
+import { Loader2, ShieldAlert } from 'lucide-react';
 import React from 'react';
-import { useLocation,useNavigate } from '../app/router';
+import './admin/admin-workspace.css';
+import { Link, useLocation } from '../app/router';
 import { useAuth } from '../contexts/AuthContext';
 import { AdminActionProvider } from './admin/AdminActionDialog';
+import { AdminRefreshProvider } from './admin/AdminRefresh';
+import AdminSearch from './admin/AdminSearch';
 import BlogNotificationInbox from './blog/BlogNotificationInbox';
-import { Notice,PageHeader,Panel as UiPanel } from './ui/page-system';
+import { Notice, PageHeader } from './ui/page-system';
+import { adminGroupForPath, adminSectionForPath, currentNavigationPath } from './navigation/product-navigation';
 
 const AdminOverview = React.lazy(() => import('./admin/AdminOverview'));
 const AdminUsers = React.lazy(() => import('./admin/AdminUsers'));
@@ -17,44 +21,12 @@ const AdminPlans = React.lazy(() => import('./admin/AdminPlans'));
 
 const BlogAdmin = React.lazy(() => import('./blog/BlogAdmin'));
 
-type AdminTab = 'overview' | 'users' | 'audits' | 'queue' | 'workers' | 'diagnostics' | 'settings' | 'plans' | 'blog';
-
-const tabs: Array<{ id: AdminTab; label: string; icon: any; path: string }> = [
-  { id: 'overview', label: 'Overview', icon: Activity, path: '/admin' },
-  { id: 'users', label: 'Users', icon: Users, path: '/admin/users' },
-  { id: 'audits', label: 'Audits', icon: Database, path: '/admin/audits' },
-  { id: 'queue', label: 'Queue', icon: SlidersHorizontal, path: '/admin/queue' },
-  { id: 'workers', label: 'Audit Engine', icon: Wifi, path: '/admin/workers' },
-  { id: 'diagnostics', label: 'Diagnostics', icon: Gauge, path: '/admin/diagnostics' },
-  { id: 'settings', label: 'Settings', icon: Settings, path: '/admin/settings' },
-  { id: 'plans', label: 'Plans', icon: ShieldAlert, path: '/admin/plans' },
-  { id: 'blog', label: 'Content', icon: BookOpen, path: '/admin/blog' },
-];
-
-const sectionDescriptions: Record<AdminTab, string> = {
-  overview: 'Recent platform activity, audit outcomes, and audit-engine status in one place.',
-  users: 'Find accounts, review access, and apply guarded account actions.',
-  audits: 'Inspect audit evidence and lifecycle state before taking action.',
-  queue: 'Review waiting and active work without interrupting healthy jobs.',
-  workers: 'Check audit-engine registration and heartbeat freshness.',
-  diagnostics: 'Inspect service readiness and operational signals.',
-  settings: 'Manage platform configuration and administrator resources.',
-  plans: 'Review plan availability, quotas, and account entitlements.',
-  blog: 'Write, review, schedule, and publish editorial content.',
-};
-
-function tabFromPath(pathname: string) {
-  const match = pathname.match(/^\/admin\/([^/]+)/);
-  const id = match?.[1] as AdminTab | undefined;
-  return tabs.some((tab) => tab.id === id) ? id! : 'overview';
-}
-
 export default function AdminDashboard() {
   const { user } = useAuth();
   const location = useLocation();
-  const navigate = useNavigate();
-  const activeTab = tabFromPath(location.pathname);
-  const activeLabel = tabs.find((tab) => tab.id === activeTab)?.label || 'Overview';
+  const activeSection = adminSectionForPath(location.pathname);
+  const activeTab = activeSection.id;
+  const activeGroup = adminGroupForPath(location.pathname);
 
   if (!user || user.role !== 'admin') {
     return (
@@ -65,33 +37,16 @@ export default function AdminDashboard() {
     );
   }
 
-  const switchTab = (tab: AdminTab) => {
-    navigate(tabs.find((item) => item.id === tab)?.path || '/admin');
-  };
-
   return (
-    <AdminActionProvider><div className="admin-workspace space-y-6">
-      <PageHeader eyebrow="Admin control center" icon={Activity} title={activeTab === 'overview' ? 'Operations overview' : activeLabel} description={sectionDescriptions[activeTab]} metadata={<><span className="suite-chip"><ShieldAlert className="h-3.5 w-3.5" /> Server-verified admin</span><BlogNotificationInbox /></>} />
+    <AdminActionProvider key={user.id}><div className="admin-workspace min-w-0 max-w-full space-y-4 [&>.page-header]:pb-4">
+      <PageHeader eyebrow="Administration" icon={activeGroup.icon} title={activeTab === 'overview' ? 'Operations overview' : activeSection.label} metadata={<BlogNotificationInbox />} />
 
-      <UiPanel className="flex max-w-full gap-1 overflow-x-auto p-1.5 lg:hidden" as="nav">
-        {tabs.map((tab) => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => switchTab(tab.id)}
-              aria-current={activeTab === tab.id ? 'page' : undefined}
-              className={`flex min-h-10 shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
-                activeTab === tab.id ? 'bg-accent text-accent-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              {tab.label}
-            </button>
-          );
-        })}
-      </UiPanel>
+      {activeGroup.sections.length > 1 && <nav aria-label={`${activeGroup.label} sections`} className="flex min-w-0 flex-wrap items-center gap-1 border-b border-border pb-2">
+        <span className="mr-2 text-xs font-semibold text-muted-foreground">{activeGroup.label}</span>
+        {activeGroup.sections.map(section => <Link key={section.id} to={currentNavigationPath(section.path, location)} aria-current={activeTab === section.id ? 'page' : undefined} className={`inline-flex min-h-11 items-center rounded-md px-3 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${activeTab === section.id ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}>{section.label}</Link>)}
+      </nav>}
 
+      <AdminRefreshProvider controls={activeTab !== 'blog'} polling={activeTab !== 'settings' && activeTab !== 'plans'} toolbar={activeTab !== 'blog' ? <AdminSearch /> : undefined}>
       <React.Suspense fallback={<div role='status' className='p-8 text-muted-foreground'>Loading section...</div>}>
       {activeTab === 'overview' && <AdminOverview />}
       {activeTab === 'users' && <AdminUsers adminUserId={user.id} />}
@@ -106,6 +61,6 @@ export default function AdminDashboard() {
           <BlogAdmin />
         </React.Suspense>
       )}
-    </React.Suspense></div></AdminActionProvider>
+    </React.Suspense></AdminRefreshProvider></div></AdminActionProvider>
   );
 }

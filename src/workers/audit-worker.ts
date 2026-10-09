@@ -1,6 +1,8 @@
-import { parseHtml, type ParsedPageData } from '../lib/seo/html-parser';
+import { parseHtml, type HtmlExtractionOptions, type ParsedPageData } from '../lib/seo/html-parser';
 import { pathToFileURL } from 'node:url';
-import { fetchRobotsTxt, getSitemapUrlsFromRobots, isBlockedByRobots, parseRobotsTxt } from '../lib/seo/robots';
+import { fetchRobotsEvidence, getSitemapUrlsFromRobots, isBlockedByRobots, parseRobotsTxt } from '../lib/seo/robots';
+import { collectToolEvidence } from '../lib/tools/audit-tools';
+import { persistAuditRobotsEvidence } from '../lib/supabase/audit-tool-repository';
 import { fetchSitemap } from '../lib/seo/sitemap';
 import { isSameDomain, normalizeUrl, stripTrackingParams } from '../lib/seo/url-utils';
 import { AUDIT_CHECK_COUNT, runAllChecksSafely } from '../lib/seo/checks/runner';
@@ -108,10 +110,11 @@ export function mapAuditIssue(issue: AuditIssue, fallbackUrl: string): Omit<Reso
   };
 }
 
-export function buildSecurityIssues(page: FetchedPage): Omit<ResourceAuditIssue, 'id' | 'detectedAt'>[] {
+export function buildSecurityIssues(page: FetchedPage, registeredChecks?: ReadonlySet<string>): Omit<ResourceAuditIssue, 'id' | 'detectedAt'>[] {
   const issues: Omit<ResourceAuditIssue, 'id' | 'detectedAt'>[] = [];
   const headers = page.headers;
-  const add = (severity: AuditSeverity, title: string, evidence: string, recommendation: string) => {
+  const add = (severity: AuditSeverity, title: string, evidence: string, recommendation: string, checkId?: string) => {
+    if (checkId && registeredChecks?.has(checkId)) return;
     issues.push({
       severity,
       category: 'security',
@@ -120,6 +123,7 @@ export function buildSecurityIssues(page: FetchedPage): Omit<ResourceAuditIssue,
       affectedUrl: page.finalUrl,
       evidence,
       recommendation,
+      ...(registeredChecks && checkId ? { checkId } : {}),
     });
   };
 
@@ -127,7 +131,7 @@ export function buildSecurityIssues(page: FetchedPage): Omit<ResourceAuditIssue,
     add('high', 'Page is not served over HTTPS', page.finalUrl, 'Serve all public pages over HTTPS and redirect HTTP to HTTPS.');
   }
   if (!headers['strict-transport-security'] && page.finalUrl.startsWith('https://')) {
-    add('medium', 'Missing HSTS header', 'strict-transport-security header not present', 'Add a Strict-Transport-Security header after HTTPS is stable.');
+    add('medium', 'Missing HSTS header', 'strict-transport-security header not present', 'Add a Strict-Transport-Security header after HTTPS is stable.', 'missing-hsts');
   }
   if (!headers['content-security-policy']) {
     add('medium', 'Missing Content-Security-Policy header', 'content-security-policy header not present', 'Add a CSP that restricts scripts, frames, images, and form targets.');
@@ -174,12 +178,12 @@ export function workerFetchOptions(timeoutMs: number): SafePublicFetchOptions {
   };
 }
 
-export async function fetchHtmlPage(url: string, timeoutMs: number): Promise<FetchedPage> {
+export async function fetchHtmlPage(url: string, timeoutMs: number, extraction?: HtmlExtractionOptions): Promise<FetchedPage> {
   const response = await safePublicFetch(url, workerFetchOptions(timeoutMs));
   let parsed: ParsedPageData | null = null;
   if (response.body) {
     try {
-      parsed = parseHtml(response.body, response.finalUrl);
+      parsed = parseHtml(response.body, response.finalUrl, { keywords: false, ...extraction });
     } catch (error) {
       const parseError = new Error(error instanceof Error ? error.message : 'HTML parsing failed.');
       (parseError as Error & { code: string }).code = 'INVALID_HTML_RESPONSE';
@@ -518,8 +522,10 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     currentUrl: new URL('/robots.txt', origin).toString(),
     currentCheck: 'robots.txt',
   }, { type: 'robots_fetching', message: 'Checking search engine access rules' });
-  const robotsTxt = await fetchRobotsTxt(origin, workerFetchOptions(config.timeoutMs));
-  const robotsRules = robotsTxt ? parseRobotsTxt(robotsTxt) : null;
+  const { document: robotsDocument, ...robotsEvidence } = await fetchRobotsEvidence(origin, { ...workerFetchOptions(config.timeoutMs), maxBytes: 128_000 });
+  const robotsTxt = robotsEvidence.raw;
+  const robotsRules = robotsDocument || parseRobotsTxt('');
+  await persistAuditRobotsEvidence(audit.id, robotsEvidence);
 
   if (audit.projectId) {
     const previousPages = await auditRepository.getPreviousProjectPages(audit.projectId, audit.id, Math.min(config.pageLimit, 100)).catch(() => []);
@@ -599,7 +605,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     if (visited.has(currentUrl) || processedContentUrls.has(currentUrl) || candidateBudgetReached() || quotaReached()) return;
     visited.add(currentUrl);
 
-    if (robotsRules && isBlockedByRobots(currentUrl, robotsRules)) {
+    if (robotsEvidence.policy === 'disallow-all' || isBlockedByRobots(currentUrl, robotsRules)) {
       await recordFailure(failureForCode('ROBOTS_BLOCKED', { affectedUrl: currentUrl }), item);
       return;
     }
@@ -761,6 +767,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
 
     writer.recordAnalysisDuration(Date.now() - analysisStartedAt);
     const pageRecord = await writer.addPage({
+      toolEvidence: collectToolEvidence({ ...fetched, requestedUrl: currentUrl, robotsAllowed: robotsEvidence.state === 'malformed' ? null : !isBlockedByRobots(currentUrl, robotsRules) }),
       url: fetched.finalUrl,
       statusCode: fetched.statusCode,
       responseTimeMs: fetched.responseTimeMs,
@@ -810,7 +817,7 @@ async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteB
     });
 
     if (fetched.parsed) {
-      for (const link of fetched.parsed.internalLinks) {
+      for (const link of fetched.parsed.internalLinks || []) {
         await enqueuePage(link.href, item.depth + 1, fetched.finalUrl, link.text);
       }
     }
@@ -1329,7 +1336,7 @@ export async function runAuditWorkerLoop() {
   let scalableHeartbeat: Promise<void> | null = null;
   let exportTask: Promise<void> | null = null;
   let exportTimer: ReturnType<typeof setInterval> | undefined;
-  let lastExportCleanup = 0;
+  let auditAdmissionIdle = false;
   const healthServer = startWorkerHealthServer(state, () => workerReady, process.env.WORKER_HEALTH_PORT || process.env.PORT);
 
   const shutdown = async (signal: NodeJS.Signals) => {
@@ -1401,15 +1408,12 @@ export async function runAuditWorkerLoop() {
   }, WORKER_HEARTBEAT_INTERVAL_MS);
   heartbeatTimer.unref?.();
   if (process.env.SCALABLE_AUDITS_ENABLED === 'true') {
+    const exports = await import('./scalable-export-worker');
+    const maintenance = exports.createScalableExportMaintenance(config.workerId, () =>
+      !shutdownRequested && auditAdmissionIdle && !state.currentAuditId && !activeScalableSlices.has(config.workerId));
     exportTimer = setInterval(() => {
-      if (shutdownRequested || exportTask) return;
-      exportTask = import('./scalable-export-worker').then(async (exports) => {
-        await exports.runScalableExportWorkerOnce(config.workerId);
-        if (Date.now() - lastExportCleanup >= 60_000) {
-          lastExportCleanup = Date.now();
-          await exports.cleanupScalableExportsOnce();
-        }
-      }).catch((error) => {
+      if (shutdownRequested || !auditAdmissionIdle || exportTask) return;
+      exportTask = maintenance.tick().catch((error) => {
         console.error(`Export worker: ${error instanceof Error ? error.message : String(error)}`);
       }).finally(() => { exportTask = null; });
     }, config.pollIntervalMs);
@@ -1418,12 +1422,16 @@ export async function runAuditWorkerLoop() {
   while (!shutdownRequested) {
     try {
       const recovering = state.queuePollingStatus === 'error' || !state.databaseConnected;
+      auditAdmissionIdle = false;
       const claimed = await runOneAudit(config.workerId, state);
       if (shutdownRequested) break;
       if (recovering) {
         await writeWorkerHeartbeat(state, { status: claimed ? state.status : 'idle', queuePollingStatus: 'active', databaseConnected: true, lastFatalWorkerError: null });
       }
-      if (!claimed) await wait(config.pollIntervalMs);
+      if (!claimed) {
+        auditAdmissionIdle = true;
+        await wait(config.pollIntervalMs);
+      }
     } catch (error) {
       if (shutdownRequested) break;
       const detail = error instanceof Error ? error.message : String(error || 'Worker polling failure');

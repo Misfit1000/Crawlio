@@ -9,6 +9,8 @@ type Row = Record<string, any>;
 const memoryJobs = new Map<string, Row>();
 const memoryBatches = new Map<string, Row>();
 const memoryDiscoveries = new Map<string, Row>();
+const memoryDispatcher = { id: 'vercel', last_dispatch_at: null as string | null, last_successful_stage_at: null as string | null,
+  last_recovery_at: null, dispatched_stages: 0, recovered_jobs: 0, consecutive_rate_limits: 0, provider_pause_until: null as string | null, last_safe_error_code: '' };
 let memorySettings: Row = {
   id: 'default', enabled: false, daily_automatic_limit: 2, weekly_automatic_limit: 10,
   automatic_timing: true, timezone: 'UTC', preferred_start_hour: 9, preferred_end_hour: 17,
@@ -211,15 +213,17 @@ export const blogAutomationRepository = {
   async claimVercelStage(executionId: string, requestedJobId?: string | null) {
     const client = getSupabaseAdminClient();
     if (!client) {
-      const active = [...memoryJobs.values()].some((job) => job.locked_by && new Date(job.lease_expires_at || 0).getTime() > Date.now() && job.id !== requestedJobId);
+      if (Date.parse(memoryDispatcher.provider_pause_until || '') > Date.now()) return null;
+      const active = [...memoryJobs.values()].some((job) => job.locked_by && new Date(job.lease_expires_at || 0).getTime() > Date.now());
       if (active) return null;
-      const row = [...memoryJobs.values()].find((job) => job.execution_target === 'vercel' && (!requestedJobId || job.id === requestedJobId) && !['published', 'failed', 'cancelled', 'ready_for_review', 'scheduled'].includes(job.workflow_stage) && (!job.scheduled_for || new Date(job.scheduled_for).getTime() <= Date.now()) && (!job.next_retry_at || new Date(job.next_retry_at).getTime() <= Date.now()));
+      const row = [...memoryJobs.values()].find((job) => job.execution_target === 'vercel' && (!requestedJobId || job.id === requestedJobId) && !['published', 'failed', 'cancelled', 'ready_for_review', 'scheduled'].includes(job.state) && !['published', 'failed', 'cancelled', 'ready_for_review', 'scheduled'].includes(job.workflow_stage) && (!job.scheduled_for || new Date(job.scheduled_for).getTime() <= Date.now()) && (!job.next_retry_at || new Date(job.next_retry_at).getTime() <= Date.now()));
       if (!row) return null;
       row.stage_attempt_count = Number(row.stage_attempt_count || 0) + 1;
       row.locked_by = executionId;
       row.locked_at = nowIso();
       row.lease_expires_at = new Date(Date.now() + 240_000).toISOString();
       row.updated_at = nowIso();
+      memoryDispatcher.last_dispatch_at = nowIso();
       return toJob(row);
     }
     const { data, error } = await client.rpc('claim_vercel_blog_stage', { execution_id: executionId, lease_seconds: 240, requested_job_id: requestedJobId || null });
@@ -232,8 +236,16 @@ export const blogAutomationRepository = {
     const client = getSupabaseAdminClient();
     if (!client) {
       const row = memoryJobs.get(input.jobId);
-      if (!row || row.locked_by !== input.executionId || row.workflow_stage !== input.expectedStage) return null;
+      if (!row || row.execution_target !== 'vercel' || row.locked_by !== input.executionId || row.workflow_stage !== input.expectedStage || !(Date.parse(row.lease_expires_at || '') > Date.now())) return null;
       Object.assign(row, { workflow_stage: input.nextStage, state: input.nextState, stage_outputs: { ...(row.stage_outputs || {}), ...(input.output || {}) }, stage_progress: input.progress, status_message: input.message, stage_attempt_count: 0, locked_by: null, locked_at: null, lease_expires_at: null, next_retry_at: null, last_safe_error_code: '', error: '', updated_at: nowIso() });
+      memoryDispatcher.last_successful_stage_at = nowIso();
+      memoryDispatcher.dispatched_stages += 1;
+      memoryDispatcher.last_safe_error_code = '';
+      if (input.output && Object.hasOwn(input.output, 'nextProviderRequestAt')) {
+        const ready = Date.parse(String(input.output.nextProviderRequestAt));
+        memoryDispatcher.provider_pause_until = new Date(Number.isFinite(ready) ? Math.min(Date.now() + 900_000, Math.max(Date.now(), ready)) : Date.now() + 30_000).toISOString();
+        memoryDispatcher.consecutive_rate_limits = 0;
+      }
       return toJob(row);
     }
     const { data, error } = await client.rpc('complete_vercel_blog_stage', { job_id: input.jobId, execution_id: input.executionId, expected_stage: input.expectedStage, next_stage: input.nextStage, next_state: input.nextState, output_patch: input.output || {}, progress_value: input.progress, message_value: input.message });
@@ -268,7 +280,7 @@ export const blogAutomationRepository = {
 
   async getDispatcherState() {
     const client = getSupabaseAdminClient();
-    if (!client) return { id: 'vercel', last_dispatch_at: null, last_successful_stage_at: null, last_recovery_at: null, dispatched_stages: 0, recovered_jobs: 0, consecutive_rate_limits: 0, provider_pause_until: null, last_safe_error_code: '' };
+    if (!client) return { ...memoryDispatcher };
     const { data, error } = await client.from('blog_dispatcher_state').select('*').eq('id', 'vercel').maybeSingle();
     if (error) throw error;
     return data || null;
@@ -377,10 +389,10 @@ export const blogAutomationRepository = {
   async recordProviderHealth(input: { status: string; errorCode?: string | null; durationMs?: number | null; actorId?: string | null; testKind?: string }) {
     const config = getGroqBlogConfiguration();
     const patch = {
-      provider_last_success_at: input.status === 'connected' ? nowIso() : memorySettings.provider_last_success_at,
+      ...(input.status === 'connected' ? { provider_last_success_at: nowIso() } : {}),
       provider_last_error_code: input.errorCode || '',
       provider_last_duration_ms: input.durationMs ?? null,
-      provider_live_verification_status: input.testKind === 'live' ? input.status : memorySettings.provider_live_verification_status,
+      ...(input.testKind === 'live' ? { provider_live_verification_status: input.status } : {}),
     };
     const client = getSupabaseAdminClient();
     if (!client) { memorySettings = { ...memorySettings, ...patch }; return; }
@@ -390,6 +402,24 @@ export const blogAutomationRepository = {
     ]);
     if (settingsResult.error) throw settingsResult.error;
     if (healthResult.error) throw healthResult.error;
+  },
+
+  async automaticJobCounts(now = new Date()) {
+    const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const week = new Date(day.getTime() - ((day.getUTCDay() || 7) - 1) * 86_400_000);
+    const client = getSupabaseAdminClient();
+    if (!client) {
+      const jobs = [...memoryJobs.values()].filter((job) => ['autopilot', 'trend_autopilot'].includes(job.origin) && job.payload?.jobType !== 'discover_trends');
+      return { day: jobs.filter((job) => new Date(job.created_at) >= day).length, week: jobs.filter((job) => new Date(job.created_at) >= week).length };
+    }
+    const count = async (start: Date) => {
+      const { count, error } = await client.from('blog_generation_jobs').select('id', { head: true, count: 'exact' })
+        .in('origin', ['autopilot', 'trend_autopilot']).neq('payload->>jobType', 'discover_trends').gte('created_at', start.toISOString());
+      if (error) throw error;
+      return count || 0;
+    };
+    const [daily, weekly] = await Promise.all([count(day), count(week)]);
+    return { day: daily, week: weekly };
   },
 
   async recordAutomaticReview(approved: boolean) {

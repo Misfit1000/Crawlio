@@ -3,14 +3,14 @@ import { Mail, Loader2 } from 'lucide-react';
 import LandingPage, { type LandingDestination } from './components/LandingPage';
 import { useAuth } from './contexts/AuthContext';
 import { useTheme } from './contexts/ThemeContext';
-import { API_ROUTES } from './lib/api/routes';
-import { safeJsonFetch } from './lib/http/safe-json';
-import { getAuditStartHeaders } from './lib/api/auth-headers';
-import { createAuditSubmitGuard } from './lib/api/audit-submit-guard';
+import { AuditLaunchProvider, useAuditLaunch } from './contexts/AuditLaunchContext';
+import { loadLiveAuditScreen } from './lib/audit/live-screen-loader';
 import { BrandMark, LoadingSkeleton, ThemeToggle } from './components/ui/visual-system';
-import { MarketingShell, WorkspaceShell } from './components/layout/ProductShells';
+import { MarketingShell } from './components/layout/ProductShells';
 import { useLocation, useNavigate } from './app/router';
 import { BRAND } from './lib/brand';
+import type { AuditScope } from './lib/audit/audit-scope';
+import { publicPageForPath } from './app/public-routes';
 import { activateBrowserMonitoringForPath } from './lib/monitoring/sentry-browser';
 import {
   TAB_PATHS,
@@ -26,6 +26,7 @@ const Login = lazy(() => import('./components/Login'));
 const Register = lazy(() => import('./components/Register'));
 const AccountRecovery = lazy(() => import('./components/AccountRecovery'));
 const Sidebar = lazy(() => import('./components/Sidebar'));
+const WorkspaceShell = lazy(() => import('./components/layout/WorkspaceShell'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
 const ProjectsPage = lazy(() => import('./components/projects/ProjectsPage'));
 const WebsiteAnalyzer = lazy(() => import('./components/WebsiteAnalyzer'));
@@ -37,23 +38,34 @@ const Reports = lazy(() => import('./components/Reports'));
 const Settings = lazy(() => import('./components/Settings'));
 const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
 const SearchData = lazy(() => import('./components/SearchData'));
-const LiveAuditProgress = lazy(() => import('./components/audit/LiveAuditProgress').then((mod) => ({ default: mod.LiveAuditProgress })));
+const LiveAuditProgress = lazy(() => loadLiveAuditScreen().then((mod) => ({ default: mod.LiveAuditProgress })));
 const AuditWorkspace = lazy(() => import('./components/audit/AuditWorkspace'));
 const AuditHistoryPage = lazy(() => import('./components/audit/AuditHistoryPage'));
 const SharedReportPage = lazy(() => import('./components/audit/SharedReportPage'));
 const BlogIndex = lazy(() => import('./components/blog/BlogIndex'));
 const BlogPostPage = lazy(() => import('./components/blog/BlogPostPage'));
 const LegalPage = lazy(() => import('./components/LegalPage'));
+const ToolsHub = lazy(() => import('./components/tools/ToolsHub'));
+const AuditPages = lazy(() => import('./components/public/AuditPages'));
+const ToolsPublicPage = lazy(() => import('./components/public/ToolsPublicPage'));
+const PricingPage = lazy(() => import('./components/public/PricingPage'));
+const ExampleReportPage = lazy(() => import('./components/public/ExampleReportPage'));
 const NotFoundPage = lazy(() => import('./components/NotFoundPage'));
 
 export type { TabType } from './app/routes';
 
 export default function App() {
+  return <AuditLaunchProvider><AppContent /></AuditLaunchProvider>;
+}
+
+function AppContent() {
   const { user, loading: authLoading, logout, profilePending, unverifiedEmail, setUnverifiedEmail } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const routerLocation = useLocation();
   const navigate = useNavigate();
-  const pathname = routerLocation.pathname;
+  const pathname = routerLocation.pathname.replace(/\/$/, '') || '/';
+  const publicPage = publicPageForPath(pathname);
+  const canonicalOrigin = useRef(new URL(document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href || window.location.origin).origin);
   const [authMode, setAuthMode] = useState<'login' | 'register' | null>(() => {
     if (window.location.pathname === '/admin/login' || window.location.pathname === '/login') {
       return 'login';
@@ -74,13 +86,13 @@ export default function App() {
   const liveAuditSection: AuditWorkspaceSection = ['overview', 'seo', 'technical', 'crawlability', 'links', 'performance', 'accessibility', 'security', 'pages'].includes(requestedLiveSection || '')
     ? requestedLiveSection as AuditWorkspaceSection
     : 'overview';
-  const auditStartGuardRef = useRef(createAuditSubmitGuard());
+  const { startAudit, initialSnapshotFor } = useAuditLaunch();
 
   useEffect(() => {
     activateBrowserMonitoringForPath(pathname);
   }, [pathname]);
 
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => window.innerWidth >= 1024);
   const activeTab = tabForPath(pathname);
   const workspaceRoute = parseAuditWorkspacePath(pathname);
   const isSearching = isWorkspacePath(pathname);
@@ -120,29 +132,31 @@ export default function App() {
   useEffect(() => {
     if (pathname === '/login' || pathname === '/admin/login') setAuthMode('login');
     if (pathname === '/register') setAuthMode('register');
-    if (pathname === '/pricing') window.setTimeout(() => document.getElementById('pricing')?.scrollIntoView({ block: 'start' }), 80);
-    if (pathname === '/reports/example') window.setTimeout(() => document.getElementById('reports')?.scrollIntoView({ block: 'start' }), 80);
   }, [pathname]);
 
   useEffect(() => {
+    // Standalone tool metadata is owned by its lazy page module.
+    if (publicPage?.kind === 'tool') return;
     const pages: Record<string, { title: string; description: string }> = {
-      '/': { title: `${BRAND.name} - ${BRAND.tagline}`, description: BRAND.description },
-      '/pricing': { title: `Pricing and Free Audit Limits | ${BRAND.name}`, description: `Compare ${BRAND.name} Quick, Standard, and Deep audit limits without hidden ranking or backlink data claims.` },
-      '/reports/example': { title: `Example Website Audit Report | ${BRAND.name}`, description: `Explore an example ${BRAND.name} report with website health, coverage, passive security, previews, and prioritized fixes.` },
       '/login': { title: `Sign in | ${BRAND.name}`, description: `Sign in to manage ${BRAND.name} website audits and reports.` },
       '/register': { title: `Create an account | ${BRAND.name}`, description: `Create a ${BRAND.name} account to save audits, reports, and fix progress.` },
       '/admin/login': { title: `Administrator sign in | ${BRAND.name}`, description: `Secure administrator access for ${BRAND.name}.` },
     };
-    const page = pages[pathname]
+    const page = (publicPage && publicPage.kind !== 'legal' ? { title: `${publicPage.title} | ${BRAND.name}`, description: publicPage.description } : null) || pages[pathname]
       || (pathname.startsWith('/audit/live/') ? { title: `Live website audit | ${BRAND.name}`, description: 'Follow website checks and collected evidence as the audit runs.' } : null)
       || (pathname.startsWith('/app') ? { title: `Audit workspace | ${BRAND.name}`, description: 'Review website audits, findings, reports, imports, and saved history.' } : null)
-      || (pathname.startsWith('/admin') ? { title: `Admin dashboard | ${BRAND.name}`, description: `Manage ${BRAND.name} users, audits, plans, blog operations, and deployment health.` } : null);
+      || (pathname.startsWith('/admin') ? { title: `Admin dashboard | ${BRAND.name}`, description: `Manage ${BRAND.name} users, audits, plans, blog operations, and deployment health.` } : null)
+      || (!knownPublicRoute ? { title: `Page not found | ${BRAND.name}`, description: 'This page does not exist. Browse Crawlio audits and tools.' } : null);
     if (!page) return;
     const description = document.querySelector<HTMLMetaElement>('meta[name="description"]');
     const canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
     document.title = page.title;
     if (description) description.content = page.description;
-    if (canonical) canonical.href = `${window.location.origin}${pathname}`;
+    if (canonical) canonical.href = `${canonicalOrigin.current}${pathname}`;
+    for (const selector of ['meta[property="og:title"]', 'meta[name="twitter:title"]']) document.querySelector<HTMLMetaElement>(selector)?.setAttribute('content', page.title);
+    for (const selector of ['meta[property="og:description"]', 'meta[name="twitter:description"]']) document.querySelector<HTMLMetaElement>(selector)?.setAttribute('content', page.description);
+    document.querySelector<HTMLMetaElement>('meta[property="og:url"]')?.setAttribute('content', `${canonicalOrigin.current}${pathname}`);
+    if (publicPage) document.querySelector('script[type="application/ld+json"]')?.replaceChildren(document.createTextNode(JSON.stringify({ '@context': 'https://schema.org', '@type': 'WebPage', name: page.title, description: page.description, url: `${canonicalOrigin.current}${pathname}` })));
   }, [pathname]);
 
   useEffect(() => {
@@ -162,7 +176,7 @@ export default function App() {
 
   useEffect(() => {
     const robots = document.querySelector<HTMLMetaElement>('meta[name="robots"]') || document.head.appendChild(Object.assign(document.createElement('meta'), { name: 'robots' }));
-    robots.content = pathname.startsWith('/app') || pathname.startsWith('/admin') || pathname.startsWith('/audit/live/') || pathname.startsWith('/share/') || pathname === '/login' || pathname === '/register'
+    robots.content = !knownPublicRoute || pathname.startsWith('/app') || pathname.startsWith('/admin') || pathname.startsWith('/audit/live/') || pathname.startsWith('/share/') || pathname === '/login' || pathname === '/register'
       ? 'noindex, nofollow'
       : 'index, follow';
   }, [pathname]);
@@ -176,22 +190,8 @@ export default function App() {
     }
   };
 
-  const startLiveAudit = async (rawUrl: string, mode: 'quick' | 'standard' | 'deep' = 'quick') => {
-    if (!auditStartGuardRef.current.begin()) return;
-    try {
-      const response = await safeJsonFetch<any>(API_ROUTES.auditStart, {
-        method: 'POST',
-        headers: await getAuditStartHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ url: rawUrl, mode }),
-      });
-      if (!response.success) {
-        throw new Error((response as any).error || 'The audit could not start. Please try again.');
-      }
-      const auditId = response.data.data?.auditId || response.data.auditId;
-      navigate(`/audit/live/${encodeURIComponent(auditId)}`);
-    } finally {
-      auditStartGuardRef.current.end();
-    }
+  const startLiveAudit = async (rawUrl: string, mode: 'quick' | 'standard' | 'deep' = 'quick', scope?: AuditScope) => {
+    await startAudit({ url: rawUrl, mode, scope });
   };
 
   const openHomeSection = (sectionId: string) => {
@@ -216,7 +216,7 @@ export default function App() {
   const blogMatch = pathname.match(/^\/blog(?:\/([^/]+))?\/?$/);
   const isBlogRoute = Boolean(blogMatch);
   const shareMatch = pathname.match(/^\/share\/([A-Za-z0-9_-]{40,80})\/?$/);
-  const knownPublicRoute = pathname === '/' || pathname === '/pricing' || pathname === '/reports/example' || pathname === '/login' || pathname === '/register' || isBlogRoute || Boolean(shareMatch) || Boolean(legalKind);
+  const knownPublicRoute = Boolean(publicPage) || pathname === '/login' || pathname === '/register' || isBlogRoute || Boolean(shareMatch) || Boolean(legalKind);
   let blogSlug = '';
   if (blogMatch?.[1]) {
     try {
@@ -300,6 +300,7 @@ export default function App() {
           <Suspense fallback={<div className="h-64 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-accent" /></div>}>
             <LiveAuditProgress
               auditId={liveAuditId}
+              initialSnapshot={initialSnapshotFor(liveAuditId)}
               onRerun={startLiveAudit}
               onOpenWorkspace={() => navigate(`/app/audits/${encodeURIComponent(liveAuditId)}/${liveAuditSection}`)}
             />
@@ -353,6 +354,8 @@ export default function App() {
         return <Reports onStartAudit={() => setActiveTab('seo-audit')} />;
       case 'settings':
         return <Settings />;
+      case 'tools':
+        return <ToolsHub />;
       case 'admin-dashboard':
         return <AdminDashboard />;
       default:
@@ -363,7 +366,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-background text-foreground font-sans overflow-x-hidden selection:bg-accent/30 transition-colors duration-300">
       {authMode && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[#0b1b46]/35 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={authMode === 'login' ? 'Sign in' : 'Create account'}>
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[var(--overlay)] p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={authMode === 'login' ? 'Sign in' : 'Create account'}>
           <div className="relative w-full max-w-md">
             <Suspense fallback={<div className="flex items-center justify-center rounded-xl border border-border bg-card p-8"><Loader2 className="h-6 w-6 animate-spin text-accent" /></div>}>
               {authMode === 'login' ? (
@@ -377,7 +380,15 @@ export default function App() {
       )}
 
       <div className="relative z-10 flex flex-col min-h-screen">
-        {shareMatch ? (
+        {publicPage && publicPage.kind !== 'home' && publicPage.kind !== 'legal' ? (
+          <MarketingShell theme={theme} onToggleTheme={toggleTheme} userLabel={user?.username || (user ? 'Account' : null)} authLoading={authLoading} navigationBase="/" onHome={() => navigate('/')} onLogin={() => setAuthMode('login')} onSettings={() => openAppTab('settings')} onLogout={handleLogout}>
+            <Suspense fallback={<LoadingSkeleton rows={5} />}>
+              {publicPage.kind === 'audits' || publicPage.kind === 'audit' ? <AuditPages slug={'slug' in publicPage ? publicPage.slug : undefined} />
+                : publicPage.kind === 'tools' || publicPage.kind === 'tool' ? <ToolsPublicPage slug={'slug' in publicPage ? publicPage.slug : undefined} />
+                : publicPage.kind === 'pricing' ? <PricingPage /> : <ExampleReportPage />}
+            </Suspense>
+          </MarketingShell>
+        ) : shareMatch ? (
           <MarketingShell theme={theme} onToggleTheme={toggleTheme} userLabel={user?.username || (user ? 'Account' : null)} authLoading={authLoading} navigationBase="/" onHome={() => navigate('/')} onLogin={() => setAuthMode('login')} onSettings={() => openAppTab('settings')} onLogout={handleLogout}>
             <Suspense fallback={<LoadingSkeleton rows={5} />}><SharedReportPage token={shareMatch[1]} /></Suspense>
           </MarketingShell>
@@ -431,7 +442,7 @@ export default function App() {
               />
             </MarketingShell>
           ) : isSearching && isKnownWorkspace ? (
-            <WorkspaceShell
+            <Suspense fallback={<LoadingSkeleton rows={5} />}><WorkspaceShell
               theme={theme}
               onToggleTheme={toggleTheme}
               sidebarOpen={isSidebarOpen}
@@ -456,7 +467,7 @@ export default function App() {
               }
             >
               <Suspense fallback={<LoadingSkeleton rows={5} />}>{renderContent()}</Suspense>
-            </WorkspaceShell>
+            </WorkspaceShell></Suspense>
           ) : (
             <MarketingShell
               theme={theme}

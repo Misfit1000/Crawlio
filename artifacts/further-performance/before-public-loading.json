@@ -1,0 +1,81 @@
+{
+  "origin": "https://crawlio1.vercel.app",
+  "observedAt": "2026-10-04T11:31:16.729Z",
+  "visits": [
+    {
+      "kind": "fresh",
+      "domContentLoadedMs": 3401,
+      "lcpMs": 3500,
+      "cls": 0,
+      "transferredBytes": 115554,
+      "scriptEncodedBytes": 46575,
+      "browserRequests": 4,
+      "apiRequests": [],
+      "requestedScripts": [
+        "/assets/index-CxfSEpXq.js",
+        "/assets/react-vendor-jRbsfeME.js"
+      ],
+      "cdnResponses": [
+        {
+          "path": "/",
+          "cache": "HIT",
+          "status": 200
+        },
+        {
+          "path": "/assets/index-CxfSEpXq.js",
+          "cache": "HIT",
+          "status": 200
+        },
+        {
+          "path": "/assets/react-vendor-jRbsfeME.js",
+          "cache": "HIT",
+          "status": 200
+        },
+        {
+          "path": "/assets/index-C_G2fZqN.css",
+          "cache": "MISS",
+          "status": 200
+        }
+      ],
+      "note": "Unthrottled local browser sample, not field Core Web Vitals or origin execution counts."
+    },
+    {
+      "kind": "repeat",
+      "domContentLoadedMs": 70,
+      "lcpMs": 104,
+      "cls": 0,
+      "transferredBytes": 300,
+      "scriptEncodedBytes": 46575,
+      "browserRequests": 4,
+      "apiRequests": [],
+      "requestedScripts": [
+        "/assets/index-CxfSEpXq.js",
+        "/assets/react-vendor-jRbsfeME.js"
+      ],
+      "cdnResponses": [
+        {
+          "path": "/",
+          "cache": "HIT",
+          "status": 200
+        },
+        {
+          "path": "/assets/index-CxfSEpXq.js",
+          "cache": "HIT",
+          "status": 200
+        },
+        {
+          "path": "/assets/react-vendor-jRbsfeME.js",
+          "cache": "HIT",
+          "status": 200
+        },
+        {
+          "path": "/assets/index-C_G2fZqN.css",
+          "cache": "MISS",
+          "status": 200
+        }
+      ],
+      "note": "Unthrottled local browser sample, not field Core Web Vitals or origin execution counts."
+    }
+  ],
+  "pricingRequests": []
+}
