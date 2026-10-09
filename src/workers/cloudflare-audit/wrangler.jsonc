@@ -2,10 +2,17 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "crawlio-cloudflare-audit",
   "main": "src/index.ts",
-  "compatibility_date": "2024-10-01",
+  "account_id": "1acca508222f20709f349a1144f9db29",
+  "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
-  "observability": { "enabled": true },
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": { "enabled": true, "head_sampling_rate": 0.1 },
+  "durable_objects": { "bindings": [{ "name": "AUDIT_EXECUTOR", "class_name": "AuditExecutor" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AuditExecutor"] }],
+  "triggers": { "crons": ["* * * * *"] },
   "vars": {
-    "EXECUTOR_TYPE": "cloudflare"
+    "EXECUTOR_ENABLED": "false",
+    "GIT_COMMIT_SHA": "local"
   }
 }

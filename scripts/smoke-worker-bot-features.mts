@@ -38,6 +38,7 @@ const mockReport: ResourceAuditReport = {
       severity: 'medium',
       category: 'seo',
       affectedUrl: 'https://example.com/logo.png',
+      evidence: 'Image missing alt attribute.',
       recommendation: 'Add descriptive alt text.',
       detectedAt: new Date().toISOString(),
     },

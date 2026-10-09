@@ -1,10 +1,13 @@
-import { parseHtml, type HtmlExtractionOptions, type ParsedPageData } from '../lib/seo/html-parser';
+import type { HtmlExtractionOptions } from '../lib/seo/html-parser';
+import { buildSecurityIssues, mapAuditIssue, normalizeCrawlUrl, parseFetchedPage, type FetchedPage } from '../lib/audit/worker-page-analysis';
+export { buildSecurityIssues, mapAuditIssue, normalizeCrawlUrl } from '../lib/audit/worker-page-analysis';
+export type { FetchedPage } from '../lib/audit/worker-page-analysis';
 import { pathToFileURL } from 'node:url';
 import { fetchRobotsEvidence, getSitemapUrlsFromRobots, isBlockedByRobots, parseRobotsTxt } from '../lib/seo/robots';
 import { collectToolEvidence } from '../lib/tools/audit-tools';
 import { persistAuditRobotsEvidence } from '../lib/supabase/audit-tool-repository';
 import { fetchSitemap } from '../lib/seo/sitemap';
-import { isSameDomain, normalizeUrl, stripTrackingParams } from '../lib/seo/url-utils';
+import { isSameDomain } from '../lib/seo/url-utils';
 import { AUDIT_CHECK_COUNT, runAllChecksSafely } from '../lib/seo/checks/runner';
 import { auditRepository } from '../lib/supabase/audit-repository';
 import { startWorkerHealthServer } from './audit-worker-health';
@@ -28,7 +31,6 @@ import {
 } from '../lib/audit/resource-types';
 import { AUDIT_LIMITS, enforceAuditPageLimit } from '../lib/audit/audit-config';
 import { isTerminalAuditStatus } from '../lib/audit/audit-time';
-import type { AuditIssue } from '../lib/audit/types';
 import { safePublicFetch, type SafePublicFetchOptions } from '../lib/security/safe-public-fetch';
 import { calculateTransparentAuditScore, toReportScoreRecord } from '../lib/audit/audit-scoring';
 import { buildProvisionalAuditScore, shouldPublishProvisionalScore } from '../lib/audit/audit-provisional-score';
@@ -57,18 +59,6 @@ initializeWorkerMonitoring();
 type QueueItem = { url: string; depth: number; discoveredFrom?: string; sourceUrls: string[]; anchorTexts: string[] };
 const NO_QUEUED_LOG_INTERVAL_MS = 30_000;
 
-type FetchedPage = {
-  url: string;
-  finalUrl: string;
-  statusCode: number;
-  responseTimeMs: number;
-  pageSizeBytes: number;
-  headers: Record<string, string>;
-  contentType: string;
-  html: string;
-  parsed: ParsedPageData | null;
-};
-
 type FetchAttemptResult = { page: FetchedPage; attemptCount: number; recoveredAfterRetry: boolean };
 
 class RetriedFetchError extends Error {
@@ -86,85 +76,6 @@ function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function toSeverity(value: string | undefined): AuditSeverity {
-  if (value === 'critical' || value === 'high' || value === 'medium' || value === 'low' || value === 'info') {
-    return value;
-  }
-  return 'medium';
-}
-
-export function mapAuditIssue(issue: AuditIssue, fallbackUrl: string): Omit<ResourceAuditIssue, 'id' | 'detectedAt'> {
-  const affectedUrl = issue.affectedUrl || fallbackUrl;
-  return {
-    severity: toSeverity(issue.severity),
-    category: String(issue.category || 'seo'),
-    title: issue.title || 'Audit issue',
-    description: issue.description || issue.title || 'Audit issue detected.',
-    affectedUrl,
-    evidence: issue.evidence || issue.element || '',
-    recommendation: issue.recommendation || 'Review this item and update the affected page.',
-    checkId: issue.id,
-    findingKey: `${issue.id}|${affectedUrl}`.toLowerCase(),
-    sourceUrls: [],
-    affectedPageCount: 1,
-  };
-}
-
-export function buildSecurityIssues(page: FetchedPage, registeredChecks?: ReadonlySet<string>): Omit<ResourceAuditIssue, 'id' | 'detectedAt'>[] {
-  const issues: Omit<ResourceAuditIssue, 'id' | 'detectedAt'>[] = [];
-  const headers = page.headers;
-  const add = (severity: AuditSeverity, title: string, evidence: string, recommendation: string, checkId?: string) => {
-    if (checkId && registeredChecks?.has(checkId)) return;
-    issues.push({
-      severity,
-      category: 'security',
-      title,
-      description: title,
-      affectedUrl: page.finalUrl,
-      evidence,
-      recommendation,
-      ...(registeredChecks && checkId ? { checkId } : {}),
-    });
-  };
-
-  if (!page.finalUrl.startsWith('https://')) {
-    add('high', 'Page is not served over HTTPS', page.finalUrl, 'Serve all public pages over HTTPS and redirect HTTP to HTTPS.');
-  }
-  if (!headers['strict-transport-security'] && page.finalUrl.startsWith('https://')) {
-    add('medium', 'Missing HSTS header', 'strict-transport-security header not present', 'Add a Strict-Transport-Security header after HTTPS is stable.', 'missing-hsts');
-  }
-  if (!headers['content-security-policy']) {
-    add('medium', 'Missing Content-Security-Policy header', 'content-security-policy header not present', 'Add a CSP that restricts scripts, frames, images, and form targets.');
-  }
-  if (!headers['x-frame-options'] && !headers['content-security-policy']?.includes('frame-ancestors')) {
-    add('medium', 'Missing clickjacking protection', 'x-frame-options/frame-ancestors not present', 'Add X-Frame-Options or a CSP frame-ancestors directive.');
-  }
-  if (!headers['x-content-type-options']) {
-    add('low', 'Missing X-Content-Type-Options header', 'x-content-type-options header not present', 'Add X-Content-Type-Options: nosniff.');
-  }
-  if (!headers['referrer-policy']) {
-    add('low', 'Missing Referrer-Policy header', 'referrer-policy header not present', 'Add a privacy-aware Referrer-Policy header.');
-  }
-  if (!headers['permissions-policy']) {
-    add('low', 'Missing Permissions-Policy header', 'permissions-policy header not present', 'Add a Permissions-Policy header for unused browser features.');
-  }
-  const securityEvidence = page.parsed?.insecureResourceUrls !== undefined && page.parsed?.insecureFormActionUrls !== undefined
-    ? page.parsed
-    : parseHtml(page.html, page.finalUrl);
-  if (securityEvidence.insecureResourceUrls?.length) {
-    add('medium', 'Mixed content references detected',
-      `The downloaded HTML references HTTP resources: ${securityEvidence.insecureResourceUrls.join(', ')}. Browser loading or blocking was not observed.`,
-      'Update insecure asset references to HTTPS.');
-  }
-  if (securityEvidence.insecureFormActionUrls?.length) {
-    add('high', 'Insecure form action detected',
-      `The downloaded HTML contains HTTP form targets: ${securityEvidence.insecureFormActionUrls.join(', ')}. Browser submission was not observed.`,
-      'Use HTTPS form actions for all public forms.');
-  }
-
-  return issues;
-}
-
 export function workerFetchOptions(timeoutMs: number): SafePublicFetchOptions {
   const allowPrivateForTesting = process.env.SEOINTEL_ALLOW_PRIVATE_TEST_TARGETS === 'true';
   return {
@@ -179,28 +90,7 @@ export function workerFetchOptions(timeoutMs: number): SafePublicFetchOptions {
 }
 
 export async function fetchHtmlPage(url: string, timeoutMs: number, extraction?: HtmlExtractionOptions): Promise<FetchedPage> {
-  const response = await safePublicFetch(url, workerFetchOptions(timeoutMs));
-  let parsed: ParsedPageData | null = null;
-  if (response.body) {
-    try {
-      parsed = parseHtml(response.body, response.finalUrl, { keywords: false, ...extraction });
-    } catch (error) {
-      const parseError = new Error(error instanceof Error ? error.message : 'HTML parsing failed.');
-      (parseError as Error & { code: string }).code = 'INVALID_HTML_RESPONSE';
-      throw parseError;
-    }
-  }
-  return {
-    url,
-    finalUrl: response.finalUrl,
-    statusCode: response.status,
-    responseTimeMs: response.durationMs,
-    pageSizeBytes: response.bodyBytes,
-    headers: response.headers,
-    contentType: response.contentType,
-    html: response.body,
-    parsed,
-  };
+  return parseFetchedPage(url, await safePublicFetch(url, workerFetchOptions(timeoutMs)), extraction);
 }
 
 function shouldRetryStatus(status: number) {
@@ -240,14 +130,6 @@ async function ensureWorkerOwnership(auditId: string, workerId: string) {
   if (!audit || audit.status !== 'running' || audit.lockedBy !== workerId) {
     throw new Error('AUDIT_OWNERSHIP_LOST');
   }
-}
-
-export function normalizeCrawlUrl(input: string, base?: string) {
-  const normalized = normalizeUrl(input, base);
-  if (!normalized) return null;
-  const url = new URL(stripTrackingParams(normalized));
-  url.hash = '';
-  return url.toString();
 }
 
 async function processAuditJob(audit: ResourceAuditDocument, writer: AuditWriteBatch, workerId: string) {
