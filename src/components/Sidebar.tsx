@@ -13,7 +13,7 @@ interface SidebarProps {
   onOpenHelp?: () => void;
 }
 
-const navigationClass = (active: boolean) => `workspace-nav-link flex min-h-11 min-w-0 items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold ${active ? 'is-active text-accent' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`;
+const navigationClass = (active: boolean) => `workspace-nav-link flex min-h-12 min-w-0 items-center gap-3 rounded-md px-4 py-3 text-sm font-medium ${active ? 'is-active text-accent' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`;
 
 export default function Sidebar({ isOpen, onClose, activeTab, onOpenHelp }: SidebarProps) {
   const navigationRef = useRef<HTMLElement>(null);
@@ -48,7 +48,7 @@ export default function Sidebar({ isOpen, onClose, activeTab, onOpenHelp }: Side
 
   return <>
     {isOpen && <div onClick={onClose} className="fixed inset-0 z-40 bg-background/70 backdrop-blur-sm lg:hidden" />}
-    {isOpen && <aside id="workspace-navigation" ref={navigationRef} tabIndex={-1} aria-label={isAdmin ? 'Admin navigation' : 'Workspace navigation'} className="workspace-navigation fixed left-0 top-[4.25rem] z-50 flex h-[calc(100dvh-4.25rem)] w-[14.5rem] max-w-full flex-col overflow-hidden border-r border-border bg-card lg:relative lg:top-0 lg:h-full lg:shrink-0">
+    {isOpen && <aside id="workspace-navigation" ref={navigationRef} tabIndex={-1} aria-label={isAdmin ? 'Admin navigation' : 'Workspace navigation'} className="workspace-navigation fixed left-0 top-[4.25rem] z-50 flex h-[calc(100dvh-4.25rem)] w-[14.5rem] max-w-full flex-col overflow-hidden border-r border-border bg-background lg:relative lg:top-0 lg:h-full lg:shrink-0">
       <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
         <h2 className="text-sm font-semibold">{isAdmin ? 'Administration' : 'Workspace'}</h2>
         <button type="button" onClick={onClose} className="min-h-11 min-w-11 rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent lg:hidden" aria-label="Close navigation"><X className="mx-auto h-4 w-4" /></button>

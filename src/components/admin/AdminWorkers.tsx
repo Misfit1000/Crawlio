@@ -1,4 +1,4 @@
-import { Loader2, Power, Wifi } from 'lucide-react';
+import { Cloud, Loader2, Power, Server, Wifi } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { Link } from '../../app/router';
 import type { ActionResult, OperationsWorker } from '../../lib/admin/types';
@@ -30,9 +30,10 @@ export function WorkerWake({ refresh }: { refresh: () => void | Promise<void> })
   return <div className="min-w-0 space-y-3"><button type="button" disabled={pending} onClick={wake} className="quiet-button min-h-11">{pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Power className="h-4 w-4" />}{pending ? 'Wake request pending...' : 'Request worker wake'}</button>{error && <Notice tone="danger">{error}</Notice>}{result && <><ActionFeedback result={result} /><p className="text-xs text-muted-foreground">Verify a fresh heartbeat, database connection, and queue progress below.</p></>}</div>;
 }
 export function WorkerStatus({ worker }: { worker: OperationsWorker }) {
-  return <article className="min-w-0 border-b border-border py-4">
-    <div className="flex flex-wrap justify-between gap-2"><h3 className="break-all text-sm font-semibold">{worker.id}</h3><HealthBadge status={worker.state} /></div>
-    <dl className="mt-3 grid min-w-0 gap-3 text-xs sm:grid-cols-3">
+  const Icon = /cloudflare/i.test(worker.id) ? Cloud : Server;
+  return <article className="admin-worker min-w-0 border-b border-border py-5">
+    <div className="admin-worker-heading flex flex-wrap items-center justify-between gap-3"><div className="flex min-w-0 flex-1 items-center gap-3"><Icon aria-hidden="true" className="h-5 w-5 shrink-0 text-accent" /><h3 className="break-all text-sm font-semibold">{worker.id}</h3></div><HealthBadge status={worker.state} /></div>
+    <dl className="mt-4 grid min-w-0 gap-4 text-xs sm:grid-cols-3">
       <div><dt className="text-muted-foreground">Last seen</dt><dd className="mt-1 break-words">{timestamp(worker.lastSeenAt)}</dd></div>
       <div><dt className="text-muted-foreground">Database</dt><dd className="mt-1">{worker.databaseConnected == null ? 'Unknown' : worker.databaseConnected ? 'Connected' : 'Disconnected'}</dd></div>
       <div className="min-w-0"><dt className="text-muted-foreground">Current audit</dt><dd className="mt-1 break-all">{worker.currentAuditId ? <Link className="inline-flex min-h-11 items-center text-accent hover:underline" to={`/admin/audits?auditId=${encodeURIComponent(worker.currentAuditId)}`}>{worker.currentAuditId}</Link> : 'None reported'}</dd></div>
@@ -42,9 +43,9 @@ export function WorkerStatus({ worker }: { worker: OperationsWorker }) {
 }
 export default function AdminWorkers() {
   const workers = useAdminData(signal => adminGet<OperationsWorker[]>('workers', signal), []);
-  return <Panel title="Audit engine health" description="Heartbeat, database connection, active jobs, and runtime versions." icon={Wifi}>
+  return <Panel title="Audit engine health" icon={Wifi}>
     <DataNotice {...workers} />
-    <WorkerWake refresh={workers.refresh} />
     {workers.loading && !workers.data ? <Loading /> : workers.data?.length ? workers.data.map(worker => <WorkerStatus key={worker.id} worker={worker} />) : <Empty text="No audit-engine heartbeat found." />}
+    <div className="mt-8"><WorkerWake refresh={workers.refresh} /></div>
   </Panel>;
 }

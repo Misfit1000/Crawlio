@@ -70,13 +70,15 @@ export function Panel({
   className = '',
   interactive = false,
   as: Element = 'div',
+  variant = 'surface',
 }: {
   children: ReactNode;
   className?: string;
   interactive?: boolean;
   as?: 'div' | 'section' | 'article' | 'nav';
+  variant?: 'surface' | 'plain';
 }) {
-  return <Element className={`suite-panel ${interactive ? 'interactive-panel' : ''} ${className}`}>{children}</Element>;
+  return <Element className={`${variant === 'surface' ? 'suite-panel' : 'surface-plain'} ${interactive ? 'interactive-panel' : ''} ${className}`}>{children}</Element>;
 }
 
 export function FormField({
@@ -138,7 +140,7 @@ export function SegmentedControl<T extends string>({
   label: string;
 }) {
   return (
-    <div className="inline-flex max-w-full gap-1 overflow-x-auto rounded-xl border border-border bg-muted p-1" role="tablist" aria-label={label}>
+    <div className="inline-flex max-w-full gap-1 overflow-x-auto rounded-md bg-muted p-1" role="tablist" aria-label={label}>
       {options.map((option) => (
         <button
           key={option.value}
@@ -149,7 +151,7 @@ export function SegmentedControl<T extends string>({
           onKeyDown={handleTabListKeyDown}
           disabled={option.disabled}
           onClick={() => onChange(option.value)}
-          className={`min-h-10 whitespace-nowrap rounded-lg px-4 text-sm font-semibold ${value === option.value ? 'bg-card text-accent shadow-sm' : 'text-muted-foreground hover:text-foreground'} disabled:cursor-not-allowed disabled:opacity-45`}
+          className={`min-h-11 whitespace-nowrap rounded px-4 text-sm font-medium ${value === option.value ? 'bg-[var(--action)] text-[var(--action-foreground)]' : 'text-muted-foreground hover:text-foreground'} disabled:cursor-not-allowed disabled:opacity-45`}
         >
           {option.label}
         </button>

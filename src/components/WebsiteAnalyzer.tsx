@@ -67,10 +67,10 @@ export default function WebsiteAnalyzer() {
   };
 
   return (
-    <div className="w-full space-y-9 animate-rise">
+    <div className="website-scan-page w-full space-y-10 animate-rise">
       <PageHeader eyebrow="Website health" icon={Globe} title="Website scan" description="Review page delivery, redirects, and search access." />
 
-      <Panel className="p-5 sm:p-7">
+      <Panel variant="plain" className="border-y border-border py-8">
         <form onSubmit={handleAnalyze} noValidate className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_auto]">
             <FormField label="Website URL" htmlFor="website-scan-url">

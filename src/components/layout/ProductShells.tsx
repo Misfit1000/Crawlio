@@ -36,13 +36,13 @@ export function MarketingShell({
   const links = PUBLIC_NAVIGATION;
   const auditHref = '/#start-audit';
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="marketing-shell flex min-h-screen flex-col">
       <a href="#main-content" className="skip-link">Skip to main content</a>
-      <header className="sticky top-0 z-50 border-b border-border bg-card" onKeyDown={(event) => { if (menuOpen && event.key === 'Escape') { setMenuOpen(false); menuButton.current?.focus(); } }}>
-        <div className="section-shell flex h-[4.5rem] items-center justify-between gap-4">
+      <header className="public-header sticky top-0 z-50 border-b border-border bg-background" onKeyDown={(event) => { if (menuOpen && event.key === 'Escape') { setMenuOpen(false); menuButton.current?.focus(); } }}>
+        <div className="section-shell flex h-20 items-center justify-between gap-4 lg:h-[5.5rem]">
           <button type="button" onClick={onHome} className="rounded-lg" aria-label={`${BRAND.name} home`}><BrandMark /></button>
           <nav className="hidden items-center gap-1 xl:flex" aria-label="Public navigation">
-            {links.map(({ label, path }) => <Link key={path} to={path} aria-current={pathname === path || pathname.startsWith(`${path}/`) ? 'page' : undefined} className="flex min-h-11 items-center rounded-lg px-3 py-2 text-sm font-semibold text-muted-foreground hover:bg-muted hover:text-foreground aria-[current=page]:bg-accent/10 aria-[current=page]:text-accent">{label}</Link>)}
+            {links.map(({ label, path }) => <Link key={path} to={path} aria-current={pathname === path || pathname.startsWith(`${path}/`) ? 'page' : undefined} className="flex min-h-11 items-center border-b-2 border-transparent px-3 py-2 text-sm font-medium text-foreground hover:text-accent aria-[current=page]:border-accent aria-[current=page]:text-accent">{label}</Link>)}
           </nav>
           <div className="flex items-center gap-2">
             <ThemeToggle theme={theme} onToggle={onToggleTheme} />
@@ -53,7 +53,7 @@ export function MarketingShell({
                 <button type="button" onClick={onLogout} className="hidden h-11 w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-red-500/10 hover:text-red-600 sm:flex" aria-label="Sign out"><LogOut className="h-5 w-5" /></button>
               </>
             ) : <button type="button" onClick={onLogin} className="hidden min-h-10 rounded-lg px-3 text-sm font-semibold text-foreground hover:bg-muted sm:block">Sign in</button>}
-            <Link to={auditHref} className="trust-button min-h-10 px-3 py-2 text-sm"><span className="hidden sm:inline">Start audit</span><span className="sm:hidden">Audit</span><ArrowRight className="hidden h-4 w-4 sm:block" /></Link>
+            <Link to={auditHref} className="trust-button min-h-10 px-4 py-2 text-sm"><span className="hidden sm:inline">{userLabel ? 'Start audit' : 'Start free'}</span><span className="sm:hidden">Audit</span><ArrowRight className="hidden h-4 w-4 sm:block" /></Link>
             <button ref={menuButton} type="button" onClick={() => setMenuOpen((open) => !open)} className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted xl:hidden" aria-expanded={menuOpen} aria-controls="public-mobile-nav" aria-label="Toggle navigation">{menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}</button>
           </div>
         </div>

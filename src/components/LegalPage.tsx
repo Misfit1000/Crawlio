@@ -90,15 +90,15 @@ export default function LegalPage({ kind }: { kind: LegalPageKind }) {
   }, [kind, page.description, page.title]);
 
   return (
-    <main id="main-content" className="section-shell flex-1 py-12 sm:py-16">
+    <main id="main-content" className="section-shell flex-1 py-12 sm:py-20">
       <article className="mx-auto max-w-3xl">
-        <header className="pb-8">
-          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-accent/10 text-accent"><Icon className="h-5 w-5" /></div>
-          <h1 data-route-focus-target className="mt-5 text-3xl font-semibold">{page.title}</h1>
+        <header className="border-b border-border pb-10">
+          <div className="flex h-8 w-8 items-center text-accent"><Icon className="h-6 w-6" /></div>
+          <h1 data-route-focus-target className="mt-5 text-3xl font-semibold sm:text-4xl">{page.title}</h1>
           <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground">{page.description}</p>
           <p className="mt-4 text-sm text-muted-foreground">Last updated {LEGAL_UPDATED_LABEL}</p>
         </header>
-        <div className="space-y-8">
+        <div className="mt-10 space-y-10">
           {page.sections.map((section) => (
             <section key={section.title}>
               <h2 className="text-xl font-semibold">{section.title}</h2>

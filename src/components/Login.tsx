@@ -39,7 +39,7 @@ export default function Login({
   };
 
   return (
-    <div className="suite-panel w-full max-w-md animate-rise p-6 sm:p-8" style={{ borderTop: '3px solid var(--accent)' }}>
+    <div className="auth-panel suite-panel w-full max-w-md animate-rise p-6 sm:p-10">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <BrandMark />

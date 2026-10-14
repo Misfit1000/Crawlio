@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, BarChart3, Clock3, FileDown, History, LayoutDashboard, Loader2, RefreshCw, Share2, StopCircle, Wifi, WifiOff } from 'lucide-react';
+import { AlertTriangle, BarChart3, FileDown, History, LayoutDashboard, Loader2, RefreshCw, Share2, StopCircle, Wifi, WifiOff } from 'lucide-react';
 import { Link } from '../../app/router';
 import { auditWorkspacePath } from '../../app/routes';
 import type { AuditMode, ResourceAuditLiveData, ResourceAuditPage } from '../../lib/audit/resource-types';
@@ -10,7 +10,7 @@ import { API_ROUTES } from '../../lib/api/routes';
 import { getAuditAccessHeaders } from '../../lib/api/auth-headers';
 import { safeJsonFetch } from '../../lib/http/safe-json';
 import { inflightRead } from '../../lib/http/inflight-read';
-import { formatAuditElapsed, isCompletedAuditStatus, isTerminalAuditStatus } from '../../lib/audit/audit-time';
+import { isCompletedAuditStatus, isTerminalAuditStatus } from '../../lib/audit/audit-time';
 import { createEmptyAuditLiveData, isFinalReportPending, mergeAuditLiveData, waitForPersistedFinalReport } from '../../lib/audit/audit-lifecycle';
 import { customerSafeDiagnosticText } from '../../lib/audit/audit-failures';
 import { deriveAuditLivePresentation } from '../../lib/audit/audit-live-presentation';
@@ -20,7 +20,8 @@ import { AuditExportDownloadNotice, useAuditExportDownload } from './AuditExport
 import { SparklineChart, StatusBadge, SurfaceCard } from '../ui/visual-system';
 import { Notice } from '../ui/page-system';
 import { readAuditHistory, scoreTrendForUrl, upsertAuditHistory, type ChecklistStatus } from '../../lib/audit/client-insights';
-import { AuditExecutiveSummary, type AuditCategoryScore } from './AuditExecutiveSummary';
+import { AuditExecutiveSummary, AuditScoreFactors, type AuditCategoryScore } from './AuditExecutiveSummary';
+import { AuditLiveEvidence, AuditLiveSummary } from './AuditLiveWorkspace';
 import { AuditOverview } from './AuditOverview';
 import { AuditActivityFeed } from './AuditActivityPanel';
 import { AuditWorkspaceModes, useAuditWorkspaceMode } from './AuditWorkspaceModes';
@@ -31,7 +32,7 @@ import { AuditReportReadyNote, AuditTerminalState } from './AuditTerminalState';
 import { useFindingWorkflow } from './useFindingWorkflow';
 import { useAuditEntitlements } from '../../hooks/useAuditEntitlements';
 import { auditFocusLabel, isFocusedAudit, scopeIncludesSection, type AuditScope } from '../../lib/audit/audit-scope';
-import { auditScopeProgressLabel, reportCategoryScores, scopeEvents, scopeScoreMetadata } from '../../lib/report/scope-presentation';
+import { reportCategoryScores, scopeEvents, scopeScoreMetadata } from '../../lib/report/scope-presentation';
 
 interface Props {
   auditId: string;
@@ -341,19 +342,18 @@ export function LiveAuditProgress({ auditId, initialSnapshot, onRerun, onOpenWor
   const scopedScores = scopeScoreMetadata(audit.scope, data.finalReport?.scores);
   const unavailableChecks = Array.isArray(scopedScores?.unavailableChecks) ? scopedScores.unavailableChecks.length : liveScore.unavailableCount;
   const categoryRoutes = [{ label: 'All findings', path: modes.pathFor('findings') }, ...(['seo', 'technical', 'crawlability', 'links', 'performance', 'structured-data', 'accessibility', 'security'] as const).filter(section => scopeIncludesSection(audit.scope, section)).map(section => ({ label: section === 'seo' ? 'SEO' : section === 'security' ? 'Passive security' : section.replace(/-/g, ' '), path: auditWorkspacePath(auditId, section) }))];
-  return <div className="audit-customer-workspace w-full space-y-6">
-    <header className="flex flex-col gap-3 border-b border-border pb-4 lg:flex-row lg:items-center lg:justify-between">
-      <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><StatusBadge tone={isCompletedAuditStatus(audit.status) ? 'success' : terminal ? 'danger' : 'accent'}>{statusLabel(audit.status)}</StatusBadge><span className="text-xs text-muted-foreground">{audit.scope ? `${auditFocusLabel(audit.scope)} · ${audit.scope.coverage} coverage · ` : ''}{tierLabel(audit.processingTier, audit.effectiveMode || audit.mode)}</span></div><h1 className="mt-2 break-words text-2xl font-semibold">{audit.hostname}</h1><p className="mt-1 break-all text-xs text-muted-foreground">{audit.normalizedUrl}</p></div>
-      <div className="flex flex-wrap gap-2">
+  return <div className="audit-customer-workspace audit-spacious space-y-8 w-full">
+    <header className="audit-workspace-header flex flex-col items-start justify-between gap-6 lg:flex-row">
+      <div className="min-w-0"><h1 className="audit-workspace-title break-words font-bold leading-tight">{terminal ? audit.hostname : <>Auditing <span>{audit.hostname}</span></>}</h1><div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground"><span>{audit.scope ? `${auditFocusLabel(audit.scope)} / ${audit.scope.coverage === 'page' ? 'This page' : 'Website'} / ` : ''}{tierLabel(audit.processingTier, audit.effectiveMode || audit.mode)}</span><StatusBadge tone={isCompletedAuditStatus(audit.status) ? audit.status === 'completed_with_warnings' ? 'warning' : 'success' : terminal ? 'danger' : 'accent'}>{statusLabel(audit.status)}</StatusBadge></div><p className="mt-2 break-all text-xs text-muted-foreground">{audit.normalizedUrl}</p></div>
+      <div className="audit-header-actions flex flex-wrap gap-2">
         {data.finalReport && onOpenWorkspace && <button type="button" onClick={onOpenWorkspace} className="quiet-button min-h-9 px-3 py-1 text-xs"><BarChart3 className="h-4 w-4" />Detailed report</button>}
         {onRerun && terminal && <button type="button" onClick={rerunAudit} className="quiet-button min-h-9 px-3 py-1 text-xs"><RefreshCw className="h-4 w-4" />Rerun</button>}
         <button type="button" onClick={copyReportLink} className="quiet-button min-h-9 px-3 py-1 text-xs"><Share2 className="h-4 w-4" />Copy link</button>
         {data.finalReport && exportsEnabled && <button type="button" onClick={downloadJson} disabled={isDownloadingJson} className="quiet-button min-h-9 px-3 py-1 text-xs">{isDownloadingJson ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}JSON</button>}
         {data.finalReport && pdfEnabled && <button type="button" onClick={downloadPdf} disabled={isDownloadingPdf} className="quiet-button min-h-9 px-3 py-1 text-xs">{isDownloadingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}PDF</button>}
-        {!terminal && <button type="button" onClick={cancelAudit} disabled={isCancelling} className="quiet-button min-h-9 px-3 py-1 text-xs text-[var(--danger)]">{isCancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : <StopCircle className="h-4 w-4" />}Stop</button>}
+        {!terminal && <button type="button" onClick={cancelAudit} disabled={isCancelling} className="quiet-button text-[var(--danger)]">{isCancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : <StopCircle className="h-4 w-4" />}Cancel audit</button>}
       </div>
     </header>
-    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground"><span className="inline-flex items-center gap-1.5">{connection.status === 'error' ? <WifiOff className="h-3.5 w-3.5" /> : <Wifi className="h-3.5 w-3.5" />}{terminal ? 'Stored audit' : formatLastUpdate(connection.lastUpdateAt, now)}</span><span className="inline-flex items-center gap-1.5"><Clock3 className="h-3.5 w-3.5" />{formatAuditElapsed(audit, now)} elapsed</span>{!terminal && <span>{humanizeAuditText(auditScopeProgressLabel(audit))}</span>}</div>
     <AuditTerminalState audit={audit} reportPending={reportPending} reportRetrying={reportPending && !reportRetryExhausted} onRetryReport={() => setReportRetryKey(value => value + 1)} />
     <AuditReportReadyNote warning={audit.status === 'completed_with_warnings' && Boolean(data.finalReport)} />
     {error && <Notice tone="danger" title="Some audit data could not refresh">{humanizeAuditText(error)}</Notice>}
@@ -361,17 +361,16 @@ export function LiveAuditProgress({ auditId, initialSnapshot, onRerun, onOpenWor
     {shareMessage && <Notice tone={/copied/.test(shareMessage) ? 'success' : 'danger'}>{shareMessage}</Notice>}
     <AuditExportDownloadNotice download={exportDownload} />
     {queuedTooLong && <Notice tone="warning" title="This audit is taking longer than usual to start">The audit engine may be waking up or finishing earlier work. Updates will resume automatically. Audit ID: {audit.id}</Notice>}
-    {!terminal && <section className="border-l-2 border-accent pl-4" aria-live="polite"><h2 className="text-sm font-semibold">{livePresentation?.heading}</h2><p className="mt-1 text-sm text-muted-foreground">{livePresentation?.message}</p>{livePresentation?.target && <p className="mt-2 break-all text-xs text-muted-foreground">{livePresentation.target}</p>}</section>}
+    {!terminal ? <AuditLiveSummary audit={audit} score={liveScore} now={now} heading={livePresentation?.heading} message={humanizeAuditText(livePresentation?.message)} connection={connection} /> : <AuditExecutiveSummary audit={audit} score={liveScore.overallScore} scoreState={liveScore.scoreState} scoreDetail={liveScore.scoreState === 'provisional' ? `Partial evidence, from ${liveScore.pagesAnalysed} analysed pages` : 'Stored deterministic score'} categoryScores={categoryScores} unavailableChecks={unavailableChecks} onViewFindings={viewFindings} showFactors={false} />}
+    <div className="audit-connection-note flex flex-wrap gap-x-6 gap-y-2 text-xs text-muted-foreground"><span className="inline-flex items-center gap-1.5">{connection.status === 'error' ? <WifiOff className="h-3.5 w-3.5" /> : <Wifi className="h-3.5 w-3.5" />}{terminal ? 'Stored audit evidence' : formatLastUpdate(connection.lastUpdateAt, now)}</span>{coverageExplanation && <span>{coverageExplanation}</span>}</div>
     <AuditWorkspaceModes mode={modes.mode} pathFor={modes.pathFor} categories={categoryRoutes} />
     {modes.mode === 'overview' && <>
-      <AuditExecutiveSummary audit={audit} score={liveScore.overallScore} scoreState={liveScore.scoreState} scoreLabel={liveScore.scoreState === 'final' ? 'Final score' : 'Live score'} scoreDetail={liveScore.scoreState === 'provisional' ? `Preliminary, from ${liveScore.pagesAnalysed} analysed pages` : 'Stored deterministic score'} categoryScores={categoryScores} progress={Math.max(0, Math.min(100, audit.progress || 0))} unavailableChecks={unavailableChecks} />
-      {coverageExplanation && <p className="text-xs text-muted-foreground">{coverageExplanation}</p>}
-      <AuditOverview data={data} onViewFindings={viewFindings} />
-      {!isFocusedAudit(audit) && audit.scope?.coverage !== 'page' && <section className="border-y border-border py-5" aria-label="Score history"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">Score history</h2><Link className="quiet-button min-h-9 text-xs" to={auditWorkspacePath(auditId)}>Compare stored audits</Link></div><div className="mt-4 max-w-xl"><SparklineChart values={scoreTrend.filter(entry => entry.score != null).map(entry => entry.score!)} label="Stored final scores" valueLabel={scoreTrend.at(-1)?.score == null ? 'No final score yet' : String(scoreTrend.at(-1)!.score)} /></div></section>}
+      {!terminal ? <><AuditLiveEvidence data={data} categoryScores={categoryScores} target={livePresentation?.target} onViewFindings={viewFindings} onViewActivity={() => modes.setMode('activity')} /><AuditOverview data={data} onViewFindings={viewFindings} showMap={false} showRecommendations={false} /></> : <><AuditScoreFactors categoryScores={categoryScores} /><AuditOverview data={data} onViewFindings={viewFindings} /></>}
+      {!isFocusedAudit(audit) && audit.scope?.coverage !== 'page' && <section className="py-5" aria-label="Score history"><div className="audit-section-heading mb-6 flex flex-wrap items-center justify-between gap-4"><h2>Score history</h2><Link className="quiet-button" to={auditWorkspacePath(auditId)}>Compare stored audits</Link></div><div className="mt-6 max-w-xl"><SparklineChart values={scoreTrend.filter(entry => entry.score != null).map(entry => entry.score!)} label="Stored final scores" valueLabel={scoreTrend.at(-1)?.score == null ? 'No final score yet' : String(scoreTrend.at(-1)!.score)} /></div></section>}
     </>}
     {modes.mode === 'findings' && (audit.processingVersion === 2 ? <PaginatedAuditEvidence auditId={auditId} kind="issues" {...workflowProps} /> : <FindingWorkspace auditId={auditId} issues={data.latestIssues} {...workflowProps} />)}
     {modes.mode === 'pages' && (audit.processingVersion === 2 ? <PaginatedAuditEvidence scope={audit.scope} auditId={auditId} kind="pages" pageIssues={data.latestIssues} /> : <section><h2 className="mb-3 text-lg font-semibold">Pages checked</h2><AuditPagesTable scope={audit.scope} pages={data.latestPages} onSelect={setSelectedPage} /><PageEvidenceDrawer scope={audit.scope} page={selectedPage} issues={data.latestIssues} onClose={closePage} /></section>)}
-    {modes.mode === 'activity' && <><div className="border-b border-border pb-4"><h2 className="text-sm font-semibold">{livePresentation?.heading}</h2><p className="mt-1 break-words text-sm text-muted-foreground">{livePresentation?.message}</p>{livePresentation?.target && <p className="mt-1 break-all text-xs text-muted-foreground">{livePresentation.target}</p>}</div><AuditActivityFeed events={data.latestEvents} /><details className="border-y border-border py-3"><summary className="cursor-pointer text-sm font-semibold">Audit details and queue state</summary><dl className="grid gap-4 pt-4 sm:grid-cols-2 lg:grid-cols-3">{[['Audit ID', audit.id], ['Submitted input', audit.submittedInput], ['Cleaned URL', audit.normalizedUrl], ['Final URL', audit.finalUrl || 'Not recorded'], ['Audit mode', getAuditModeLabel(audit.mode)], ['Pages', `${audit.pagesCrawled} / ${audit.pageLimit}`], ['Current check', humanizeAuditText(audit.currentCheck)], ['Created', new Date(audit.createdAt).toLocaleString()], ['Plan', audit.plan || 'free']].map(([label, value]) => <div key={label}><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 break-all text-sm">{value}</dd></div>)}</dl>{audit.status === 'queued' && audit.estimatedWaitSeconds != null && <p className="mt-4 text-xs text-muted-foreground">Estimated start: {audit.estimatedWaitSeconds > 0 ? `about ${Math.max(1, Math.ceil(audit.estimatedWaitSeconds / 60))} minutes` : 'next available slot'}. Estimates may change.</p>}</details></>}
+    {modes.mode === 'activity' && <><div className="border-b border-border pb-4"><h2 className="text-sm font-semibold">{livePresentation?.heading}</h2><p className="mt-1 break-words text-sm text-muted-foreground">{livePresentation?.message}</p>{livePresentation?.target && <p className="mt-1 break-all text-xs text-muted-foreground">{livePresentation.target}</p>}</div><AuditActivityFeed events={scopeEvents(audit.scope, data.latestEvents)} /><details className="border-y border-border py-3"><summary className="cursor-pointer text-sm font-semibold">Audit details and queue state</summary><dl className="grid gap-4 pt-4 sm:grid-cols-2 lg:grid-cols-3">{[['Audit ID', audit.id], ['Submitted input', audit.submittedInput], ['Cleaned URL', audit.normalizedUrl], ['Final URL', audit.finalUrl || 'Not recorded'], ['Audit mode', getAuditModeLabel(audit.mode)], ['Pages', `${audit.pagesCrawled} / ${audit.pageLimit}`], ['Current check', humanizeAuditText(audit.currentCheck)], ['Created', new Date(audit.createdAt).toLocaleString()], ['Plan', audit.plan || 'free']].map(([label, value]) => <div key={label}><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 break-all text-sm">{value}</dd></div>)}</dl>{audit.status === 'queued' && audit.estimatedWaitSeconds != null && <p className="mt-4 text-xs text-muted-foreground">Estimated start: {audit.estimatedWaitSeconds > 0 ? `about ${Math.max(1, Math.ceil(audit.estimatedWaitSeconds / 60))} minutes` : 'next available slot'}. Estimates may change.</p>}</details></>}
     {terminal && audit.processingTier === 'free' && <p className="text-xs text-muted-foreground">Standard audit access provides broader reachable-page coverage and extended export options.</p>}
   </div>;
 }

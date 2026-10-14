@@ -255,7 +255,7 @@ function AccountImports({ accountId, signedIn: user }: { accountId: string; sign
   const backlinkTargets = new Set(backlinkData.map((row) => pick(row, ['target url', 'target', 'to', 'landing page'])).filter(Boolean)).size;
 
   return (
-    <div className="space-y-9 animate-rise">
+    <div className="imports-page space-y-10 animate-rise">
       <PageHeader icon={Database} title="Data imports" description="Search performance, keyword positions, and backlink CSV exports." />
       <p className="text-sm text-muted-foreground">Import data from accounts you control. Guest imports stay on this device; signed-in imports can sync to a project.</p>
 
@@ -263,9 +263,9 @@ function AccountImports({ accountId, signedIn: user }: { accountId: string; sign
       {remoteError && <Notice tone="danger" title="Account data unavailable">{remoteError}</Notice>}
       {parsing.length > 0 && <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Parsing CSV...</p>}
       {syncMessage && <Notice tone={syncMessage.includes('failed') ? 'warning' : 'success'} title="Import storage">{syncMessage}</Notice>}
-      {user && <div className="trust-card flex flex-col gap-3 p-5 sm:flex-row sm:items-end sm:justify-between"><div><label htmlFor="import-project" className="text-sm font-semibold">Save imports to a project</label><p className="mt-1 text-xs text-muted-foreground">Synced imports are private to your account and expire after one year.</p></div><select id="import-project" className="suite-input max-w-sm" value={projectId} onChange={(event) => changeProject(event.target.value)}><option value="">Account library only</option>{projects.map((project) => <option key={project.id} value={project.id || ''}>{project.name}</option>)}</select></div>}
+      {user && <div className="flex flex-col gap-4 border-y border-border py-6 sm:flex-row sm:items-end sm:justify-between"><div><label htmlFor="import-project" className="text-sm font-semibold">Save imports to a project</label><p className="mt-1 text-xs text-muted-foreground">Synced imports are private to your account and expire after one year.</p></div><select id="import-project" className="suite-input max-w-sm" value={projectId} onChange={(event) => changeProject(event.target.value)}><option value="">Account library only</option>{projects.map((project) => <option key={project.id} value={project.id || ''}>{project.name}</option>)}</select></div>}
 
-      <section aria-label="CSV import sources" className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <section aria-label="CSV import sources" className="grid grid-cols-1 gap-8 lg:grid-cols-3">
 
         {/* GSC Import */}
         <div className="trust-card flex min-w-0 flex-col p-6">

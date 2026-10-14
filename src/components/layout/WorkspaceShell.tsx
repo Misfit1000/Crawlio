@@ -33,7 +33,7 @@ function WorkspaceBreadcrumbs() {
   const audit = parseAuditWorkspacePath(pathname);
   const adminPath = pathname === '/admin' || pathname.startsWith('/admin/');
   const current = audit
-    ? ({ overview: 'Overview', seo: 'SEO findings', technical: 'Technical SEO', crawlability: 'Crawlability', links: 'Links', performance: 'Performance', accessibility: 'Accessibility', security: 'Passive security', pages: 'Pages' })[audit.section]
+    ? ({ overview: 'Overview', seo: 'SEO findings', technical: 'Technical SEO', crawlability: 'Crawlability', links: 'Links', performance: 'Performance', 'structured-data': 'Structured data', accessibility: 'Accessibility', security: 'Passive security', pages: 'Pages' })[audit.section]
     : adminPath
       ? adminSectionForPath(pathname).label
       : workspaceLabels[pathname] || 'Workspace';
@@ -47,9 +47,8 @@ function WorkspaceBreadcrumbs() {
     if (audit.section !== 'overview') trail.push({ label: `Audit ${audit.auditId.slice(0, 8)}`, path: `${auditWorkspacePath(audit.auditId)}${search}` });
   } else if (group && group.label !== current && groupPath !== pathname) trail.push({ label: group.label, path: groupPath });
   trail.push({ label: current, path: null });
-  if (pathname === rootPath) return null;
   return (
-    <nav aria-label="Breadcrumb" className="mb-4 overflow-x-auto text-xs text-muted-foreground">
+    <nav aria-label="Breadcrumb" className="workspace-breadcrumbs min-w-0 overflow-x-auto text-sm text-muted-foreground">
       <ol className="flex min-w-max items-center gap-1.5">
         <li><Link to={rootPath} className="rounded px-1 py-1 font-semibold hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">{rootLabel}</Link></li>
         {trail.map((item) => <li key={`${item.label}-${item.path || 'current'}`} className="flex items-center gap-1.5"><ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />{item.path ? <Link to={item.path} className="rounded px-1 py-1 font-semibold hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">{item.label}</Link> : <span className="px-1 py-1 capitalize text-foreground" aria-current="page">{item.label}</span>}</li>)}
@@ -102,12 +101,13 @@ export default function WorkspaceShell({
   return (
     <div className="workspace-shell flex h-dvh min-h-0 flex-col overflow-hidden">
       <a href="#workspace-content" className="skip-link">Skip to workspace content</a>
-      <header className="relative z-50 flex h-[4.25rem] shrink-0 items-center border-b border-border bg-card px-4 md:px-6">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
+      <header className="workspace-toolbar relative z-50 flex h-[4.25rem] shrink-0 items-center border-b border-border bg-background">
+        <div className="workspace-brand-area flex min-w-0 items-center gap-2 px-4">
           <button type="button" onClick={onToggleSidebar} className="min-h-11 min-w-11 rounded-lg p-2.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" aria-label={sidebarOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={sidebarOpen} aria-controls="workspace-navigation"><Menu className="h-5 w-5" /></button>
           <button type="button" onClick={onHome} className="rounded-lg" aria-label={`${BRAND.name} home`}><BrandMark /></button>
         </div>
-        <div className="ml-3 flex items-center gap-2">
+        <div className="workspace-trail min-w-0 flex-1 px-4 lg:px-8"><WorkspaceBreadcrumbs /></div>
+        <div className="ml-auto flex items-center gap-1 px-3 md:px-6">
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
           {authLoading ? <div className="h-9 w-20 animate-pulse rounded-lg bg-muted" /> : userLabel ? (
             <>
@@ -119,7 +119,7 @@ export default function WorkspaceShell({
           )}
         </div>
       </header>
-      <div className="flex min-h-0 flex-1 overflow-hidden">{sidebar}<main id="workspace-content" className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain" tabIndex={-1}><div className="suite-page"><WorkspaceBreadcrumbs /><WorkspaceSections />{children}</div></main></div>
+      <div className="flex min-h-0 flex-1 overflow-hidden">{sidebar}<main id="workspace-content" className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain" tabIndex={-1}><div className="suite-page"><WorkspaceSections />{children}</div></main></div>
     </div>
   );
 }

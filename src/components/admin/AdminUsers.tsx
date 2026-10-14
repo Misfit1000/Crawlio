@@ -50,7 +50,7 @@ export default function AdminUsers({ adminUserId }: { adminUserId: string }) {
     } catch (error) { setError(error instanceof Error ? error.message : 'Account update failed.'); }
     finally { setPendingId(null); busy.current = false; }
   };
-  const controls = (item: AdminRecord) => <div className="flex flex-wrap items-end gap-3">
+  const controls = (item: AdminRecord) => <div className="admin-user-controls grid items-end gap-4">
     <label className="text-xs text-muted-foreground">Role<Select label={`Role for ${item.email || item.id}`} value={item.role || 'user'} options={['user', 'support', 'admin']} disabled={Boolean(pendingId) || item.id === adminUserId} onChange={value => update(item, { role: value }, 'changing role')} /></label>
     <label className="text-xs text-muted-foreground">Plan preset<Select label={`Plan preset for ${item.email || item.id}`} value={item.plan || 'free'} options={['free', 'paid', 'agency', 'admin']} disabled={Boolean(pendingId)} onChange={value => update(item, { plan: value, subscription_status: value === 'free' ? 'inactive' : 'active' }, `applying ${value} plan preset`)} /></label>
     <label className="text-xs text-muted-foreground">Subscription<Select label={`Subscription for ${item.email || item.id}`} value={item.subscriptionStatus || 'inactive'} options={['inactive', 'trialing', 'active', 'past_due', 'cancelled']} disabled={Boolean(pendingId)} onChange={value => update(item, { subscription_status: value }, 'changing subscription')} /></label>
@@ -58,7 +58,7 @@ export default function AdminUsers({ adminUserId }: { adminUserId: string }) {
     <button type="button" disabled={Boolean(pendingId) || item.id === adminUserId} onClick={() => update(item, { disabled: !item.disabled }, item.disabled ? 'restoring access' : 'suspending access')} className="quiet-button min-h-11 text-xs">{item.disabled ? 'Restore access' : 'Suspend access'}</button>
   </div>;
   const identity = (item: AdminRecord) => <><button type="button" onClick={() => setSelectedId(item.id)} className="min-h-11 break-all text-left font-semibold text-accent hover:underline">{item.displayName || item.fullName || item.email || 'Unnamed account'}</button>{item.id === adminUserId && <span className="ml-2 text-xs">You</span>}<div className="break-all text-xs text-muted-foreground">{item.email || item.id}</div>{item.disabled && <div className="mt-1 text-xs font-semibold text-red-700 dark:text-red-300">Suspended</div>}</>;
-  return <Panel title="User management" description="Accounts, access, entitlements, and quota usage." icon={Users} action={<span className="suite-chip">{users.rows.length} shown</span>}>
+  return <Panel title="User management" icon={Users} action={<span className="text-xs text-muted-foreground">{users.rows.length} accounts shown</span>}>
     <DataNotice {...users} />
     {pendingId && <Notice tone="info" className="mb-4"><span className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Account change pending server confirmation.</span></Notice>}
     {error && <Notice tone="danger" className="mb-4">{error}</Notice>}
@@ -69,12 +69,12 @@ export default function AdminUsers({ adminUserId }: { adminUserId: string }) {
       <select aria-label="Filter by plan" value={plan} onChange={event => setPlan(event.target.value)} className="suite-input min-h-11"><option value="all">All plans</option>{['free', 'paid', 'agency', 'admin'].map(value => <option key={value}>{value}</option>)}</select>
     </div>
     <AdminSort kind="users" sort={sort} direction={direction} onSort={setSort} onDirection={setDirection} />
-    <Pagination page={users.page} hasMore={users.hasMore} loading={users.loading} onChange={users.setPage} />
     {users.loading && !users.data ? <Loading /> : <>
       <div className="space-y-4 md:hidden">{users.rows.map(item => <article key={item.id} className="min-w-0 rounded-lg border border-border p-3"><div className="mb-3">{identity(item)}</div><p className="mb-3 text-xs text-muted-foreground">Quota used: {item.auditQuotaUsedDaily ?? 0} daily / {item.auditQuotaUsedMonthly ?? 0} monthly</p>{controls(item)}</article>)}</div>
       <div className="hidden max-w-full overflow-x-auto rounded-lg border border-border md:block"><table className="suite-table min-w-[900px]"><caption className="sr-only">Accounts and guarded access controls, server ordered</caption><thead><tr>{['Account', 'Quota use', 'Access and entitlements'].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead><tbody>{users.rows.map(item => <tr key={item.id}><td className="max-w-64">{identity(item)}</td><td><div>{item.auditQuotaUsedDaily ?? 0} daily</div><div className="text-xs text-muted-foreground">{item.auditQuotaUsedMonthly ?? 0} monthly</div></td><td>{controls(item)}</td></tr>)}</tbody></table></div>
       {!users.rows.length && <Empty text="No accounts match these filters." />}
     </>}
+    <Pagination page={users.page} hasMore={users.hasMore} loading={users.loading} onChange={users.setPage} />
     {selectedId && <UserDetailDrawer key={selectedId} id={selectedId} onClose={() => setSelectedId('')} />}
   </Panel>;
 }

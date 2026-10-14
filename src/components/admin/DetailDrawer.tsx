@@ -12,12 +12,12 @@ export function DetailDrawer({ title, children, onClose }: { title: string; chil
   }, []);
   return (
     <dialog ref={dialog} aria-labelledby={titleId} onCancel={event => { event.preventDefault(); onClose(); }}
-      className="fixed inset-y-0 left-auto right-0 m-0 h-dvh max-h-dvh w-full max-w-lg overflow-y-auto border-l border-border bg-card p-0 text-foreground shadow-xl backdrop:bg-black/40">
-      <header className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-border bg-card p-5">
-        <h2 id={titleId} className="text-lg">{title}</h2>
+      className="admin-detail-drawer fixed inset-y-0 left-auto right-0 m-0 h-dvh max-h-dvh w-full max-w-xl overflow-y-auto border-l border-border bg-card p-0 text-foreground shadow-xl backdrop:bg-black/40">
+      <header className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-border bg-card p-6">
+        <h2 id={titleId} className="text-xl font-semibold">{title}</h2>
         <button type="button" autoFocus onClick={onClose} className="quiet-button min-h-11 min-w-11 p-2" aria-label="Close details" title="Close details"><X className="h-5 w-5" /></button>
       </header>
-      <div className="space-y-5 break-words p-5">{children}</div>
+      <div className="admin-drawer-body flex flex-col gap-8 break-words p-6">{children}</div>
     </dialog>
   );
 }

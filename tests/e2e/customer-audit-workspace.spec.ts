@@ -33,7 +33,7 @@ test('complete chart aggregates, addressable modes, global filters and page evid
   await expect(page.getByRole('heading', { name: 'example.com', exact: true })).toBeVisible();
   await expect(page.locator('[data-presentation-scope]')).toHaveAttribute('data-presentation-scope', 'complete');
   await expect(page.getByText('100 analysed / 100 attempted pages', { exact: false })).toBeVisible();
-  await page.getByText('Delivery and crawl details', { exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Evidence at a glance' })).toBeVisible();
   await expect(page.getByText('0 ms', { exact: true })).toBeVisible();
   await expect(page.getByText('80 affected pages', { exact: true })).toBeVisible();
   await expect(page.locator('.audit-map-node')).toHaveCount(48);
@@ -131,10 +131,10 @@ test('active findings await final recommendations and unavailable delivery is no
   await page.goto(`/audit/live/${AUDIT_ID}`);
   await expect(page.getByText('Recommendations are prepared at finalization.', { exact: false })).toBeVisible();
   await expect(page.getByText('0 B', { exact: true })).toHaveCount(0);
-  await page.getByText('Delivery and crawl details', { exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Evidence at a glance' })).toBeVisible();
   await expect(page.locator('.audit-overview-charts').getByText('Not measured', { exact: true })).toHaveCount(2);
   await page.getByRole('button', { name: 'View findings', exact: true }).click();
-  await expect(page.getByRole('button', { name: /Missing page title https/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Missing page title', exact: true })).toBeVisible();
   await page.getByRole('navigation', { name: 'Audit workspace views' }).getByRole('link', { name: 'Pages', exact: true }).click();
   await page.getByRole('button', { name: 'Page 0 https://example.com/0' }).click();
   const drawer = page.getByRole('dialog', { name: 'Page 0' });

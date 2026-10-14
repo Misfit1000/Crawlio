@@ -179,10 +179,10 @@ function AccountProjectCockpit({ onStartAudit, onOpenReports, accountId }: Proje
   };
 
   return (
-    <section aria-labelledby="project-cockpit-title" className="space-y-4">
+    <section aria-labelledby="project-cockpit-title" className="project-cockpit space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <div className="flex items-center gap-2"><h2 id="project-cockpit-title" className="text-xl font-semibold">Your website</h2>{overview?.unreadNotifications || showNotifications ? <button type="button" onClick={toggleNotifications} aria-expanded={showNotifications} aria-controls={showNotifications ? 'project-notifications' : undefined} aria-label={showNotifications ? 'Close project notifications' : 'Open project notifications'} className="min-h-11 rounded-lg"><StatusBadge tone="neutral"><Bell className="h-3.5 w-3.5" /> {overview?.unreadNotifications || 0} unread</StatusBadge></button> : null}</div>
+          <div className="flex items-center gap-2"><h2 id="project-cockpit-title" className="text-xl font-semibold">Current website</h2>{overview?.unreadNotifications || showNotifications ? <button type="button" onClick={toggleNotifications} aria-expanded={showNotifications} aria-controls={showNotifications ? 'project-notifications' : undefined} aria-label={showNotifications ? 'Close project notifications' : 'Open project notifications'} className="min-h-11 rounded-lg"><StatusBadge tone="neutral"><Bell className="h-3.5 w-3.5" /> {overview?.unreadNotifications || 0} unread</StatusBadge></button> : null}</div>
         </div>
         <button type="button" className="quiet-button" onClick={() => void load()} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh</button>
       </div>
@@ -202,14 +202,14 @@ function AccountProjectCockpit({ onStartAudit, onOpenReports, accountId }: Proje
 
       {overview && overview.projects.length ? <>
           <div className="project-selector">
-            <label><span className="mb-2 block text-xs font-semibold text-muted-foreground">Current website</span><select className="suite-input" value={selectedHost} onChange={(event) => setSelectedHost(event.target.value)}>{overview.projects.map((project) => <option key={project.hostname} value={project.hostname}>{project.name === project.hostname ? project.hostname : `${project.name} - ${project.hostname}`}</option>)}</select></label>
+            <label><span className="sr-only">Current website</span><select className="suite-input" value={selectedHost} onChange={(event) => setSelectedHost(event.target.value)}>{overview.projects.map((project) => <option key={project.hostname} value={project.hostname}>{project.name === project.hostname ? project.hostname : `${project.name} - ${project.hostname}`}</option>)}</select></label>
             <div className="flex flex-wrap gap-2">{selected && !selected.id ? <button type="button" className="quiet-button" disabled={busy === 'track'} onClick={() => void trackSite(selected)}><Plus className="h-4 w-4" /> Track project</button> : null}<button type="button" className="trust-button" onClick={runAudit}>Run audit <ArrowRight className="h-4 w-4" /></button></div>
           </div>
 
         {selected ? <>
           <div className="project-result">
             <div>
-              <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-semibold">Latest result</h3><p className="mt-1 text-xs text-muted-foreground">{selected.latestAudit ? formatDate(selected.latestAudit.completedAt || selected.latestAudit.createdAt) : 'No audit yet'}</p></div>{selected.newCriticalCount ? <StatusBadge tone="danger">{selected.newCriticalCount} new critical</StatusBadge> : selected.latestAudit ? <StatusBadge tone="neutral">{selected.latestAudit.status.replace(/_/g, ' ')}</StatusBadge> : <StatusBadge tone="neutral">Awaiting first audit</StatusBadge>}</div>
+              <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-semibold">Latest audit</h3><p className="mt-1 text-xs text-muted-foreground">{selected.latestAudit ? formatDate(selected.latestAudit.completedAt || selected.latestAudit.createdAt) : 'No audit yet'}</p></div>{selected.newCriticalCount ? <StatusBadge tone="danger">{selected.newCriticalCount} new critical</StatusBadge> : selected.latestAudit ? <StatusBadge tone="neutral">{selected.latestAudit.status.replace(/_/g, ' ')}</StatusBadge> : <StatusBadge tone="neutral">Awaiting first audit</StatusBadge>}</div>
               <div className="project-score">
                 <div>{selected.latestAudit?.score != null ? <RadialScoreGauge value={selected.latestAudit.score} label="Latest audit score" /> : <AuditGrade score={null} label="Latest audit score" detail="Run an audit to collect evidence" />}{selected.scoreDelta != null && <div className={`mt-3 inline-flex items-center gap-1.5 text-sm font-semibold ${selected.scoreDelta < 0 ? 'text-red-600 dark:text-red-300' : 'text-emerald-700 dark:text-emerald-300'}`}>{selected.scoreDelta < 0 ? <TrendingDown className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}{selected.scoreDelta > 0 ? '+' : ''}{selected.scoreDelta} since previous audit</div>}</div>
                 <div><h4 className="text-sm font-semibold text-muted-foreground">Next action</h4><p className="mt-2 text-lg leading-7">{selected.recommendedAction}</p><div className="mt-5 flex flex-wrap gap-2"><button type="button" className="trust-button" onClick={selected.latestAudit ? openReport : runAudit}>{selected.latestAudit ? 'Open latest report' : 'Run first audit'} <ArrowRight className="h-4 w-4" /></button>{selected.latestAudit && <button type="button" className="quiet-button" onClick={runAudit}>Run again</button>}</div></div>
@@ -223,6 +223,15 @@ function AccountProjectCockpit({ onStartAudit, onOpenReports, accountId }: Proje
             <MetricCard label="Pages checked" value={selected.latestAudit?.pagesCrawled ?? '--'} detail={selected.latestAudit ? `Last run ${formatDate(selected.latestAudit.completedAt || selected.latestAudit.createdAt)}` : 'No completed audit'} icon={<Globe2 className="h-5 w-5" />} />
           </div>
         </> : null}
+        <section className="project-table" aria-labelledby="all-projects-heading">
+          <div className="mb-4 flex items-center justify-between gap-4"><h3 id="all-projects-heading" className="text-xl font-semibold">Your projects</h3><span className="text-sm text-muted-foreground">{overview.projects.length} website{overview.projects.length === 1 ? '' : 's'}</span></div>
+          <div className="overflow-x-auto" role="region" aria-label="Website projects" tabIndex={0}><table className="suite-table min-w-[660px]"><caption className="sr-only">Website projects and their latest recorded audit.</caption><thead><tr>{['Website','Latest audit','Score','Findings',''].map((label,index) => <th key={index} scope="col">{label || <span className="sr-only">Action</span>}</th>)}</tr></thead><tbody>{overview.projects.map(project => <tr key={project.hostname} aria-selected={project.hostname === selectedHost}>
+            <td><button type="button" className="inline-flex min-h-11 items-center gap-3 text-left font-medium" onClick={() => setSelectedHost(project.hostname)}><Globe2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />{project.hostname}</button></td>
+            <td><StatusBadge tone={project.latestAudit?.status === 'failed' ? 'danger' : project.latestAudit?.status.startsWith('completed') ? 'success' : 'neutral'}>{project.latestAudit?.status.replace(/_/g,' ') || 'Not audited'}</StatusBadge></td>
+            <td className="tabular-nums">{project.latestAudit?.score != null ? Math.round(project.latestAudit.score) : '--'}</td><td className="tabular-nums">{project.latestAudit?.issuesFound ?? '--'}</td>
+            <td><button type="button" className="inline-flex min-h-11 items-center gap-2 font-medium text-accent" onClick={() => { setSelectedHost(project.hostname); if (project.latestAudit) { window.localStorage.setItem('crawlio_selected_report_id',project.latestAudit.id); onOpenReports(); } else { window.localStorage.setItem('crawlio_prefill_audit_url',project.normalizedUrl); if (project.id) window.localStorage.setItem('crawlio_prefill_project_id',project.id); else window.localStorage.removeItem('crawlio_prefill_project_id'); onStartAudit(); } }}>{project.latestAudit ? 'View report' : 'Run audit'}<ArrowRight className="h-4 w-4" aria-hidden="true" /></button></td>
+          </tr>)}</tbody></table></div>
+        </section>
       </> : null}
     </section>
   );

@@ -40,7 +40,7 @@ test('crawlable blog listing and article follow the customer theme without overf
         await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
         await expect(expectNoHorizontalOverflow(page)).resolves.toBe(true);
         const background = await page.locator('body').evaluate((element) => getComputedStyle(element).backgroundColor);
-        expect(background).toBe(colorScheme === 'dark' ? 'rgb(18, 20, 22)' : 'rgb(246, 247, 249)');
+        expect(background).toBe(colorScheme === 'dark' ? 'rgb(0, 0, 0)' : 'rgb(255, 255, 255)');
         await page.screenshot({ path: testInfo.outputPath(`server-blog-${kind}-${width}-${colorScheme}.png`) });
       }
     }

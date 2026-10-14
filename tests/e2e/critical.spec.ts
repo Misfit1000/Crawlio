@@ -7,7 +7,7 @@ test.describe('public product journeys', () => {
 
   test('homepage navigation, pricing, blog, theme, and layout work', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('website');
+    await expect(page.getByRole('heading', { level: 1 })).toContainText(/website/i);
     await page.getByRole('navigation', { name: 'Public navigation' }).getByRole('link', { name: 'Pricing' }).click();
     await expect(page.locator('#pricing')).toBeInViewport();
     await expect(page.locator('#pricing article').filter({ has: page.getByRole('heading', { name: 'Free', exact: true }) }).locator('.pricing-allowance strong')).toHaveText('5');
@@ -24,7 +24,7 @@ test.describe('public product journeys', () => {
     await page.getByRole('button', { name: 'Switch to light mode' }).click();
 
     await page.goto('/blog');
-    await expect(page.getByRole('heading', { name: 'Crawlio blog' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'The Crawlio Journal' })).toBeVisible();
   });
 
   test('mobile navigation is usable without overflow', async ({ page }) => {
@@ -113,7 +113,7 @@ test.describe('guest audit integration', () => {
     await expect(page.getByText('Final score').first()).toBeVisible();
     await expect(page.getByText('82', { exact: true }).first()).toBeVisible();
     const summary = page.getByRole('region', { name: 'Audit summary' });
-    await expect(summary).toContainText('Pages analysed');
+    await expect(summary).toContainText(/pages analysed/i);
     await expect(summary).toContainText('2');
     await expect(summary).toContainText('5');
     const domainStrength = page.getByRole('region', { name: 'Domain strength', exact: true });

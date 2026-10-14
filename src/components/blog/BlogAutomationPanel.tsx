@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarClock, CheckCircle2, Clock3, FileStack, Loader2, Newspaper, Play, RefreshCw, Save, Settings2, Sparkles } from 'lucide-react';
+import { CalendarClock, Clock3, FileStack, Loader2, Newspaper, Play, RefreshCw, Save, Settings2, Sparkles } from 'lucide-react';
 import { getBlogAutomationDashboard, getBlogAutomationSettings, queueBlogBatch, queueBlogJob, runAdminBlogWorkflow, saveBlogAutomationSettings, testAdminBlogProvider } from '../../lib/blog/client';
 import type { BlogAutomationDashboard, BlogProviderTestResult } from '../../lib/blog/client';
 import type { BlogAdminOverview, BlogGenerationJob, BlogPost } from '../../lib/blog/types';
@@ -134,23 +134,23 @@ export default function BlogAutomationPanel({ posts, onChanged }: { posts: BlogP
   );
 
   return (
-    <section className="min-w-0">
+    <section className="blog-automation-workspace min-w-0">
       <div className="flex flex-col gap-4 border-b border-border pb-5 lg:flex-row lg:items-start lg:justify-between">
-        <div><div className="flex items-center gap-2 text-accent"><Sparkles className="h-5 w-5" /><h2 className="text-lg font-semibold text-foreground">Advanced AI</h2></div><p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">Research, drafting, and publication controls. Automatic and manual quotas stay separate.</p></div>
+        <div><div className="flex items-center gap-3 text-accent"><Sparkles className="h-5 w-5" /><h2 className="text-xl font-semibold text-foreground">Advanced AI</h2></div><p className="mt-2 text-sm leading-6 text-muted-foreground">Research, drafting, and publication controls.</p></div>
         <button type="button" onClick={() => void load(!settingsLoaded)} disabled={loading || Boolean(busy)} className="quiet-button">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Refresh</button>
       </div>
       {error && <div className="mt-5"><Notice tone="danger" title="Content operation failed">{error}</Notice></div>}
       {message && <div className="mt-5"><Notice tone="success">{message}</Notice></div>}
       <div className="mt-5"><BlogReadinessStatus dashboard={dashboard} loading={loading} error={statusError} /></div>
 
-      <section className="mt-5 rounded-lg border border-accent/30 bg-accent/5 p-5 sm:p-6" aria-labelledby="one-click-blog-title">
+      <section className="mt-8 border-b border-border pb-8" aria-labelledby="one-click-blog-title">
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div>
             <div className="flex items-center gap-2">
               <Newspaper className="h-5 w-5 text-accent" />
               <h4 id="one-click-blog-title" className="text-lg font-semibold text-foreground">Publish a useful SEO update</h4>
             </div>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Crawlio checks approved and built-in official feeds, selects one recent relevant update, writes a sourced article, and fills the SEO fields. Publication requires the quality checks and current policy; blocked drafts are held for review.</p>
+            <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground">Research a recent official update and write a sourced article with search fields. Publish after checks pass, or hold for review.</p>
           </div>
           <button
             type="button"
@@ -167,14 +167,7 @@ export default function BlogAutomationPanel({ posts, onChanged }: { posts: BlogP
             Research, write and publish
           </button>
         </div>
-        <div className="mt-5 grid gap-3 border-t border-accent/15 pt-4 sm:grid-cols-3">
-          {[
-            ['Current evidence', 'Uses recent official or administrator-approved sources.'],
-            ['Complete article', 'Creates the title, slug, sections, citations, links, tags, and search metadata.'],
-            ['Guarded publishing', 'Publishes only after substance, originality, source, link, and rendering checks pass.'],
-          ].map(([label, detail]) => <div key={label} className="flex gap-2 text-xs leading-5 text-muted-foreground"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /><span><strong className="font-semibold text-foreground">{label}.</strong> {detail}</span></div>)}
-        </div>
-        {oneClickJob && <div className="mt-4 rounded-lg border border-border bg-card p-4">
+        {oneClickJob && <div className="mt-6 border-t border-border pt-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div><p className="text-sm font-semibold text-foreground">Latest one-click article</p><p className="mt-1 text-xs text-muted-foreground">{oneClickJob.statusMessage}</p></div>
             <StatusBadge tone={jobTone(oneClickJob.state)}>{oneClickJob.workflowStage.replaceAll('_', ' ')}</StatusBadge>
@@ -184,10 +177,9 @@ export default function BlogAutomationPanel({ posts, onChanged }: { posts: BlogP
         </div>}
       </section>
 
-      <details className="mt-5 border-t border-border">
-        <summary className="cursor-pointer px-4 py-4 text-sm font-semibold text-foreground">Advanced content controls <span className="ml-2 font-normal text-muted-foreground">Manual topics, batches, sources, schedules, and automation settings</span></summary>
-        <div className="border-t border-border p-4">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{counters.map(([label, value, detail]) => <div key={String(label)} className="rounded-lg border border-border bg-muted/25 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-semibold text-foreground">{value}</p><p className="mt-1 text-xs text-muted-foreground">{detail}</p></div>)}</div>
+      <section className="blog-automation-controls mt-8" aria-label="Advanced content controls">
+        <div className="blog-automation-content flex flex-col gap-8">
+      <div className="blog-automation-metrics grid grid-cols-2 gap-6 md:grid-cols-3 md:gap-x-8">{counters.map(([label, value, detail]) => <div key={String(label)} className="min-w-0 border-l-2 border-border pl-4"><p className="text-xs font-semibold text-muted-foreground">{label}</p><p className="mt-3 text-2xl font-semibold text-foreground">{value}</p><p className="mt-2 text-xs text-muted-foreground">{detail}</p></div>)}</div>
 
       <div className="mt-6 border-t border-border pt-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h4 className="font-semibold text-foreground">Groq on Vercel</h4><p className="mt-1 break-words text-xs text-muted-foreground">Structured: {provider?.structuredModel || 'Not reported'} · Writer: {provider?.writerModel || 'Not reported'} · {provider?.baseUrlHost || 'Host not reported'}. The key stays in Vercel server configuration.</p></div><button type="button" disabled={Boolean(busy) || loading} onClick={() => void run(async () => {
@@ -232,7 +224,7 @@ export default function BlogAutomationPanel({ posts, onChanged }: { posts: BlogP
       <div className="mt-6 border-t border-border pt-4"><h4 className="font-semibold text-foreground">Review-first publishing controls</h4><div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={Boolean(settings.strict_autopilot_enabled)} disabled={!settingsLoaded || loading || Boolean(busy) || (!overview.strictAutopilotUnlocked && !settings.strict_autopilot_enabled)} onChange={(event) => setSettings((value) => ({ ...value, strict_autopilot_enabled: event.target.checked }))} className="mt-1 h-4 w-4" /><span><span className="font-semibold text-foreground">Strict Autopilot</span><span className="block text-xs text-muted-foreground">Locked until the review threshold.</span></span></label><label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={Boolean(settings.emergency_pause)} onChange={(event) => setSettings((value) => ({ ...value, emergency_pause: event.target.checked }))} className="mt-1 h-4 w-4" /><span className="font-semibold text-foreground">Emergency pause</span></label><label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={Boolean(settings.pause_all_publication)} onChange={(event) => setSettings((value) => ({ ...value, pause_all_publication: event.target.checked }))} className="mt-1 h-4 w-4" /><span className="font-semibold text-foreground">Pause publication</span></label><FormField label="Review threshold" htmlFor="review-threshold"><input id="review-threshold" type="number" min="30" max="50" value={settings.required_reviewed_articles_before_autopublish ?? 30} onChange={(event) => setSettings((value) => ({ ...value, required_reviewed_articles_before_autopublish: Number(event.target.value) }))} className="suite-input" /></FormField></div><button type="button" disabled={Boolean(busy) || loading || !settingsLoaded} onClick={() => void run(() => saveBlogAutomationSettings(settings), 'Publishing controls saved.', 'rollout-settings')} className="quiet-button mt-4"><Save className="h-4 w-4" /> Save publishing controls</button></div>
       <div className="mt-6">{settingsLoaded && <BlogContentCalendar posts={posts} settings={settings} onChanged={() => { void load(); onChanged(); }} />}</div>
         </div>
-      </details>
+      </section>
     </section>
   );
 }

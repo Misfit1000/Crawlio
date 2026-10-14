@@ -43,7 +43,7 @@ export function AdminRefreshProvider({ children, controls = true, polling = true
     return () => { window.clearTimeout(timer); document.removeEventListener('visibilitychange', resume); window.removeEventListener('focus', resume); };
   }, [seconds]);
   return <Context.Provider value={{ seconds, tick, automaticTick, resumeTick, refreshAll }}>
-    {controls && <div className="mb-4 flex min-w-0 flex-wrap items-center justify-between gap-3 text-sm">
+    {controls && <div className="admin-refresh-toolbar flex min-w-0 flex-wrap items-center justify-between gap-4 border-b border-border pb-6 text-sm">
       {toolbar && <div className="min-w-0 max-w-xl flex-[1_1_16rem]">{toolbar}</div>}
       <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
       {polling && <label className="flex items-center gap-2 whitespace-nowrap text-muted-foreground">Auto-refresh<select aria-label="Admin auto-refresh interval" value={intervalSeconds} onChange={event => setSeconds(Number(event.target.value))} className="suite-input min-h-11 w-auto"><option value={0}>Off</option><option value={15}>15 seconds</option><option value={30}>30 seconds</option><option value={60}>60 seconds</option></select></label>}

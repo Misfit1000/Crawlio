@@ -26,9 +26,10 @@ export type PreviewProps = CompactPreviewProps & {
 export function SurfaceCard({
   children,
   className = '',
+  variant = 'surface',
   ...sectionProps
-}: React.ComponentPropsWithoutRef<'section'>) {
-  return <section {...sectionProps} className={`trust-card relative overflow-hidden ${className}`}>{children}</section>;
+}: React.ComponentPropsWithoutRef<'section'> & { variant?: 'surface' | 'plain' }) {
+  return <section {...sectionProps} className={`${variant === 'surface' ? 'trust-card' : 'surface-plain'} relative min-w-0 overflow-hidden ${className}`}>{children}</section>;
 }
 
 export function SectionHeader({
@@ -71,7 +72,7 @@ export function StatusBadge({
     danger: 'border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-300',
     accent: 'border-accent/20 bg-accent/10 text-accent',
   };
-  return <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${tones[tone]}`}>{children}</span>;
+  return <span className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium ${tones[tone]}`}>{children}</span>;
 }
 
 export function AuditGrade({
@@ -125,7 +126,7 @@ export function CategoryGradeCard({
   const boundedScore = measured ? Math.max(0, Math.min(100, score)) : 0;
   const tone = reportScoreTone(score);
   return (
-    <div className="score-factor min-w-0 border-b border-border py-4 last:border-b-0" data-tone={tone}>
+    <div className="score-factor min-w-0 py-4" data-tone={tone}>
       <div className="flex min-w-0 items-start gap-3">
         {icon && <div className="score-factor-icon shrink-0" aria-hidden="true">{icon}</div>}
         <div className="min-w-0 flex-1">
@@ -378,11 +379,11 @@ export function SparklineChart({
   }).join(' ');
 
   return (
-    <div className="rounded-xl border border-border bg-background/75 p-4">
+    <div className="audit-sparkline min-w-0 py-4">
       <div className="flex items-end justify-between gap-3">
         <div>
           <div className="text-sm font-semibold">{label}</div>
-          <div className="text-xs text-muted-foreground">Based on live audit events</div>
+          <div className="text-xs text-muted-foreground">Recorded observations</div>
         </div>
         {valueLabel && <div className="font-mono text-sm font-bold text-accent">{valueLabel}</div>}
       </div>
@@ -504,7 +505,7 @@ export function RadialScoreGauge({
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <div className={`text-3xl font-bold ${scoreTextClass(resolvedTone)} ${size === 'lg' ? 'md:text-5xl' : ''}`}>{Math.round(safeValue)}</div>
+          <div className={`text-3xl font-bold text-foreground ${size === 'lg' ? 'md:text-5xl' : ''}`}>{Math.round(safeValue)}</div>
           <div className="text-xs font-semibold text-muted-foreground">/100</div>
         </div>
       </div>
@@ -641,12 +642,14 @@ export function MetricCard({
   detail,
   icon,
   tone = 'accent',
+  variant = 'plain',
 }: {
   label: string;
   value: React.ReactNode;
   detail?: string;
   icon?: React.ReactNode;
   tone?: 'accent' | 'green' | 'yellow' | 'red' | 'blue' | 'teal' | 'cyan' | 'violet';
+  variant?: 'surface' | 'plain';
 }) {
   const tones = {
     accent: 'bg-accent/10 text-accent',
@@ -659,14 +662,14 @@ export function MetricCard({
     violet: 'bg-[var(--category-violet)]/10 text-[var(--category-violet)]',
   };
   return (
-    <SurfaceCard className="p-5">
+    <SurfaceCard variant={variant} className="metric-summary p-5">
       <div className="flex items-center justify-between gap-4">
         <div>
           <div className="text-sm font-medium text-muted-foreground">{label}</div>
           <div className="mt-2 text-3xl font-semibold tabular-nums"><UpdatedValue value={value} /></div>
           {detail && <div className="mt-1 text-xs text-muted-foreground">{detail}</div>}
         </div>
-        {icon && <div className={`rounded-lg p-3 ${tones[tone]}`}>{icon}</div>}
+        {icon && <div className={`metric-icon rounded-lg p-3 ${tones[tone]}`}>{icon}</div>}
       </div>
     </SurfaceCard>
   );

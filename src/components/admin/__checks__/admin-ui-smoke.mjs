@@ -101,7 +101,7 @@ try {
   await goto('/admin');
   await page.getByText('75.0%', { exact: true }).waitFor();
   assert.equal(await page.locator('h1').count(), 1, 'One route title');
-  for (const title of ['Queue pressure', 'Component health', 'Audit trend', 'Recent failures', 'Administrator activity', 'Workers and controls']) {
+  for (const title of ['Queue pressure', 'Component health', 'Audit activity', 'Recent failures', 'Administrator activity', 'Executors']) {
     const section = page.getByRole('heading', { name: title, exact: true });
     assert.equal(await section.isVisible(), true, `${title} is expanded by default`);
     assert.equal(await section.evaluate(node => Boolean(node.closest('details'))), false, `${title} is not deferred`);
@@ -146,7 +146,7 @@ try {
   assert.deepEqual(accessibility.violations.map(item => ({ id: item.id, targets: item.nodes.map(node => node.target) })), [], 'Overview WCAG A/AA check');
   await page.screenshot({ path: 'test-results/admin-operations-desktop.png', fullPage: true });
   assert.equal(counts.get(`audits/${auditId}/detail`) || 0, 0, 'Details must load only when opened');
-  await page.getByRole('button', { name: 'example.test', exact: true }).click();
+  await page.getByRole('button', { name: 'View audit', exact: true }).click();
   await page.getByRole('dialog').getByRole('heading', { name: 'Audit diagnostics' }).waitFor();
   assert.equal(await page.getByRole('dialog').getByText('9999', { exact: false }).count(), 0, 'Never show v2 sentinel lease');
   await page.getByText('Recommended safe actions', { exact: true }).waitFor();

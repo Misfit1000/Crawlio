@@ -10,7 +10,7 @@ import { auditCoverage } from '../../lib/audit/audit-evidence-quality';
 import { AUDIT_CHECK_GROUPS, AUDIT_GROUP_DETAILS, auditScopeScoreLabel } from '../../lib/audit/audit-scope';
 import { categoryColor } from '../ui/category-presentation';
 import { auditScopeProgressLabel } from '../../lib/report/scope-presentation';
-import { AuditGrade, CategoryScoreBar, ProgressBar, RadialScoreGauge, SeverityDistribution, StatusBadge } from '../ui/visual-system';
+import { AuditGrade, CategoryScoreBar, ProgressBar, RadialScoreGauge, StatusBadge } from '../ui/visual-system';
 
 export interface AuditCategoryScore {
   label: string;
@@ -21,7 +21,7 @@ export interface AuditCategoryScore {
 
 export function AuditScoreFactors({ categoryScores }: { categoryScores: AuditCategoryScore[] }) {
   if (!categoryScores.length) return null;
-  return <section className="border-b border-border py-5" aria-label="Measured score factors"><h2 className="mb-4 text-sm font-semibold">Measured score factors</h2><div className="audit-score-factors grid gap-6 sm:grid-cols-2 xl:grid-cols-3">{categoryScores.map(item => {
+  return <section className="audit-factor-section py-6" aria-label="Measured score factors"><div className="audit-section-heading mb-6 flex flex-wrap items-center justify-between gap-4"><h2>Score factors</h2><span className="text-xs text-muted-foreground">Measured categories only</span></div><div className="audit-score-factors grid gap-8 sm:grid-cols-2 xl:grid-cols-4">{categoryScores.map(item => {
     const group = AUDIT_CHECK_GROUPS.find(group => AUDIT_GROUP_DETAILS[group].label === item.label);
     return <div key={item.label} style={{ '--factor-color': categoryColor(group || (item.label === 'On-page SEO' ? 'seo' : item.label === 'Technical delivery' ? 'technical' : 'security')) } as CSSProperties}><CategoryScoreBar label={item.label} value={item.value} framed={false} /></div>;
   })}</div></section>;
@@ -29,7 +29,7 @@ export function AuditScoreFactors({ categoryScores }: { categoryScores: AuditCat
 
 export const AuditExecutiveSummary = memo(function AuditExecutiveSummary({
   audit, score, scoreState = 'unavailable', scoreLabel, scoreDetail,
-  categoryScores = [], progress, unavailableChecks = null,
+  categoryScores = [], progress, unavailableChecks = null, onViewFindings, showFactors = true,
 }: {
   audit: ResourceAuditDocument;
   score: number | null;
@@ -39,33 +39,47 @@ export const AuditExecutiveSummary = memo(function AuditExecutiveSummary({
   categoryScores?: AuditCategoryScore[];
   progress?: number;
   unavailableChecks?: number | null;
+  onViewFindings?: () => void;
+  showFactors?: boolean;
 }) {
   const coverage = auditCoverage(audit);
   const terminal = isTerminalAuditStatus(audit.status);
   const limitationCount = unavailableChecks ?? audit.warningCount ?? 0;
-  return <section aria-label="Audit summary">
-    <div className="audit-compact-summary grid gap-6 border-b border-border sm:grid-cols-2 xl:grid-cols-3">
-    <div className="min-w-0 py-5">
-      <div className="mb-3"><StatusBadge tone={scoreState === 'final' ? 'success' : scoreState === 'provisional' ? 'accent' : 'neutral'}>{scoreState === 'final' ? 'Final score' : scoreState === 'provisional' ? 'Preliminary' : terminal ? 'Unavailable' : 'Score pending'}</StatusBadge></div>
+  const priorities = [
+    { label: 'Critical', value: audit.criticalCount, color: 'var(--danger)' },
+    { label: 'High', value: audit.highCount, color: 'var(--warning)' },
+    { label: 'Medium', value: audit.mediumCount, color: 'var(--category-cyan,var(--accent))' },
+    { label: 'Low', value: audit.lowCount, color: 'var(--action,var(--accent))' },
+  ];
+  return <section className="audit-executive" aria-label="Audit summary">
+    <div className="audit-executive-grid grid items-center gap-8 py-8 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="audit-executive-score flex flex-col items-center text-center">
       {score != null && Number.isFinite(score)
-        ? <RadialScoreGauge value={score} label={audit.scope ? auditScopeScoreLabel(audit.scope) : scoreLabel || 'Overall score'} detail={scoreDetail} size="lg" />
+        ? <RadialScoreGauge value={score} label={audit.scope ? auditScopeScoreLabel(audit.scope) : scoreLabel || 'Audit score'} size="lg" />
         : <AuditGrade score={null} label={audit.scope ? auditScopeScoreLabel(audit.scope) : scoreLabel || 'Overall score'} detail={scoreDetail} compact />}
-      {progress != null && !terminal && <div className="mt-4"><ProgressBar label={auditScopeProgressLabel(audit)} value={progress} /></div>}
+      <div className="mt-3"><StatusBadge tone={scoreState === 'final' ? 'success' : scoreState === 'provisional' ? 'accent' : 'neutral'}>{scoreState === 'final' ? 'Final score' : scoreState === 'provisional' ? 'Preliminary' : terminal ? 'Unavailable' : 'Score pending'}</StatusBadge></div>
     </div>
-    <div className="min-w-0 py-5">
-      <h2 className="mb-3 text-sm font-semibold">Finding priority <span className="ml-1 text-xs font-normal text-muted-foreground">{audit.issuesFound.toLocaleString()} total</span></h2>
-      <SeverityDistribution critical={audit.criticalCount} high={audit.highCount} medium={audit.mediumCount} low={audit.lowCount} />
+    <div className="audit-executive-coverage min-w-0">
+      <h2 className="text-base font-semibold">Measured results</h2>
+      <p className="mt-2 text-sm text-muted-foreground">{audit.scope?.coverage === 'page' ? 'Single-page coverage' : 'Website coverage'}</p>
+      <p className="audit-large-number mt-5 text-4xl font-bold tabular-nums">{coverage.analysed.toLocaleString()}</p>
+      <p className="text-sm text-muted-foreground">pages analysed</p>
+      <p className="mt-4 text-xs leading-5 text-muted-foreground">{coverage.discovered.toLocaleString()} URLs discovered / {coverage.allowance.toLocaleString()} page audit limit</p>
+      {coverage.discoveredPercent != null && <div className="mt-4"><ProgressBar label="Discovered pages analysed" value={coverage.discoveredPercent} tone="green" /></div>}
     </div>
-    <div className="min-w-0 py-5">
-      <h2 className="mb-3 text-sm font-semibold">Coverage</h2>
-      <dl className="grid grid-cols-2 gap-x-3 gap-y-3">
-        {[[coverage.analysed.toLocaleString(), 'Pages analysed'], [coverage.discovered.toLocaleString(), 'URLs discovered'], [audit.scope ? categoryScores.length.toLocaleString() : audit.checksCompleted.toLocaleString(), audit.scope ? 'Groups measured' : 'Checks completed'], [limitationCount.toLocaleString(), unavailableChecks == null ? 'Warnings' : 'Unavailable checks']].map(([value, label]) => <div key={label}><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{value}</dd></div>)}
-      </dl>
-      <p className="mt-3 text-xs text-muted-foreground">{audit.scope?.coverage === 'page' ? `Single-page coverage. ${(audit.planPageLimit ?? coverage.allowance).toLocaleString()} pages in your plan allowance.` : `${(audit.planPageLimit ?? coverage.allowance).toLocaleString()} page allowance. Discovered URLs are not total site size.`}</p>
-      {coverage.discoveredPercent != null && <div className="mt-3"><ProgressBar label="Discovered pages analysed" value={coverage.discoveredPercent} tone="green" /></div>}
+    <div className="audit-executive-priorities min-w-0">
+      <h2 className="text-base font-semibold">Finding priority</h2>
+      <dl className="audit-priority-counts mt-7 grid grid-cols-2 gap-4">{priorities.map(item => <div key={item.label}><dt className="text-xs text-muted-foreground"><span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} aria-hidden="true" />{item.label}</dt><dd className="mt-3 text-2xl font-semibold tabular-nums">{item.value.toLocaleString()}</dd></div>)}</dl>
+      <p className="mt-5 text-xs text-muted-foreground">{limitationCount.toLocaleString()} {unavailableChecks == null ? 'warnings' : 'unavailable checks'}{audit.scope ? ` / ${categoryScores.length} groups measured` : ` / ${audit.checksCompleted.toLocaleString()} checks completed`}</p>
+    </div>
+    <div className="audit-executive-total min-w-0">
+      <p className="audit-large-number mt-5 text-4xl font-bold tabular-nums">{audit.issuesFound.toLocaleString()}</p><p className="mt-1 text-sm text-muted-foreground">total findings</p>
+      {onViewFindings && <button type="button" onClick={onViewFindings} className="trust-button mt-5">View fixes</button>}
     </div>
     </div>
-    <AuditScoreFactors categoryScores={categoryScores} />
+    <div className="audit-summary-footnote flex flex-wrap justify-between gap-x-6 gap-y-2 border-t border-border pt-4 text-xs leading-6 text-muted-foreground"><span>{scoreDetail || 'Based on collected audit evidence.'}</span><span>{(audit.planPageLimit ?? coverage.allowance).toLocaleString()} pages in plan allowance. Discovered URLs are not total site size.</span></div>
+    {progress != null && !terminal && <div className="mt-4"><ProgressBar label={auditScopeProgressLabel(audit)} value={progress} /></div>}
+    {showFactors && <AuditScoreFactors categoryScores={categoryScores} />}
   </section>;
 });
 

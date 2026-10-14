@@ -200,7 +200,7 @@ function AccountSearchData({ accountId }: { accountId: string }) {
   }, [previousRows, rows, source]);
 
   return (
-    <div className="space-y-8 animate-rise">
+    <div className="search-data-page space-y-10 animate-rise">
       <PageHeader
         eyebrow="Search data"
         icon={BarChart3}

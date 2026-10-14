@@ -14,7 +14,7 @@ test('healthy homepage stays lightweight and primary choices are visible', async
     if (request.resourceType() === 'script' && /@supabase|supabase-vendor|sentry-vendor|editor-vendor|AdminDashboard|BlogManualEditor|pdfkit/.test(request.url())) heavyScripts.push(request.url());
   });
   await page.goto('/');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Crawlio website audits.');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Website audits\.\s*Clear next steps\./);
   await expect(page.getByRole('combobox', { name: 'Focus', exact: true })).toBeVisible();
   await expect(page.getByRole('group', { name: 'Coverage', exact: true })).toBeVisible();
   await expect(page.getByRole('group', { name: 'Audit depth', exact: true })).toBeVisible();

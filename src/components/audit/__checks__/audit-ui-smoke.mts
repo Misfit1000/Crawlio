@@ -44,7 +44,7 @@ async function layout(label: string, fullPage = true) {
 }
 async function overview() {
   await expect(page.getByRole('heading', { name: 'example.com', exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Delivery and crawl evidence' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Evidence at a glance' })).toBeVisible();
   await expect(page.getByText('0 ms', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Desktop, mobile, and search context' })).toBeVisible();
   await expect(page.locator('.audit-map-node')).toHaveCount(48);
@@ -62,7 +62,7 @@ try {
   await expect.poll(() => requests.filter(url => url.includes('/domain/')).length).toBeGreaterThan(0);
   assert.equal(await page.getByRole('heading', { name: 'Domain strength', exact: true }).evaluate(node => Boolean(node.closest('details'))), false, 'Domain strength is not collapsed');
   await page.getByRole('navigation', { name: 'Audit workspace views' }).getByRole('link', { name: 'Findings', exact: true }).click();
-  await expect(page.getByText('Recommended fix:', { exact: false })).toBeVisible();
+  await expect(page.getByText('Next step:', { exact: false })).toBeVisible();
   const before = await page.locator('[aria-labelledby="finding-workspace-title"]').boundingBox();
   const trigger = page.getByRole('button', { name: 'Open details for Missing page title' });
   await trigger.click();
@@ -90,9 +90,9 @@ try {
   await expect(page.getByText('Score change', { exact: true })).toBeVisible();
   await layout('workspace-desktop');
   await page.goto(`${origin}/app/reports`);
-  await expect(page.getByRole('heading', { name: 'Audit reports', exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Delivery and crawl evidence' })).toBeVisible();
-  await expect(page.locator('#recommendations').getByText('Recommended fix', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'example.com', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Evidence at a glance' })).toBeVisible();
+  await expect(page.locator('#recommendations').getByText('Next step:', { exact: false })).toBeVisible();
   await layout('reports-desktop');
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: 'JSON', exact: true }).click();
@@ -103,7 +103,7 @@ try {
   await layout('history-desktop');
   await page.goto(`${origin}/share/${'a'.repeat(48)}`);
   await expect(page.getByText('Read-only report', { exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Delivery and crawl evidence' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Evidence at a glance' })).toBeVisible();
   await layout('shared-desktop');
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -111,7 +111,7 @@ try {
     await page.goto(origin + route);
     await expect(page.locator('.audit-customer-workspace').first()).toBeVisible();
     if (label === 'history-mobile') await expect(page.getByRole('region', { name: 'Stored audit runs' }).locator('article')).toHaveCount(2);
-    else await expect(page.getByRole('heading', { name: 'Delivery and crawl evidence' })).toBeVisible();
+    else await expect(page.getByRole('heading', { name: 'Evidence at a glance' })).toBeVisible();
     await layout(label);
   }
   await page.goto(`${origin}/audit/live/${AUDIT_ID}?view=findings`);
@@ -121,7 +121,7 @@ try {
   await layout('findings-mobile', false);
   await page.keyboard.press('Escape');
   await page.goto(`${origin}/audit/live/${AUDIT_ID}`);
-  await expect(page.getByRole('heading', { name: 'Delivery and crawl evidence' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Evidence at a glance' })).toBeVisible();
   await page.getByRole('button', { name: 'Switch to dark mode' }).click();
   await expect.poll(() => page.locator('body').evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgb(0, 0, 0)');
   await layout('live-vanta-mobile');
@@ -141,7 +141,7 @@ try {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await expect(map).toHaveAttribute('data-active', 'false');
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   await expect(map).toHaveAttribute('data-active', 'false');
   await map.scrollIntoViewIfNeeded();
   result.latestPages.push({ ...result.latestPages[0], id: 'arrival-page', url: 'https://example.com/arrival', sourceUrl: 'https://example.com/0', crawlDepth: 2 });
@@ -159,7 +159,8 @@ try {
   delete result.finalReport.presentationSummary;
   result.latestPages = result.latestPages.slice(0, 1);
   await page.goto(`${origin}/audit/live/${AUDIT_ID}`);
-  await expect(page.getByText('Single-page coverage. 50 pages in your plan allowance.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Single-page coverage', { exact: true })).toBeVisible();
+  await expect(page.getByText('50 pages in plan allowance.', { exact: false })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Observed delivery', exact: true })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Desktop, mobile, and search context' })).toHaveCount(0);
   await expect(page.locator('.audit-score-factors .category-score-bar')).toHaveCount(1);

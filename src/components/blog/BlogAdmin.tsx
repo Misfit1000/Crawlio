@@ -6,6 +6,7 @@ import { Notice } from '../ui/page-system';
 import { EmptyState, StatusBadge } from '../ui/visual-system';
 import BlogStudioStart from './BlogStudioStart';
 import { useLocation, useNavigate } from '../../app/router';
+import './blog-content.css';
 
 const BlogAutomationPanel = lazy(() => import('./BlogAutomationPanel'));
 const BlogManualEditor = lazy(() => import('./BlogManualEditor'));
@@ -103,10 +104,10 @@ export default function BlogAdmin() {
     navigate('/admin/blog', { replace: true });
   };
 
-  return <section className="min-w-0 space-y-5" aria-label="Blog studio">
-    <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
-      <nav className="flex min-w-0 flex-wrap gap-1" aria-label="Blog administration">
-        {TABS.map((tab) => { const Icon = tab.icon; return <button key={tab.id} type="button" onClick={() => { setActiveTab(tab.id); if (tab.id !== 'articles') setEditorOpen(false); }} className={`flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-semibold ${activeTab === tab.id ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`} aria-current={activeTab === tab.id ? 'page' : undefined}><Icon className="h-4 w-4" aria-hidden="true" /> {tab.label}</button>; })}
+  return <section className="blog-studio flex min-w-0 flex-col gap-8 text-base" aria-label="Blog studio">
+    <div className="flex min-w-0 flex-wrap items-center justify-between gap-4 border-b border-border">
+      <nav className="blog-studio-tabs flex min-w-0 flex-wrap gap-4 md:gap-6" aria-label="Blog administration">
+        {TABS.map((tab) => { const Icon = tab.icon; return <button key={tab.id} type="button" onClick={() => { setActiveTab(tab.id); if (tab.id !== 'articles') setEditorOpen(false); }} className="inline-flex min-h-12 items-center justify-center gap-2 border-b-2 border-transparent py-2 text-sm font-semibold text-muted-foreground hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-4" aria-current={activeTab === tab.id ? 'page' : undefined}><Icon className="h-4 w-4" aria-hidden="true" /> {tab.label}</button>; })}
       </nav>
       {activeTab === 'articles' && !editorOpen && <div className="flex flex-wrap items-center gap-2">
         <button type="button" className="quiet-button" aria-label="Refresh articles" title="Refresh articles" onClick={() => void loadPosts()} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></button>
@@ -125,7 +126,8 @@ export default function BlogAdmin() {
       onClose={closeEditor}
       onSaved={(saved) => { setSelectedId(saved.id); void loadPosts(); }}
       onArchived={() => { closeEditor(); void loadPosts(); }}
-    /> : <div className="space-y-4">
+    /> : <div className="space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold">Articles</h2><p className="text-xs text-muted-foreground">{filteredPosts.length} of {posts.length} articles</p></div>
         <div className="flex flex-col gap-3 md:flex-row md:items-center">
           <label className="relative flex-1"><span className="sr-only">Search articles</span><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input className="suite-input pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by title, URL, or focus phrase" /></label>
           <select className="suite-input md:w-48" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'all' | BlogPostStatus)} aria-label="Filter articles by status">
@@ -133,9 +135,9 @@ export default function BlogAdmin() {
           </select>
         </div>
       {loading ? <div role="status" aria-label="Loading articles" className="flex min-h-56 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-accent" /></div> : filteredPosts.length ? <div className="divide-y divide-border border-y border-border">
-        {filteredPosts.map((post) => <button key={post.id} type="button" onClick={() => openArticle(post)} className="group flex w-full min-w-0 flex-col gap-3 py-4 text-left hover:bg-muted/30 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0 flex-1"><h2 className="break-words text-base font-semibold group-hover:text-accent">{post.title || 'Untitled article'}</h2><p className="mt-1 break-all text-xs text-muted-foreground">/blog/{post.slug || 'draft'}</p><p className="mt-2 line-clamp-2 text-sm leading-6 text-muted-foreground">{post.excerpt || 'No summary yet.'}</p><p className="mt-2 text-xs text-muted-foreground">{post.origin === 'admin_manual' ? 'Manual' : 'AI-assisted'} / Updated {dateLabel(post.updatedAt)}</p></div>
-          <StatusBadge tone={statusTone(post.status)}>{post.status.replaceAll('_', ' ')}</StatusBadge>
+        {filteredPosts.map((post) => <button key={post.id} type="button" onClick={() => openArticle(post)} className="blog-library-row group flex w-full min-w-0 flex-wrap items-start justify-between gap-4 py-6 text-left md:flex-nowrap md:gap-6">
+          <div className="min-w-0 flex-1"><h3 className="break-words text-base font-semibold group-hover:text-accent">{post.title || 'Untitled article'}</h3><p className="mt-2 break-all text-xs text-muted-foreground">/blog/{post.slug || 'draft'}</p>{post.excerpt && <p className="mt-3 line-clamp-2 text-sm leading-6 text-muted-foreground">{post.excerpt}</p>}</div>
+          <div className="flex shrink-0 flex-col gap-3 sm:items-end"><StatusBadge tone={statusTone(post.status)}>{post.status.replaceAll('_', ' ')}</StatusBadge><p className="text-xs text-muted-foreground">{post.origin === 'admin_manual' ? 'Manual' : 'AI-assisted'}</p><p className="text-xs text-muted-foreground">{dateLabel(post.updatedAt)}</p></div>
         </button>)}
       </div> : <EmptyState icon={Files} title="No articles found" description="Change the filters or start a new article." action={<button type="button" className="trust-button" onClick={startManual}><FilePlus2 className="h-4 w-4" /> Write article</button>} />}
     </div>)}

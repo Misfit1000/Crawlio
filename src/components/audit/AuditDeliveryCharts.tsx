@@ -22,9 +22,9 @@ export function AuditDeliveryCharts({ presentation, scope, complete }: { present
     const colors = { cobalt: 'bg-[var(--category-cobalt)]', teal: 'bg-[var(--category-teal)]', cyan: 'bg-[var(--category-cyan)]', violet: 'bg-[var(--category-violet)]' };
     return { label: section.label, value: presentation.findingsBySection[section.id] || 0, color: colors[CATEGORY_TONES[group]] };
   }).filter(item => item.value > 0), [presentation, scope]);
-  return <section aria-labelledby="audit-delivery-heading" className="border-y border-border py-5">
-    <div className="mb-5 flex flex-wrap items-center justify-between gap-2"><h2 id="audit-delivery-heading" className="text-lg font-semibold">Delivery and crawl evidence</h2><span className="text-xs text-muted-foreground">{complete ? 'Complete stored aggregates' : 'Loaded sample only'}</span></div>
-    <div className="audit-overview-charts">
+  return <section aria-labelledby="audit-delivery-heading" className="py-2">
+    <div className="audit-section-heading mb-6 flex flex-wrap items-center justify-between gap-4"><h2 id="audit-delivery-heading">Evidence at a glance</h2><span className="text-xs text-muted-foreground">{complete ? 'Complete stored aggregates' : 'Loaded sample only'}</span></div>
+    <div className="audit-overview-charts grid gap-8 sm:grid-cols-2">
       <section className="min-w-0"><h3 className="mb-4 text-sm font-semibold">Response outcomes</h3><MetricBarChart items={responses} title="" description="" framed={false} /></section>
       <section className="min-w-0"><h3 className="mb-4 text-sm font-semibold">Findings by section</h3>{findings.length ? <MetricBarChart items={findings} title="" description="" framed={false} /> : <p className="text-sm text-muted-foreground">No findings in {complete ? 'stored aggregates' : 'this sample'}.</p>}</section>
       {scopeIncludesGroup(scope, 'performance') && <section className="min-w-0"><h3 className="mb-4 text-sm font-semibold">Observed delivery</h3><dl className="grid grid-cols-2 gap-x-4 gap-y-5">

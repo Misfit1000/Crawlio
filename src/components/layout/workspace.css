@@ -1,24 +1,33 @@
 .workspace-navigation { animation: navigation-enter 180ms ease-out; }
-.workspace-navigation > div:first-child { border: 0; padding-top: 24px; color: var(--muted-foreground); }
-.workspace-navigation > nav { padding-top: 0; }
-.workspace-nav-link.is-active { background: color-mix(in srgb,var(--accent) 8%,var(--card)); box-shadow: inset 3px 0 var(--accent); }
+.workspace-brand-area { flex-shrink: 0; }
+.workspace-navigation > div:first-child { border: 0; padding-top: 24px; padding-bottom: 20px; color: var(--muted-foreground); }
+.workspace-navigation > nav { padding-inline: 12px; padding-top: 0; }
+.workspace-navigation > nav > * + * { margin-top: 6px; }
+.workspace-nav-link.is-active { background: color-mix(in srgb,var(--action) 7%,var(--background)); box-shadow: inset 2px 0 var(--action); }
+.workspace-breadcrumbs a { font-weight: 400; }
 .workspace-section-nav { display: flex; gap: 8px; overflow-x: auto; border-bottom: 1px solid var(--border); }
 .workspace-section-nav a { display: flex; min-height: 44px; flex-shrink: 0; align-items: center; padding: 8px 12px; border-bottom: 2px solid transparent; font-size: 14px; color: var(--muted-foreground); font-weight: 600; }
 .workspace-section-nav a[aria-current="page"] { border-color: var(--accent); color: var(--accent); }
-.workspace-shell .suite-page > nav + * { margin-top: 24px; }
+.workspace-shell .suite-page > nav + * { margin-top: 32px; }
+.dashboard-page > section + section { margin-top: 40px; }
 .dashboard-usage { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 32px; padding: 16px 0; border-block: 1px solid var(--border); }
 .dashboard-usage > div { min-width: 0; }
 .dashboard-usage .usage-item { display: flex; flex: 1; align-items: center; gap: 12px; min-width: 200px; }
 .dashboard-usage meter { width: 80px; height: 8px; accent-color: var(--accent); }
 .project-selector { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; }
 .project-selector > label { flex: 1; min-width: min(100%,240px); }
-.project-result { display: grid; grid-template-columns: minmax(0,1fr) minmax(240px,.4fr); gap: 32px; align-items: stretch; padding-block: 24px; border-block: 1px solid var(--border); }
+.project-result { display: grid; grid-template-columns: minmax(0,1fr) minmax(220px,.38fr); gap: 40px; align-items: stretch; padding-block: 32px; border-block: 1px solid var(--border); }
 .project-result > section { border-left: 1px solid var(--border); padding-left: 32px; }
 .project-score { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; margin-top: 24px; }
 .project-score > div:last-child { flex: 1; min-width: min(100%,220px); }
 .project-metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; }
-.project-metrics > section { border: 0; border-top: 3px solid var(--accent); border-radius: 0; }
-.project-metrics > section:nth-child(2) { border-color: var(--category-teal); }
-.project-metrics > section:nth-child(3) { border-color: var(--category-cyan); }
-@media (max-width: 767px) { .project-result { grid-template-columns: minmax(0,1fr); gap: 24px; } .project-result > section { border-left: 0; padding-left: 0; } .project-metrics { grid-template-columns: minmax(0,1fr); } }
+.project-metrics > section { border: 0; border-radius: 0; background: transparent; padding-inline: 0; }
+.project-metrics > section + section { border-left: 1px solid var(--border); padding-left: 24px; }
+.project-table { margin-top: 40px; }
+.dashboard-insights { display: grid; grid-template-columns: minmax(0,1fr) minmax(260px,.7fr); gap: 48px; }
+.dashboard-insights > section + section { padding-left: 32px; border-left: 1px solid var(--border); }
+.dashboard-quick-links { display: flex; flex-wrap: wrap; gap: 12px; }
+@media (min-width: 1024px) { .workspace-brand-area { width: 232px; border-right: 1px solid var(--border); height: 100%; } .workspace-navigation > div:first-child h2 { font-size: 12px; font-weight: 400; } }
+@media (max-width: 1100px) { .workspace-trail { display: none; } }
+@media (max-width: 767px) { .project-result, .dashboard-insights { grid-template-columns: minmax(0,1fr); gap: 32px; } .project-result > section, .dashboard-insights > section + section { border-left: 0; padding: 24px 0 0; border-top: 1px solid var(--border); } .project-metrics { gap: 12px; } .project-metrics > section + section { padding-left: 12px; } .project-metrics > section { padding-block: 8px; } .project-metrics .metric-icon { display: none; } }
 @keyframes navigation-enter { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }

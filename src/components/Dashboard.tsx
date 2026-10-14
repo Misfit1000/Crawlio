@@ -54,8 +54,8 @@ export default function Dashboard(props: DashboardProps) {
   const trend = useMemo(() => latest ? scoreTrendForUrl(latest.normalizedUrl, history) : [], [history, latest]);
   const latestScores = latest?.scores;
 
-  return <div className="min-w-0 w-full space-y-6 animate-rise [&_.rounded-xl]:rounded-lg">
-    <PageHeader icon={Gauge} title="Dashboard" actions={<button type="button" className="trust-button" onClick={props.onOpenSeoAudit}><Search className="h-4 w-4" />New audit</button>} />
+  return <div className="dashboard-page min-w-0 w-full space-y-10 animate-rise [&_.rounded-xl]:rounded-lg">
+    <PageHeader title="Your website, at a glance." actions={<button type="button" className="trust-button" onClick={props.onOpenSeoAudit}><Search className="h-4 w-4" />New audit</button>} />
     {user ? <ProjectCockpit onStartAudit={props.onOpenSeoAudit || (() => undefined)} onOpenReports={props.onOpenReports || (() => undefined)} /> : <section aria-labelledby="current-website-title" className="min-w-0 space-y-4">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
         <div className="min-w-0"><h2 id="current-website-title" className="break-words text-xl font-semibold">{latest?.hostname || 'Your first website audit'}</h2>{latest && <p className="mt-1 text-xs text-muted-foreground">Last run {formatDate(latest.updatedAt)}</p>}</div>
@@ -67,13 +67,6 @@ export default function Dashboard(props: DashboardProps) {
       </div>
       {latest && <dl className="grid grid-cols-3 gap-3 border-t border-border pt-3">{[['Pages checked', latest.pagesCrawled], ['Open fixes', latest.issuesFound], ['Saved audits', history.length]].map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{value}</dd></div>)}</dl>}
     </section>}
-
-    <section aria-labelledby="usage-title" className="dashboard-usage">
-      <div className="flex items-center gap-2"><h2 id="usage-title" className="text-sm font-semibold">Usage</h2><StatusBadge>{plan === 'paid' ? 'Plus' : plan === 'agency' ? 'Pro' : plan} plan</StatusBadge></div>
-      <div className="usage-item"><meter aria-label="Daily audit usage" min={0} max={Math.max(1,dailyLimit)} value={dailyUsed} /><span className="text-sm"><strong>{dailyUsed}/{dailyLimit.toLocaleString()}</strong> today</span></div>
-      <div className="usage-item"><meter aria-label="Monthly audit usage" min={0} max={Math.max(1,monthlyLimit)} value={monthlyUsed} /><span className="text-sm"><strong>{monthlyUsed}/{monthlyLimit.toLocaleString()}</strong> this month</span></div>
-      <Link to="/app/settings#scan-preferences" className="inline-flex min-h-11 items-center text-sm font-semibold text-accent">Plan access <ArrowRight className="ml-2 h-4 w-4" /></Link>
-    </section>
 
     <section aria-label="Quick actions" className="flex flex-wrap gap-2">
       {[
@@ -121,12 +114,18 @@ export default function Dashboard(props: DashboardProps) {
           </div> : <p className="flex items-center gap-2 text-sm text-muted-foreground"><History className="h-4 w-4" aria-hidden="true" />No audits saved yet.</p>}
         </section>
 
-        <div className="grid min-w-0 gap-6 lg:grid-cols-2">
+        <div className="dashboard-insights min-w-0">
           <section className="min-w-0"><h2 className="text-lg font-semibold">Top fixes</h2>{recommendations.length ? <ol className="mt-3 divide-y divide-border">{recommendations.map((item, index) => <li key={item.id} className="flex min-w-0 gap-3 py-3"><span className="shrink-0 text-sm font-semibold tabular-nums">{index + 1}</span><div className="min-w-0"><div className="break-words text-sm font-semibold">{item.title}</div><div className="mt-1 text-xs text-muted-foreground">{item.affectedCount || 'Site-wide'} affected page{item.affectedCount === 1 ? '' : 's'} | {item.severity}</div></div></li>)}</ol> : <p className="mt-3 text-sm text-muted-foreground">Open a report to load detailed findings.</p>}</section>
           <section className="min-w-0"><h2 className="text-lg font-semibold">Imported data</h2><div className="mt-3 space-y-3"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm">Search performance</span><StatusBadge tone={importState.search ? 'success' : 'neutral'}>{importState.search ? 'Imported' : 'Import data'}</StatusBadge></div><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm">Keyword positions</span><StatusBadge tone={importState.rankings ? 'success' : 'neutral'}>{importState.rankings ? 'Imported' : 'Provider required'}</StatusBadge></div><button type="button" onClick={props.onOpenImports} className="quiet-button min-h-11"><Upload className="h-4 w-4" aria-hidden="true" />Manage imports</button></div></section>
         </div>
         {trend.length > 1 && <SparklineChart values={trend.map(entry => entry.score)} label="Score trend" valueLabel={`${Math.round(trend[trend.length - 1].score)}/100`} />}
       </div>
+    </section>
+    <section aria-labelledby="usage-title" className="dashboard-usage">
+      <div className="flex items-center gap-2"><h2 id="usage-title" className="text-sm font-semibold">Usage</h2><StatusBadge>{plan === 'paid' ? 'Plus' : plan === 'agency' ? 'Pro' : plan} plan</StatusBadge></div>
+      <div className="usage-item"><meter aria-label="Daily audit usage" min={0} max={Math.max(1,dailyLimit)} value={dailyUsed} /><span className="text-sm"><strong>{dailyUsed}/{dailyLimit.toLocaleString()}</strong> today</span></div>
+      <div className="usage-item"><meter aria-label="Monthly audit usage" min={0} max={Math.max(1,monthlyLimit)} value={monthlyUsed} /><span className="text-sm"><strong>{monthlyUsed}/{monthlyLimit.toLocaleString()}</strong> this month</span></div>
+      <Link to="/app/settings#scan-preferences" className="inline-flex min-h-11 items-center text-sm font-semibold text-accent">Plan access <ArrowRight className="ml-2 h-4 w-4" /></Link>
     </section>
   </div>;
 }

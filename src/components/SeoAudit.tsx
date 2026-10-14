@@ -11,7 +11,7 @@ export default function SeoAudit({ initialUrl }: { initialUrl?: string }) {
     localStorage.removeItem('crawlio_prefill_project_id');
   }, [initialUrl]);
 
-  return <div className="mx-auto w-full max-w-3xl space-y-7">
+  return <div className="audit-launch-page mx-auto w-full max-w-4xl space-y-10">
     <PageHeader title="Start a website audit" />
     <AuditStartForm initialUrl={seed.url} projectId={seed.projectId} autoStart={Boolean(initialUrl)} />
   </div>;

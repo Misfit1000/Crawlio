@@ -12,5 +12,22 @@
 :is(.blog-prose,.rich-editor .tiptap) pre { max-width: 100%; overflow-x: auto; border-radius: 8px; background: #000; color: #fff; padding: 1rem; font-size: .875rem; line-height: 1.6; }
 :is(.blog-prose,.rich-editor .tiptap) code:not(pre code) { background: var(--muted); padding: .125rem .25rem; font-size: .875rem; }
 .rich-editor .tiptap p.is-editor-empty:first-child::before { content: 'Write the article...'; pointer-events: none; float: left; height: 0; color: var(--muted-foreground); }
-.blog-reading { max-width: 70ch; margin-inline: auto; }
-.blog-reading h1 { font-size: 2rem; line-height: 1.25; }
+.blog-reading h1 { font-size: 2.5rem; }
+.blog-article-layout { grid-template-columns: minmax(0,70ch) minmax(180px,1fr); }
+.blog-article-layout-single { grid-template-columns: minmax(0,70ch); justify-content: center; }
+.blog-prose :is(h2,h3,h4) { scroll-margin-top: 7rem; }
+.blog-article-summary { border-left: 3px solid var(--category-teal); }
+.blog-studio-tabs button[aria-current="page"], .blog-operations-tabs button[aria-selected="true"], .blog-editor-steps button[aria-current="step"] { border-bottom-color: var(--accent); color: var(--accent); }
+.blog-editor-steps button[aria-current="step"] > span { background: var(--action); color: var(--action-foreground); border-color: transparent; }
+.blog-creation-workflow { padding: .5rem 1.5rem; border-right: 1px solid var(--border); }
+.blog-creation-workflow:first-child { padding-left: 0; }
+.blog-creation-workflow:last-child { padding-right: 0; border-right: 0; }
+.blog-library-row:hover { background: color-mix(in srgb,var(--muted) 35%,transparent); }
+.blog-automation-content > :is(div,label) { margin-top: 0; }
+@media (max-width: 1023px) { .blog-article-layout { grid-template-columns: minmax(0,1fr); } }
+@media (max-width: 767px) {
+  .blog-reading h1 { font-size: 2rem; }
+  .blog-creation-grid { gap: 2rem; }
+  .blog-creation-workflow, .blog-creation-workflow:first-child, .blog-creation-workflow:last-child { padding: 0 0 2rem; border-right: 0; border-bottom: 1px solid var(--border); }
+  .blog-creation-workflow:last-child { border-bottom: 0; padding-bottom: 0; }
+}

@@ -15,7 +15,8 @@ import { safeJsonFetch } from '../../lib/http/safe-json';
 import { EmptyState, MetricCard, StatusBadge, SurfaceCard } from '../ui/visual-system';
 import { Notice } from '../ui/page-system';
 import { AuditActivityFeed } from './AuditActivityPanel';
-import { AuditExecutiveSummary } from './AuditExecutiveSummary';
+import { AuditExecutiveSummary, AuditScoreFactors } from './AuditExecutiveSummary';
+import { AuditLiveEvidence, AuditLiveSummary } from './AuditLiveWorkspace';
 import { AuditOverview } from './AuditOverview';
 import { AuditWorkspaceModes, useAuditWorkspaceMode } from './AuditWorkspaceModes';
 import { AuditPagesTable, PageEvidenceDrawer } from './PageEvidenceDrawer';
@@ -151,10 +152,11 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
   const included = scopeIncludesSection(audit.scope, section);
   const statusTone = isCompletedAuditStatus(audit.status) ? audit.status === 'completed_with_warnings' ? 'warning' : 'success' : audit.status === 'failed' ? 'danger' : 'accent';
   const categoryRoutes = [{ label: 'All findings', path: `${auditWorkspacePath(auditId)}?view=findings` }, ...sections.filter(item => scopeIncludesSection(audit.scope, item.id)).map(item => ({ label: item.label, path: auditWorkspacePath(auditId, item.id) }))];
-  return <div className="audit-customer-workspace w-full space-y-6">
-    <header className="flex flex-col gap-3 border-b border-border pb-4 lg:flex-row lg:items-center lg:justify-between">
-      <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><StatusBadge tone={statusTone}>{auditStatusLabel(audit.status)}</StatusBadge><span className="text-xs text-muted-foreground">{audit.scope ? `${auditFocusLabel(audit.scope)} · ${audit.scope.coverage} coverage · ` : ''}{modeLabel(audit.effectiveMode)}</span></div><h1 className="mt-2 break-words text-2xl font-semibold">{audit.hostname}</h1><p className="mt-1 break-all text-xs text-muted-foreground">{audit.normalizedUrl}</p></div>
-      <div className="flex flex-wrap gap-2">
+  const terminal = isTerminalAuditStatus(audit.status);
+  return <div className="audit-customer-workspace audit-spacious space-y-8 w-full">
+    <header className="audit-workspace-header flex flex-col items-start justify-between gap-6 lg:flex-row">
+      <div className="min-w-0"><h1 className="audit-workspace-title break-words font-bold leading-tight">{terminal ? audit.hostname : <>Auditing <span>{audit.hostname}</span></>}</h1><div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted-foreground"><span>{audit.scope ? `${auditFocusLabel(audit.scope)} / ${audit.scope.coverage === 'page' ? 'This page' : 'Website'} / ` : ''}{modeLabel(audit.effectiveMode)}</span><StatusBadge tone={statusTone}>{auditStatusLabel(audit.status)}</StatusBadge></div><p className="mt-2 break-all text-xs text-muted-foreground">{audit.normalizedUrl}</p></div>
+      <div className="audit-header-actions flex flex-wrap gap-2">
         {onRerun && isTerminalAuditStatus(audit.status) && <button type="button" onClick={() => onRerun(audit.normalizedUrl, audit.effectiveMode, audit.scope)} className="quiet-button min-h-9 px-3 py-1 text-xs"><RefreshCw className="h-4 w-4" />Rerun</button>}
         <button type="button" onClick={copyReportLink} className="quiet-button min-h-9 px-3 py-1 text-xs"><Copy className="h-4 w-4" />Share report</button>
         <button type="button" onClick={() => void exportReport('pdf')} disabled={!data.finalReport || exportDownload.busy} className="quiet-button min-h-9 px-3 py-1 text-xs"><FileDown className="h-4 w-4" />PDF</button>
@@ -166,13 +168,13 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
     {error && <Notice tone="danger" title="Some audit data could not refresh">{customerSafeDiagnosticText(error)}</Notice>}
     {actionMessage && <Notice tone={/copied|downloaded/.test(actionMessage) ? 'success' : 'danger'}>{actionMessage}</Notice>}
     <AuditExportDownloadNotice download={exportDownload} />
+    {included && (terminal ? <AuditExecutiveSummary audit={audit} score={scores.overall} scoreState={liveScore?.scoreState} scoreDetail={liveScore?.scoreState === 'provisional' ? 'Partial evidence, from analysed pages so far' : 'Stored deterministic score'} categoryScores={categoryScores} unavailableChecks={unavailableChecks} onViewFindings={viewFindings} showFactors={false} /> : liveScore && <AuditLiveSummary audit={audit} score={liveScore} heading={customerSafeDiagnosticText(audit.currentPhase) || undefined} message={customerSafeDiagnosticText(audit.currentCheck) || undefined} connection={connection} />)}
     <AuditWorkspaceModes mode={modes.mode} pathFor={modes.pathFor} categories={categoryRoutes} selectedCategory={categoryRoutes.find(item => item.path === auditWorkspacePath(auditId, section))?.path} />
     {!included && <AuditScopeNotIncluded />}
     {included && modes.mode === 'overview' && <>
-      <AuditExecutiveSummary audit={audit} score={scores.overall} scoreState={liveScore?.scoreState} scoreDetail={liveScore?.scoreState === 'provisional' ? 'Preliminary, from analysed pages so far' : 'Stored deterministic score'} categoryScores={categoryScores} progress={audit.progress} unavailableChecks={unavailableChecks} />
-      {data.finalReport?.scores?.scoringVersion && <p className="text-xs text-muted-foreground">Scoring model {String(data.finalReport.scores.scoringVersion)}. Historical scores are preserved.</p>}
-      <AuditOverview data={data} onViewFindings={viewFindings} />
+      {terminal ? <><AuditScoreFactors categoryScores={categoryScores} /><AuditOverview data={data} onViewFindings={viewFindings} /></> : <><AuditLiveEvidence data={data} categoryScores={categoryScores} target={data.latestEvents.at(-1)?.currentUrl || data.latestPages.at(-1)?.url} onViewFindings={viewFindings} onViewActivity={() => modes.setMode('activity')} /><AuditOverview data={data} onViewFindings={viewFindings} showMap={false} showRecommendations={false} /></>}
       <ComparisonPanel />
+      {data.finalReport?.scores?.scoringVersion && <p className="text-xs text-muted-foreground">Scoring model {String(data.finalReport.scores.scoringVersion)}. Historical scores are preserved.</p>}
     </>}
     {included && modes.mode === 'findings' && <>
       {section === 'security' && <StatusBadge tone="accent">Passive observations only</StatusBadge>}

@@ -5,7 +5,7 @@ import StarterKit from '@tiptap/starter-kit';
 import { Bold, Braces, Heading2, Heading3, Italic, Link as LinkIcon, List, ListOrdered, Quote, Redo2, Strikethrough, Underline, Undo2, Unlink } from 'lucide-react';
 
 function ToolbarButton({ label, active, disabled, onClick, children }: { label: string; active?: boolean; disabled?: boolean; onClick: () => void; children: ReactNode }) {
-  return <button type="button" title={label} aria-label={label} aria-pressed={active} disabled={disabled} onClick={onClick} className={`flex h-9 w-9 items-center justify-center rounded-lg ${active ? 'bg-accent text-white' : 'text-muted-foreground hover:bg-muted hover:text-foreground'} disabled:opacity-40`}>{children}</button>;
+  return <button type="button" title={label} aria-label={label} aria-pressed={active} disabled={disabled} onClick={onClick} className={`flex h-11 w-11 items-center justify-center rounded-md ${active ? 'bg-[var(--action,var(--accent))] text-[var(--action-foreground,#fff)]' : 'text-muted-foreground hover:bg-muted hover:text-foreground'} disabled:opacity-40`}>{children}</button>;
 }
 
 export default function RichTextEditor({ value, onChange }: { value: string; onChange: (html: string) => void }) {
@@ -20,7 +20,7 @@ export default function RichTextEditor({ value, onChange }: { value: string; onC
     immediatelyRender: false,
     editorProps: {
       attributes: {
-        class: 'min-h-[420px] px-5 py-5 text-[15px] leading-7 focus:outline-none',
+        class: 'min-h-[420px] px-6 py-6 text-base leading-8 focus:outline-none',
         'aria-label': 'Blog article content',
       },
     },
@@ -43,7 +43,7 @@ export default function RichTextEditor({ value, onChange }: { value: string; onC
 
   return (
     <div className="rich-editor overflow-hidden rounded-lg border border-border bg-card focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/15">
-      <div className="flex flex-wrap items-center gap-1 border-b border-border bg-muted/60 p-2" role="toolbar" aria-label="Rich text formatting">
+      <div className="flex flex-wrap items-center gap-1 border-b border-border bg-card p-2" role="toolbar" aria-label="Rich text formatting">
         <ToolbarButton label="Undo" disabled={!editor.can().undo()} onClick={() => editor.chain().focus().undo().run()}><Undo2 className="h-4 w-4" /></ToolbarButton>
         <ToolbarButton label="Redo" disabled={!editor.can().redo()} onClick={() => editor.chain().focus().redo().run()}><Redo2 className="h-4 w-4" /></ToolbarButton>
         <span className="mx-1 h-6 w-px bg-border" />

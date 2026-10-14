@@ -27,9 +27,8 @@ export function useAuditWorkspaceMode(defaultMode: AuditWorkspaceMode = 'overvie
 }
 
 export function AuditWorkspaceModes({ mode, pathFor, categories = [], selectedCategory = '' }: Pick<ReturnType<typeof useAuditWorkspaceMode>, 'mode' | 'pathFor'> & { categories?: Array<{ label: string; path: string }>; selectedCategory?: string }) {
-  const navigate = useNavigate();
-  return <nav className="audit-mode-navigation" aria-label="Audit workspace views">
-    <div className="grid min-w-0 grid-cols-4 gap-1">{modes.map(({ id, label, icon: Icon }) => <Link key={id} to={pathFor(id)} aria-current={mode === id ? 'page' : undefined} className={`flex min-h-11 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold ${mode === id ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}><Icon className="h-4 w-4 shrink-0" /><span>{label}</span></Link>)}</div>
-    {mode === 'findings' && categories.length > 0 && <select aria-label="Report category" className="suite-input" value={selectedCategory || categories[0].path} onChange={event => navigate(event.target.value)}>{categories.map(item => <option key={item.path} value={item.path}>{item.label}</option>)}</select>}
+  return <nav className="audit-mode-navigation border-b border-border" aria-label="Audit workspace views">
+    <div className="audit-view-tabs flex flex-wrap gap-6">{modes.map(({ id, label, icon: Icon }) => <Link key={id} to={pathFor(id)} aria-current={mode === id ? 'page' : undefined} className="inline-flex min-h-11 items-center gap-2 border-b-2 border-transparent py-3 text-sm font-semibold text-muted-foreground"><Icon className="h-4 w-4 shrink-0" /><span>{label}</span></Link>)}</div>
+    {mode === 'findings' && categories.length > 0 && <div className="audit-category-tabs flex flex-wrap gap-2 py-4" aria-label="Report categories">{categories.map(item => <Link key={item.path} to={item.path} aria-current={(selectedCategory || categories[0].path) === item.path ? 'page' : undefined} className="inline-flex min-h-11 items-center rounded-md px-3 py-2 text-sm text-muted-foreground">{item.label}</Link>)}</div>}
   </nav>;
 }

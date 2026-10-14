@@ -72,7 +72,7 @@ export default function Settings() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-9 animate-rise">
+    <div className="settings-page mx-auto w-full max-w-5xl space-y-10 animate-rise">
       <PageHeader
         eyebrow="Account"
         icon={SettingsIcon}
@@ -97,7 +97,7 @@ export default function Settings() {
 
         <div className="space-y-10">
           <PageSection id="account-plan" title="Account and plan">
-            <dl className="grid gap-6 rounded-lg bg-muted p-6 sm:grid-cols-2 lg:grid-cols-4">{[['Email', user?.email || 'Not signed in'], ['Plan', planLabel], ['Daily audits used', `${user?.auditQuotaUsedDaily ?? 0} / ${user?.auditEntitlements?.dailyAudits ?? 'Unavailable'}`], ['Monthly audits used', `${user?.auditQuotaUsedMonthly ?? 0} / ${user?.auditEntitlements?.monthlyAudits ?? 'Unavailable'}`]].map(([label,value]) => <div key={label}><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-2 break-words text-sm font-semibold">{value}</dd></div>)}</dl>
+            <dl className="grid gap-8 border-y border-border py-6 sm:grid-cols-2 lg:grid-cols-4">{[['Email', user?.email || 'Not signed in'], ['Plan', planLabel], ['Daily audits used', `${user?.auditQuotaUsedDaily ?? 0} / ${user?.auditEntitlements?.dailyAudits ?? 'Unavailable'}`], ['Monthly audits used', `${user?.auditQuotaUsedMonthly ?? 0} / ${user?.auditEntitlements?.monthlyAudits ?? 'Unavailable'}`]].map(([label,value]) => <div key={label}><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-2 break-words text-sm font-semibold">{value}</dd></div>)}</dl>
             <Link to="/pricing" className="inline-flex min-h-11 items-center text-sm font-semibold text-accent">Compare published plans</Link>
           </PageSection>
           <PageSection id="accessibility-preferences" title="Display and accessibility" description="Saved on this device. Changes apply immediately.">
@@ -146,7 +146,7 @@ export default function Settings() {
               </button>
             ) : undefined}
           >
-            <Panel className="overflow-hidden">
+            <Panel variant="plain" className="overflow-hidden border-y border-border">
               <div className="flex flex-col gap-2 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
                 <div>
                   <p className="text-sm font-semibold">{planLabel} plan</p>

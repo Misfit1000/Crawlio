@@ -81,18 +81,18 @@ export default function BlogContentCalendar({ posts, settings, onChanged }: { po
     if (post) void move(post, dateKey ? zonedDateTime(dateKey, preferredHour, timezone) : null);
   };
 
-  return <section className="rounded-lg border border-border p-4" aria-labelledby="content-calendar-title">
+  return <section className="blog-content-calendar border-t border-border pt-8" aria-labelledby="content-calendar-title">
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      <div><h4 id="content-calendar-title" className="flex items-center gap-2 font-semibold text-foreground"><CalendarClock className="h-4 w-4 text-accent" /> Content calendar</h4><p className="mt-1 text-xs leading-5 text-muted-foreground">Drag with a mouse or touch, or use Move for keyboard scheduling. Times use {timezone}; server rules reject spacing, blackout, and daily-limit conflicts.</p></div>
+      <div><h4 id="content-calendar-title" className="flex items-center gap-2 text-xl font-semibold text-foreground"><CalendarClock className="h-5 w-5 text-accent" /> Content calendar</h4><p className="mt-2 text-xs leading-5 text-muted-foreground">{timezone}. Drag or use Move to schedule; spacing, blackout, and daily limits apply.</p></div>
       <button type="button" onClick={() => void undo()} disabled={!undoRef.current || Boolean(busy)} className="quiet-button"><Undo2 className="h-4 w-4" /> Undo move</button>
     </div>
     {error && <div className="mt-3"><Notice tone="danger">{error}</Notice></div>}
-    {message && <p className="mt-3 text-sm text-emerald-700" role="status" aria-live="polite">{message}</p>}
+    {message && <p className="mt-3 text-sm text-emerald-700 dark:text-emerald-300" role="status" aria-live="polite">{message}</p>}
     <div className="mt-4 overflow-x-auto pb-2">
       <div className="grid min-w-[860px] grid-cols-7 gap-2">
-        {days.map((day) => <div key={day.key} onDragOver={(event) => event.preventDefault()} onDrop={() => dropOnDay(day.key)} onPointerUp={(event) => finishPointerMove(event, day.key)} className="min-h-40 rounded-lg border border-border bg-muted/20 p-2" data-calendar-drop-target={day.key}>
+        {days.map((day) => <div key={day.key} onDragOver={(event) => event.preventDefault()} onDrop={() => dropOnDay(day.key)} onPointerUp={(event) => finishPointerMove(event, day.key)} className="min-h-40 border-r border-border bg-transparent p-3 last:border-r-0" data-calendar-drop-target={day.key}>
           <p className="border-b border-border pb-2 text-xs font-semibold text-foreground">{day.label}</p>
-          <div className="mt-2 space-y-2">{calendarPosts.filter((post) => post.scheduledAt && zonedDateKey(new Date(post.scheduledAt), timezone) === day.key).map((post) => <article key={post.id} draggable onDragStart={() => setDraggedId(post.id)} onDragEnd={() => setDraggedId(null)} className="rounded-lg border border-border bg-background p-2 text-xs">
+          <div className="mt-2 space-y-2">{calendarPosts.filter((post) => post.scheduledAt && zonedDateKey(new Date(post.scheduledAt), timezone) === day.key).map((post) => <article key={post.id} draggable onDragStart={() => setDraggedId(post.id)} onDragEnd={() => setDraggedId(null)} className="rounded-lg border border-border bg-card p-3 text-xs">
             <button type="button" onPointerDown={(event) => startPointerMove(post.id, event)} className="flex w-full cursor-grab touch-none items-start gap-2 text-left" aria-label={`Move ${post.title}`}><GripVertical className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" /><span className="line-clamp-2 font-semibold text-foreground">{post.title}</span></button>
             <p className="mt-2 text-muted-foreground">{formatTime(post.scheduledAt, timezone)}</p>
             <div className="mt-2 flex gap-1"><button type="button" onClick={() => { setMovingId(post.id); setMoveValue(post.scheduledAt ? post.scheduledAt.slice(0, 16) : ''); }} className="text-accent hover:underline">Move</button>{post.recommendedPublicationAt && <button type="button" onClick={() => void runAdminBlogWorkflow(post.id, { action: 'reset_recommended_time', scheduleVersion: post.scheduleVersion, reason: 'Reset to the deterministic recommended publication time.' }).then(onChanged).catch((requestError) => setError(requestError.message))} className="text-muted-foreground hover:text-foreground" title="Reset recommended time"><RotateCcw className="h-3.5 w-3.5" /></button>}</div>

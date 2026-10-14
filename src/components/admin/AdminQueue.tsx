@@ -16,12 +16,12 @@ export default function AdminQueue({ adminUserId }: { adminUserId: string }) {
   const rows = audits.rows;
 
   return (
-    <Panel title="Active audit queue" description="Active jobs with server-side ordering across all result pages." icon={SlidersHorizontal}>
+    <Panel title="Active audit queue" icon={SlidersHorizontal} action={<span className="text-xs text-muted-foreground">{rows.length} active jobs shown</span>}>
       <DataNotice {...audits} />
       <AdminSort kind="audits" sort={sort} direction={direction} onSort={setSort} onDirection={setDirection} />
       <div className="mb-4 flex flex-wrap gap-3"><label className="flex items-center gap-2 text-sm">Mode<select className="suite-input min-h-11 w-auto" value={mode} onChange={event => setMode(event.target.value)}><option value="all">All modes</option>{['quick', 'standard', 'deep'].map(value => <option key={value}>{value}</option>)}</select></label><label className="flex items-center gap-2 text-sm">Plan<select className="suite-input min-h-11 w-auto" value={plan} onChange={event => setPlan(event.target.value)}><option value="all">All plans</option>{['free', 'paid', 'agency', 'admin'].map(value => <option key={value}>{value}</option>)}</select></label></div>
-      <Pagination page={audits.page} hasMore={audits.hasMore} loading={audits.loading} onChange={audits.setPage} />
       {audits.loading && !audits.data ? <Loading /> : <AuditTable rows={rows} adminUserId={adminUserId} refresh={audits.refresh} />}
+      <Pagination page={audits.page} hasMore={audits.hasMore} loading={audits.loading} onChange={audits.setPage} />
     </Panel>
   );
 }

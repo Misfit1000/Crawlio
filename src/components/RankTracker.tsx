@@ -123,7 +123,7 @@ export default function RankTracker() {
   };
 
   return (
-    <div className="space-y-8 animate-rise">
+    <div className="rankings-page space-y-10 animate-rise">
       <PageHeader
         eyebrow="Rankings data"
         icon={BarChart3}

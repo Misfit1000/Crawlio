@@ -55,7 +55,7 @@ import { PageHeader } from './ui/page-system';
 import { auditFocusLabel, auditScopeScoreLabel, isFocusedAudit, scopeIncludesGroup, type AuditScope } from '../lib/audit/audit-scope';
 import { reportCategoryScores, scopeFindings, scopeIncludesReportSection, scopeScoreMetadata } from '../lib/report/scope-presentation';
 import { AuditScopeNotIncluded } from './audit/AuditScopeNotIncluded';
-import { AuditExecutiveSummary } from './audit/AuditExecutiveSummary';
+import { AuditExecutiveSummary, AuditScoreFactors } from './audit/AuditExecutiveSummary';
 import { AuditDeliveryCharts } from './audit/AuditDeliveryCharts';
 import { AuditFindingRow as FindingRow } from './audit/AuditFindingRow';
 import { completePresentationSummary, samplePresentation } from './audit/audit-presentation';
@@ -346,17 +346,14 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
   }
 
   return (
-    <div className="audit-customer-workspace w-full space-y-6 animate-rise">
-      <PageHeader
-        eyebrow={viewCopy.eyebrow}
-        icon={FileText}
-        title={viewCopy.title}
-        description={viewCopy.description}
-        actions={selectedHistory ? <StatusBadge tone={isCompletedAuditStatus(selectedHistory.status) ? 'success' : 'warning'}>{selectedHistory.status.replace(/_/g, ' ')}</StatusBadge> : undefined}
-      />
+    <div className="audit-customer-workspace audit-spacious space-y-8 w-full">
+      <header className="audit-workspace-header flex flex-col items-start justify-between gap-6 lg:flex-row">
+        <div className="min-w-0"><h1 className="audit-workspace-title break-words font-bold leading-tight">{reportData?.audit?.hostname || selectedHistory?.hostname || viewCopy.title}</h1><p className="mt-3 text-sm text-muted-foreground">{viewCopy.title}{scope ? ` / ${auditFocusLabel(scope)} / ${scope.coverage === 'page' ? 'This page' : 'Website'}` : ''}</p></div>
+        {selectedHistory && <StatusBadge tone={isCompletedAuditStatus(selectedHistory.status) ? 'success' : 'warning'}>{selectedHistory.status.replace(/_/g, ' ')}</StatusBadge>}
+      </header>
 
       <div id="report-history" className="scroll-mt-28">
-        <div className="grid gap-5 border-y border-border py-5 lg:grid-cols-2">
+        <div className="audit-report-toolbar grid items-center gap-8 border-b border-border pb-6 lg:grid-cols-2">
           <div className="min-w-0">
             <label htmlFor="report-audit" className="text-sm font-semibold">Report to review</label>
             <select id="report-audit" value={selectedId || ''} onChange={(event) => setSelectedId(event.target.value)} className="suite-input mt-2">
@@ -385,22 +382,20 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
       {reportLoading && <SurfaceCard className="flex items-center gap-3 p-6 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin text-accent" /> Loading stored audit evidence...</SurfaceCard>}
       {reportError && <SurfaceCard className="border-red-500/25 p-5"><div className="flex gap-3 text-red-700 dark:text-red-300"><AlertTriangle className="h-5 w-5 shrink-0" /><div><div className="font-semibold">Full report data could not be loaded</div><p className="mt-1 text-sm">{reportError}</p><p className="mt-2 text-xs text-muted-foreground">The browser history summary remains visible, but no missing section data is being invented.</p></div></div></SurfaceCard>}
 
+      <section id="report-summary" className="scroll-mt-32 space-y-5" aria-labelledby="report-summary-title">
+        <h2 id="report-summary-title" className="sr-only">Executive summary</h2>
+        {reportData?.audit ? <AuditExecutiveSummary audit={reportData.audit} score={overallScore} scoreState={scoreIsFinal ? 'final' : 'unavailable'} scoreDetail={scoreIsFinal ? 'Stored final audit engine score' : 'No final score recorded'} categoryScores={categories} unavailableChecks={Array.isArray(reportData.finalReport?.scores?.unavailableChecks) ? reportData.finalReport.scores.unavailableChecks.length : null} showFactors={false} onViewFindings={() => document.getElementById('recommendations')?.scrollIntoView({ block: 'start' })} /> : <div className="grid gap-4 sm:grid-cols-2"><AuditGrade score={overallScore} label={scope ? auditScopeScoreLabel(scope) : undefined} detail="Cached audit summary only" /><MetricCard label="Pages checked" value={selectedHistory?.pagesCrawled ?? '--'} detail="Stored audit summary" /></div>}
+        {reportData?.finalReport?.summary && <p className="max-w-5xl text-sm leading-7 text-muted-foreground">{reportData.finalReport.summary}</p>}
+      </section>
+
       <StickyReportNavigation items={[
-        { id: 'report-summary', label: 'Summary' },
+        { id: 'report-summary', label: 'Overview' },
         { id: 'recommendations', label: 'Top fixes', count: recommendations.length },
         ...includedSections.map((section) => ({ id: `report-${section.id}`, label: section.label, count: sectionGroups.get(section.id)?.length || 0 })),
         { id: 'report-pages', label: 'Pages', count: pages.length },
         { id: 'report-exports', label: 'Exports' },
       ]} />
-
-      <section id="report-summary" className="scroll-mt-32 space-y-5" aria-labelledby="report-summary-title">
-        <div>
-          <h2 id="report-summary-title" className="text-2xl font-semibold">Executive summary</h2>
-          <p className="mt-1 text-sm text-muted-foreground">The audit result and its measured categories, before technical detail.</p>
-        </div>
-        {reportData?.audit ? <AuditExecutiveSummary audit={reportData.audit} score={overallScore} scoreState={scoreIsFinal ? 'final' : 'unavailable'} scoreDetail={scoreIsFinal ? 'Stored final audit engine score' : 'No final score recorded'} categoryScores={categories} unavailableChecks={Array.isArray(reportData.finalReport?.scores?.unavailableChecks) ? reportData.finalReport.scores.unavailableChecks.length : null} /> : <div className="grid gap-4 sm:grid-cols-2"><AuditGrade score={overallScore} label={scope ? auditScopeScoreLabel(scope) : undefined} detail="Cached audit summary only" /><MetricCard label="Pages checked" value={selectedHistory?.pagesCrawled ?? '--'} detail="Stored audit summary" /></div>}
-        {reportData?.finalReport?.summary && <p className="max-w-5xl text-sm leading-7 text-muted-foreground">{reportData.finalReport.summary}</p>}
-      </section>
+      <AuditScoreFactors categoryScores={categories} />
 
       <AuditDeliveryCharts presentation={presentation} scope={scope} complete={Boolean(complete)} />
 

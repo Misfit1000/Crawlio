@@ -173,15 +173,14 @@ export default function BlogProviderFreeWorkspace() {
     );
 
   return (
-    <section className="min-w-0">
+    <section className="blog-sources-workspace min-w-0">
       <div className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-foreground">
+          <h2 className="text-xl font-semibold text-foreground">
             Sources and system
           </h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
-            Approved sources, timely opportunities, and publishing health.
-            No generation-provider key required.
+            Sources, opportunities, and publishing health.
           </p>
         </div>
         <button
@@ -209,7 +208,7 @@ export default function BlogProviderFreeWorkspace() {
         </div>
       )}
       <div
-        className="mt-5 flex flex-wrap gap-1 border-b border-border pb-3"
+        className="blog-operations-tabs mt-8 flex flex-wrap gap-6 border-b border-border"
         role="tablist"
         aria-label="Editorial operations"
       >
@@ -226,7 +225,7 @@ export default function BlogProviderFreeWorkspace() {
             role="tab"
             aria-selected={tab === value}
             onClick={() => setTab(value)}
-            className={`flex min-h-11 items-center gap-2 rounded-md px-3 text-sm font-semibold ${tab === value ? "bg-accent/10 text-accent" : "text-muted-foreground hover:text-foreground"}`}
+            className="inline-flex min-h-12 items-center gap-2 border-b-2 border-transparent py-3 text-sm font-semibold text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-4"
           >
             <Icon className="h-4 w-4" /> {label}
           </button>
@@ -234,13 +233,13 @@ export default function BlogProviderFreeWorkspace() {
       </div>
 
       {tab === "sources" && (
-        <div className="mt-5 grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <div className="mt-8 grid gap-8 xl:grid-cols-[320px_minmax(0,1fr)]">
           <form
             onSubmit={(event) => {
               event.preventDefault();
               void saveSource();
             }}
-            className="rounded-lg border border-border p-4"
+            className="min-w-0 border-t border-border pt-6"
           >
             <h4 className="font-semibold text-foreground">
               {editingId ? "Edit approved source" : "Add approved source"}

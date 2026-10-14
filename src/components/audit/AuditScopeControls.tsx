@@ -25,8 +25,9 @@ export function AuditScopeControls({ scope, onChange, mode, onModeChange, modes,
       {AUDIT_CHECK_GROUPS.map(group => <option key={group} value={group}>{AUDIT_GROUP_DETAILS[group].label}</option>)}
       <option value="custom">Custom checks</option>
     </select></div>}
-    <fieldset className="audit-coverage-field"><legend>Coverage</legend><div className="audit-coverage-options">{(['page', 'site'] as const).map(coverage => <label key={coverage} data-selected={scope.coverage === coverage}><input type="radio" name={`${id}-coverage`} checked={scope.coverage === coverage} onChange={() => onChange({ ...scope, coverage })} />{coverage === 'page' ? 'This page' : 'Website'}</label>)}</div></fieldset></div>
-    <div className="audit-depth-field"><p className="text-sm font-semibold">Depth</p><AuditModePicker value={mode} onChange={onModeChange} modes={modes} limits={limits} loading={loading} coverage={scope.coverage} /><p className="audit-depth-description">{getAuditModeConfig(mode).description}</p></div>
+    <fieldset className="audit-coverage-field"><legend>Coverage</legend><div className="audit-coverage-options">{(['page', 'site'] as const).map(coverage => <label key={coverage} data-selected={scope.coverage === coverage}><input className="sr-only" type="radio" name={`${id}-coverage`} checked={scope.coverage === coverage} onChange={() => onChange({ ...scope, coverage })} />{coverage === 'page' ? 'This page' : 'Website'}</label>)}</div></fieldset>
+    <div className="audit-depth-field"><p className="text-sm font-semibold">Depth</p><AuditModePicker value={mode} onChange={onModeChange} modes={modes} limits={limits} loading={loading} coverage={scope.coverage} /></div></div>
+    <p className="audit-depth-description">{getAuditModeConfig(mode).description}</p>
     {scope.focus === 'custom' && <Suspense fallback={<p role="status" className="py-4 text-sm">Loading check groups...</p>}><AuditAdvancedOptions {...{scope,onChange,mode,onModeChange,modes,limits,loading}} /></Suspense>}
   </div>;
 }
