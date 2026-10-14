@@ -1,0 +1,16 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "crawlio-site-preview",
+  "main": "index.ts",
+  "compatibility_date": "2026-10-14",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "browser": { "binding": "BROWSER" },
+  "durable_objects": {
+    "bindings": [{ "name": "SITE_PREVIEW_COORDINATOR", "class_name": "SitePreviewCoordinator" }]
+  },
+  "migrations": [{ "tag": "site-preview-v1", "new_sqlite_classes": ["SitePreviewCoordinator"] }],
+  "triggers": { "crons": ["*/5 * * * *"] },
+  "vars": { "SITE_PREVIEW_ENABLED": "false" },
+  "observability": { "enabled": false }
+}

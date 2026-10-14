@@ -1,4 +1,5 @@
 import type { ReportScoreSnapshot } from '../audit/report-insights';
+import type { AuditCheckGroup, AuditScope } from '../audit/audit-scope';
 import type { PublicLinkSignals } from './types';
 
 export type DomainStrengthConfidence = 'limited' | 'standard';
@@ -22,7 +23,25 @@ export interface DomainStrengthResult {
   webPopularity: number | null;
   factors: DomainStrengthFactor[];
   recommendations: string[];
+  eligibleForSiteStrength: boolean;
 }
+
+export interface DomainStrengthEvidenceSummary {
+  measuredFactors?: readonly DomainStrengthFactorId[];
+  analysedPages?: number;
+  discoveredPages?: number;
+  sampled?: boolean;
+}
+
+export interface DomainStrengthOptions {
+  auditScope?: AuditScope | null;
+  evidenceSummary?: DomainStrengthEvidenceSummary | null;
+}
+
+const FACTOR_GROUPS: Record<DomainStrengthFactorId, AuditCheckGroup> = {
+  technical: 'technical', crawlability: 'crawlability', internalLinks: 'links',
+  seo: 'seo', performance: 'performance', structuredData: 'structured-data',
+};
 
 const SITE_FACTORS: Array<{ id: DomainStrengthFactorId; label: string; key: keyof ReportScoreSnapshot; weight: number; recommendation: string }> = [
   { id: 'technical', label: 'Technical SEO', key: 'technical', weight: 25, recommendation: 'Resolve technical delivery errors and redirect problems first.' },
@@ -78,16 +97,23 @@ function band(score: number | null): DomainStrengthResult['band'] {
   return 'Weak';
 }
 
-export function calculateDomainStrength(scores: ReportScoreSnapshot, signals?: PublicLinkSignals | null): DomainStrengthResult {
+export function calculateDomainStrength(scores: ReportScoreSnapshot, signals?: PublicLinkSignals | null, options: DomainStrengthOptions = {}): DomainStrengthResult {
+  const { auditScope, evidenceSummary } = options;
+  const partialPageCoverage = evidenceSummary?.analysedPages != null && evidenceSummary.discoveredPages != null
+    && evidenceSummary.analysedPages < evidenceSummary.discoveredPages;
+  const eligibleForSiteStrength = (!auditScope || (auditScope.coverage === 'site' && auditScope.focus === 'full'))
+    && (evidenceSummary?.analysedPages == null || evidenceSummary.analysedPages > 0);
   const factors = SITE_FACTORS.map((factor) => ({
     id: factor.id,
     label: factor.label,
-    score: finiteScore(scores[factor.key]),
+    score: (auditScope && !auditScope.checkGroups.includes(FACTOR_GROUPS[factor.id]))
+      || (evidenceSummary?.measuredFactors && !evidenceSummary.measuredFactors.includes(factor.id))
+      ? null : finiteScore(scores[factor.key]),
     weight: factor.weight,
   }));
   const measuredFactors = factors.filter((factor) => factor.score != null);
   const measuredSiteWeight = measuredFactors.reduce((sum, factor) => sum + factor.weight, 0);
-  const siteStrength = measuredFactors.length >= 3 ? weightedAverage(factors) : null;
+  const siteStrength = eligibleForSiteStrength && measuredFactors.length >= 3 ? weightedAverage(factors) : null;
 
   const linkVisibility = signals?.linkStatus === 'measured'
     ? weightedAverage([
@@ -97,16 +123,8 @@ export function calculateDomainStrength(scores: ReportScoreSnapshot, signals?: P
       ])
     : null;
   const webPopularity = signals?.webRankStatus === 'measured' ? rankToScore(signals.webRank) : null;
-  const score = siteStrength == null ? null : weightedAverage([
-    { score: siteStrength, weight: 60 },
-    { score: linkVisibility, weight: 25 },
-    { score: webPopularity, weight: 15 },
-  ]);
-  const coverage = clamp(
-    (measuredSiteWeight / 100) * 60
-      + (linkVisibility == null ? 0 : 25)
-      + (webPopularity == null ? 0 : 15),
-  );
+  const score = siteStrength;
+  const coverage = clamp(measuredSiteWeight);
 
   const recommendations = SITE_FACTORS
     .map((definition) => ({ definition, factor: factors.find((factor) => factor.id === definition.id) }))
@@ -123,12 +141,13 @@ export function calculateDomainStrength(scores: ReportScoreSnapshot, signals?: P
     score,
     grade: grade(score),
     band: band(score),
-    confidence: linkVisibility != null || webPopularity != null ? 'standard' : 'limited',
+    confidence: eligibleForSiteStrength && measuredFactors.length === SITE_FACTORS.length && !evidenceSummary?.sampled && !partialPageCoverage ? 'standard' : 'limited',
     coverage,
     siteStrength,
     linkVisibility,
     webPopularity,
     factors,
     recommendations,
+    eligibleForSiteStrength,
   };
 }

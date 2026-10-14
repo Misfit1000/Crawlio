@@ -15,8 +15,8 @@ const auditScores = extractReportScores({
 
 const auditOnly = calculateDomainStrength(auditScores, null);
 assert.equal(auditOnly.score, 77);
-assert.equal(auditOnly.confidence, 'limited');
-assert.equal(auditOnly.coverage, 60);
+assert.equal(auditOnly.confidence, 'standard');
+assert.equal(auditOnly.coverage, 100);
 assert.equal(auditOnly.linkVisibility, null);
 assert.equal(auditOnly.webPopularity, null);
 assert.equal(auditOnly.factors.length, 6);
@@ -33,7 +33,7 @@ const baseSignals: PublicLinkSignals = {
 const full = calculateDomainStrength(auditScores, baseSignals);
 assert.equal(full.confidence, 'standard');
 assert.equal(full.coverage, 100);
-assert.ok(full.score != null && full.score > auditOnly.score);
+assert.equal(full.score, auditOnly.score, 'external authority must never alter site strength');
 assert.ok(full.linkVisibility != null);
 assert.equal(full.webPopularity, rankToScore(31));
 
@@ -44,12 +44,12 @@ const unranked: PublicLinkSignals = {
 };
 const unrankedResult = calculateDomainStrength(auditScores, unranked);
 assert.equal(unrankedResult.score, auditOnly.score, 'an unranked domain must retain its measured audit-based score');
-assert.equal(unrankedResult.confidence, 'limited');
-assert.equal(unrankedResult.coverage, 60);
+assert.equal(unrankedResult.confidence, 'standard');
+assert.equal(unrankedResult.coverage, 100);
 
 const partial = calculateDomainStrength(auditScores, { ...baseSignals, webRankStatus: 'unavailable', webRank: null, previousWebRank: null, webRankChange: null, webRankHistory: [], partial: true });
 assert.equal(partial.confidence, 'standard');
-assert.equal(partial.coverage, 85);
+assert.equal(partial.coverage, 100);
 assert.ok(partial.linkVisibility != null);
 assert.equal(partial.webPopularity, null);
 
@@ -59,7 +59,10 @@ assert.equal(insufficient.grade, null);
 
 const component = await readFile('src/components/backlinks/DomainStrengthCard.tsx', 'utf8');
 assert.doesNotMatch(component, /Public backlink signals|Outside top million|is not present in the public top million/);
-assert.match(component, /Crawlio Domain Strength/);
+assert.match(component, /Crawlio Site Strength/);
+assert.match(component, /auditScope\?: AuditScope/);
+assert.match(component, /External domain evidence/);
+assert.match(component, /opr\.score\}\/10/);
 assert.match(component, /Rank not measured|Not measured/);
 assert.match(component, /Limited confidence/);
 assert.match(component, /Standard confidence/);

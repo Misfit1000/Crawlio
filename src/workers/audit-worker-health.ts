@@ -2,11 +2,13 @@ import http from 'node:http';
 import type { AuditWorkerRuntimeState } from './audit-worker-runtime';
 import { BRAND } from '../lib/brand';
 import { API_SCHEMA_VERSION } from '../lib/platform/version';
+import { validControlBearer } from '../lib/audit/worker-wake';
 
 export function startWorkerHealthServer(
   state: AuditWorkerRuntimeState,
   isReady: () => boolean,
   portValue: string | undefined,
+  onWake?: () => void,
 ) {
   if (!portValue) return null;
   const port = Number(portValue);
@@ -15,6 +17,16 @@ export function startWorkerHealthServer(
   }
 
   const server = http.createServer((req, res) => {
+    if (req.url === '/control/wake') {
+      res.setHeader('Cache-Control', 'private, no-store');
+      if (req.method !== 'POST') { res.writeHead(405); res.end(); return; }
+      if (!validControlBearer(req.headers.authorization, process.env.AUDIT_WORKER_CONTROL_SECRET)) { res.writeHead(401); res.end(); return; }
+      if (!isReady() || !onWake) { res.writeHead(503); res.end(); return; }
+      onWake();
+      res.writeHead(202, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ scheduled: true }));
+      return;
+    }
     const payload = {
       product: BRAND.name,
       workerRole: 'audit-only',

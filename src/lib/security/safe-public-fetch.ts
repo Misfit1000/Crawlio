@@ -48,6 +48,7 @@ export interface SafePublicFetchOptions {
   allowPrivateForTesting?: boolean;
   allowNonStandardPortsForTesting?: boolean;
   returnBuffer?: boolean;
+  followRedirects?: boolean;
 }
 
 export interface SafePublicResponse {
@@ -304,6 +305,7 @@ export async function safePublicFetch(value: string, input: SafePublicFetchOptio
     allowPrivateForTesting: input.allowPrivateForTesting ?? false,
     allowNonStandardPortsForTesting: input.allowNonStandardPortsForTesting ?? false,
     returnBuffer: input.returnBuffer ?? false,
+    followRedirects: input.followRedirects ?? true,
   };
   const requestedUrl = parsePublicHttpUrl(value, options).toString();
   const startedAt = Date.now();
@@ -324,7 +326,7 @@ export async function safePublicFetch(value: string, input: SafePublicFetchOptio
     }
     const response = await requestPinned(current, addresses[0], options);
     const location = response.headers.location;
-    if ([301, 302, 303, 307, 308].includes(response.status)) {
+    if (options.followRedirects && [301, 302, 303, 307, 308].includes(response.status)) {
       if (!location) throw new PublicFetchError('REDIRECT_WITHOUT_LOCATION', 'The server returned a redirect without a destination.');
       if (redirectCount >= options.maxRedirects) throw new PublicFetchError('TOO_MANY_REDIRECTS', 'The response exceeded the redirect limit.');
       try {

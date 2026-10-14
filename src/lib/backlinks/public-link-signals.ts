@@ -1,15 +1,17 @@
+import './server-only';
 import { load } from 'cheerio';
-import type { DomainSignalStatus, PublicLinkSignals, WebRankHistoryPoint } from './types';
+import { EVIDENCE_FRESH_MS, EVIDENCE_STALE_MS, makeEvidenceCacheRow, readEvidenceCacheRow, supabaseDomainEvidenceCache, type DomainEvidenceCacheStore, type DomainEvidencePayload } from './domain-evidence-cache';
+import { fetchOpenPageRank } from './open-page-rank';
+import { allowlistMajestic, allowlistOpenPageRank, allowlistTranco, emptyOpenPageRank, normalizeEvidenceDomain, parseTrancoEvidence } from './provider-evidence';
+import { boundedResponseText, fetchProviderJson } from './provider-http';
+import type { MajesticEvidence, OpenPageRankEvidence, ProviderEvidenceSummary, PublicLinkSignals, TrancoEvidence } from './types';
 
 const LINK_PROVIDER_ORIGIN = 'https://majestic.com';
 const LINK_PROVIDER_PATH = '/reports/majestic-million';
 const RANK_PROVIDER_ORIGIN = 'https://tranco-list.eu';
-const PROVIDER_TIMEOUT_MS = 6_000;
-const MAX_LINK_RESPONSE_BYTES = 2 * 1024 * 1024;
-const MAX_RANK_RESPONSE_BYTES = 256 * 1024;
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const PARTIAL_CACHE_TTL_MS = 15 * 60 * 1000;
 const MAX_CACHE_ENTRIES = 2_000;
+const MAX_IN_FLIGHT = 64;
+const ERROR_RETRY_MS = 60_000;
 const RANK_PROVIDER_INTERVAL_MS = 1_050;
 
 interface BacklinkSnapshot {
@@ -27,265 +29,192 @@ interface BacklinkSnapshot {
   scope: 'public_top_million';
 }
 
-interface WebRankSnapshot {
-  domain: string;
-  status: DomainSignalStatus;
-  history: WebRankHistoryPoint[];
-}
-
-type CachedSignals = { expiresAt: number; value: PublicLinkSignals };
-
-const signalCache = new Map<string, CachedSignals>();
-const inFlight = new Map<string, Promise<PublicLinkSignals>>();
-let rankProviderQueue: Promise<void> = Promise.resolve();
-let lastRankProviderRequestAt = 0;
-
 function firstInteger(value: string) {
-  const match = String(value || '').match(/[\d,]+/);
-  if (!match) return null;
-  const parsed = Number(match[0].replace(/,/g, ''));
-  return Number.isSafeInteger(parsed) ? parsed : null;
-}
-
-function normalizedDomainText(value: string) {
-  return String(value || '').trim().toLowerCase().replace(/^www\./, '').replace(/\.$/, '');
-}
-
-function linkProviderUrl(domain: string) {
-  const url = new URL(LINK_PROVIDER_PATH, LINK_PROVIDER_ORIGIN);
-  url.searchParams.set('domain', domain);
-  url.searchParams.set('majesticMillionType', '2');
-  return url.toString();
-}
-
-function rankProviderUrl(domain: string) {
-  return new URL(`/api/ranks/domain/${encodeURIComponent(domain)}`, RANK_PROVIDER_ORIGIN).toString();
+  const match = value.match(/[\d,]+/);
+  const parsed = match ? Number(match[0].replace(/,/g, '')) : NaN;
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
 }
 
 export function parseMajesticMillionPage(html: string, requestedDomain: string, fetchedAt = new Date().toISOString()): BacklinkSnapshot {
-  const domain = normalizedDomainText(requestedDomain);
+  const domain = normalizeEvidenceDomain(requestedDomain);
   const $ = load(html);
   const pageText = $.root().text().replace(/\s+/g, ' ');
-  const explicitlyAbsent = /is not in the Majestic Million/i.test(pageText);
+  const escapedDomain = domain.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const absencePattern = new RegExp(`(?:^|[^a-z0-9.-])(?:www\\.)?${escapedDomain}\\s+is not in the Majestic Million`, 'i');
+  const explicitlyAbsent = absencePattern.test(pageText) || $('p,div,td,li').toArray()
+    .some(element => absencePattern.test($(element).text().replace(/\s+/g, ' ')));
   if (!pageText.includes('Majestic Million') || (!explicitlyAbsent && !pageText.includes('Referring Sub'))) {
     throw new Error('Link provider response format was not recognized.');
   }
-
   const datasetDate = pageText.match(/Top Million Root Domains List generated on\s+(.+?)\s+using data/i)?.[1]?.trim() || null;
   let matchingRow: ReturnType<ReturnType<typeof load>> | null = null;
-
   $('a.domainname').each((_index, element) => {
     if (matchingRow) return;
-    if (normalizedDomainText($(element).text()) === domain) matchingRow = $(element).closest('tr');
+    if ($(element).text().trim().toLowerCase().replace(/^www\./, '').replace(/\.$/, '') === domain) matchingRow = $(element).closest('tr');
   });
-
   const base = {
-    domain,
-    datasetDate,
-    fetchedAt,
-    source: 'Majestic Million' as const,
-    sourceUrl: `${LINK_PROVIDER_ORIGIN}${LINK_PROVIDER_PATH}`,
-    license: 'CC BY 3.0' as const,
-    scope: 'public_top_million' as const,
+    domain, datasetDate, fetchedAt, source: 'Majestic Million' as const,
+    sourceUrl: `${LINK_PROVIDER_ORIGIN}${LINK_PROVIDER_PATH}`, license: 'CC BY 3.0' as const, scope: 'public_top_million' as const,
   };
-
   if (!matchingRow) {
+    if (!explicitlyAbsent) throw new Error('Link provider returned no matching row; absence was not established.');
     return { ...base, found: false, globalRank: null, tldRank: null, referringSubnets: null, referringIps: null };
   }
-
+  if (explicitlyAbsent) throw new Error('Link provider returned conflicting presence evidence.');
   const cells = matchingRow.children('td').map((_index, cell) => $(cell).text().replace(/\s+/g, ' ').trim()).get();
   if (cells.length < 7) throw new Error('Link provider result row was incomplete.');
-
-  return {
-    ...base,
-    found: true,
-    globalRank: firstInteger(cells[0]),
-    tldRank: firstInteger(cells[4]),
-    referringSubnets: firstInteger(cells[5]),
-    referringIps: firstInteger(cells[6]),
-  };
-}
-
-export function parseTrancoRankResponse(value: unknown, requestedDomain: string): WebRankSnapshot {
-  const domain = normalizedDomainText(requestedDomain);
-  if (!value || typeof value !== 'object' || !Array.isArray((value as { ranks?: unknown }).ranks)) {
-    throw new Error('Web rank provider response format was not recognized.');
+  const globalRank = firstInteger(cells[0]);
+  const tldRank = firstInteger(cells[4]);
+  const referringSubnets = firstInteger(cells[5]);
+  const referringIps = firstInteger(cells[6]);
+  if (globalRank == null || globalRank < 1 || tldRank == null || tldRank < 1 || referringSubnets == null || referringIps == null) {
+    throw new Error('Link provider result row was invalid.');
   }
-  const returnedDomain = normalizedDomainText(String((value as { domain?: unknown }).domain || ''));
-  if (returnedDomain && returnedDomain !== domain) throw new Error('Web rank provider returned a different domain.');
-
-  const history = (value as { ranks: unknown[] }).ranks
-    .map((item) => {
-      if (!item || typeof item !== 'object') return null;
-      const date = String((item as { date?: unknown }).date || '');
-      const rank = Number((item as { rank?: unknown }).rank);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isSafeInteger(rank) || rank < 1) return null;
-      return { date, rank };
-    })
-    .filter((item): item is WebRankHistoryPoint => item != null)
-    .sort((left, right) => right.date.localeCompare(left.date))
-    .slice(0, 31);
-
-  return { domain, status: history.length ? 'measured' : 'not_ranked', history };
+  return { ...base, found: true, globalRank, tldRank, referringSubnets, referringIps };
 }
 
-async function boundedResponseText(response: Response, maximumBytes: number) {
-  const advertisedLength = Number(response.headers.get('content-length') || 0);
-  if (advertisedLength > maximumBytes) throw new Error('Provider response was too large.');
-  if (!response.body) return response.text();
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let total = 0;
-  let text = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > maximumBytes) {
-      await reader.cancel();
-      throw new Error('Provider response was too large.');
-    }
-    text += decoder.decode(value, { stream: true });
-  }
-  return text + decoder.decode();
+export function parseTrancoRankResponse(value: unknown, requestedDomain: string) {
+  const result = parseTrancoEvidence(value, requestedDomain);
+  return { domain: result.domain, status: result.status === 'measured' ? 'measured' as const : 'not_ranked' as const, history: result.history };
 }
 
-async function fetchBacklinkSnapshot(domain: string) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
-  try {
-    const response = await fetch(linkProviderUrl(domain), {
-      signal: controller.signal,
-      redirect: 'error',
-      headers: {
-        Accept: 'text/html,application/xhtml+xml',
-        'User-Agent': 'Crawlio/1.0 (+https://keywordsintel.vercel.app; domain-signals)',
-      },
-    });
-    if (!response.ok) throw new Error(`Link provider returned HTTP ${response.status}.`);
-    if (!String(response.headers.get('content-type') || '').toLowerCase().includes('text/html')) {
-      throw new Error('Link provider returned an unexpected content type.');
-    }
-    return parseMajesticMillionPage(await boundedResponseText(response, MAX_LINK_RESPONSE_BYTES), domain);
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-function wait(milliseconds: number) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-function withRankProviderSlot<T>(work: () => Promise<T>) {
-  const result = rankProviderQueue
-    .catch(() => undefined)
-    .then(async () => {
-      const delay = Math.max(0, RANK_PROVIDER_INTERVAL_MS - (Date.now() - lastRankProviderRequestAt));
-      if (delay) await wait(delay);
-      lastRankProviderRequestAt = Date.now();
-      return work();
-    });
-  rankProviderQueue = result.then(() => undefined, () => undefined);
-  return result;
-}
+let rankProviderQueue: Promise<void> = Promise.resolve();
+let lastRankProviderRequestAt = 0;
 
 async function fetchWebRankSnapshot(domain: string) {
-  return withRankProviderSlot(async () => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
-    try {
-      const response = await fetch(rankProviderUrl(domain), {
-        signal: controller.signal,
-        redirect: 'error',
-        headers: {
-          Accept: 'application/json',
-          'User-Agent': 'Crawlio/1.0 (+https://keywordsintel.vercel.app; domain-signals)',
-        },
-      });
-      if (!response.ok) throw new Error(`Web rank provider returned HTTP ${response.status}.`);
-      if (!String(response.headers.get('content-type') || '').toLowerCase().includes('application/json')) {
-        throw new Error('Web rank provider returned an unexpected content type.');
-      }
-      return parseTrancoRankResponse(JSON.parse(await boundedResponseText(response, MAX_RANK_RESPONSE_BYTES)), domain);
-    } finally {
-      clearTimeout(timeout);
-    }
+  const request = rankProviderQueue.catch(() => undefined).then(async () => {
+    const delay = Math.max(0, RANK_PROVIDER_INTERVAL_MS - (Date.now() - lastRankProviderRequestAt));
+    if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+    lastRankProviderRequestAt = Date.now();
+    const url = new URL(`/api/ranks/domain/${encodeURIComponent(domain)}`, RANK_PROVIDER_ORIGIN);
+    return parseTrancoEvidence(await fetchProviderJson(url.toString()), domain);
   });
+  rankProviderQueue = request.then(() => undefined, () => undefined);
+  return request;
 }
 
-function cached(domain: string) {
-  const entry = signalCache.get(domain);
-  if (!entry) return null;
-  if (entry.expiresAt <= Date.now()) {
-    signalCache.delete(domain);
-    return null;
-  }
-  return entry.value;
+function summary(evidence: ProviderEvidenceSummary): ProviderEvidenceSummary {
+  return { status: evidence.status, fetchedAt: evidence.fetchedAt, datasetDate: evidence.datasetDate, scope: evidence.scope };
+}
+async function fetchMajesticEvidence(domain: string): Promise<MajesticEvidence> {
+  const url = new URL(LINK_PROVIDER_PATH, LINK_PROVIDER_ORIGIN);
+  url.searchParams.set('domain',domain); url.searchParams.set('majesticMillionType','2');
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(),6000);
+  try {
+    const response = await fetch(url,{redirect:'error',signal:controller.signal,headers:{Accept:'text/html','User-Agent':'Crawlio/1.0 (public domain evidence)'}});
+    if (!response.ok || !response.headers.get('content-type')?.includes('text/html')) { await response.body?.cancel(); throw new Error('Majestic unavailable'); }
+    const record = parseMajesticMillionPage(await boundedResponseText(response,2*1024*1024),domain);
+    const date = record.datasetDate == null ? null : new Date(record.datasetDate);
+    return allowlistMajestic({...record,status:record.found?'measured':'not_listed',datasetDate:date && Number.isFinite(date.getTime()) ? date.toISOString().slice(0,10) : null},domain);
+  } finally { clearTimeout(timer); }
 }
 
-function cache(domain: string, value: PublicLinkSignals) {
-  if (signalCache.size >= MAX_CACHE_ENTRIES) {
-    const oldestKey = signalCache.keys().next().value;
-    if (oldestKey) signalCache.delete(oldestKey);
-  }
-  signalCache.set(domain, { expiresAt: Date.now() + (value.partial ? PARTIAL_CACHE_TTL_MS : CACHE_TTL_MS), value });
-}
-
-async function loadSignals(domain: string): Promise<PublicLinkSignals> {
-  const [linkResult, rankResult] = await Promise.allSettled([
-    fetchBacklinkSnapshot(domain),
-    fetchWebRankSnapshot(domain),
-  ]);
-  if (linkResult.status === 'rejected' && rankResult.status === 'rejected') throw new Error('Domain signal providers are unavailable.');
-
-  const backlink = linkResult.status === 'fulfilled' ? linkResult.value : null;
-  const rank = rankResult.status === 'fulfilled' ? rankResult.value : null;
-  const history = rank?.history || [];
-  const currentRank = history[0]?.rank ?? null;
-  const previousRank = history.length > 1 ? history[history.length - 1].rank : null;
-  const fetchedAt = backlink?.fetchedAt || new Date().toISOString();
-
+function publicSignals(domain: string, opr: OpenPageRankEvidence, tranco: TrancoEvidence, majestic: MajesticEvidence, now: number): PublicLinkSignals {
+  const current = tranco.history[0]?.rank ?? null;
+  const previous = tranco.history.length > 1 ? tranco.history[tranco.history.length - 1].rank : null;
   return {
-    domain,
-    found: Boolean(backlink?.found),
-    globalRank: backlink?.globalRank ?? null,
-    tldRank: backlink?.tldRank ?? null,
-    referringSubnets: backlink?.referringSubnets ?? null,
-    referringIps: backlink?.referringIps ?? null,
-    datasetDate: backlink?.datasetDate ?? null,
-    fetchedAt,
-    source: 'Majestic Million',
-    sourceUrl: `${LINK_PROVIDER_ORIGIN}${LINK_PROVIDER_PATH}`,
-    license: 'CC BY 3.0',
-    scope: 'public_top_million',
-    linkStatus: linkResult.status === 'rejected' ? 'unavailable' : backlink?.found ? 'measured' : 'not_ranked',
-    webRankStatus: rankResult.status === 'rejected' ? 'unavailable' : rank?.status || 'not_ranked',
-    webRank: currentRank,
-    previousWebRank: previousRank,
-    webRankChange: currentRank != null && previousRank != null ? previousRank - currentRank : null,
-    webRankHistory: history,
-    partial: linkResult.status === 'rejected' || rankResult.status === 'rejected',
+    domain, found: majestic.found, globalRank: majestic.globalRank, tldRank: majestic.tldRank, referringSubnets: majestic.referringSubnets, referringIps: majestic.referringIps,
+    datasetDate: majestic.datasetDate, fetchedAt: new Date(now).toISOString(), source: 'Majestic Million',
+    sourceUrl: `${LINK_PROVIDER_ORIGIN}${LINK_PROVIDER_PATH}`, license: 'CC BY 3.0', scope: 'public_top_million',
+    linkStatus: majestic.status === 'unavailable' ? 'unavailable' : majestic.found ? 'measured' : 'not_ranked', webRankStatus: tranco.status === 'unavailable' ? 'unavailable' : tranco.history.length ? 'measured' : 'not_ranked',
+    webRank: current, previousWebRank: previous, webRankChange: current != null && previous != null ? previous - current : null,
+    webRankHistory: tranco.history,
+    partial: [opr.status,tranco.status,majestic.status].some(status=>status==='unavailable'||status==='stale'),
     attributions: [
+      { label: 'Open PageRank', url: opr.sourceUrl },
       { label: 'Majestic Million', url: `${LINK_PROVIDER_ORIGIN}${LINK_PROVIDER_PATH}`, license: 'CC BY 3.0' },
       { label: 'Tranco', url: 'https://tranco-list.eu/' },
     ],
+    openPageRank: opr,
+    sources: {
+      openPageRank: summary(opr), tranco: summary(tranco),
+      majesticMillion: summary(majestic),
+    },
   };
 }
 
-export async function getPublicLinkSignals(domainInput: string): Promise<PublicLinkSignals> {
-  const domain = normalizedDomainText(domainInput);
-  const existing = cached(domain);
-  if (existing) return existing;
-  const currentRequest = inFlight.get(domain);
-  if (currentRequest) return currentRequest;
-
-  const request = loadSignals(domain)
-    .then((value) => {
-      cache(domain, value);
-      return value;
-    })
-    .finally(() => inFlight.delete(domain));
-  inFlight.set(domain, request);
-  return request;
+interface DomainEvidenceServiceOptions {
+  store?: DomainEvidenceCacheStore;
+  now?: () => number;
+  apiKey?: () => string | undefined;
+  openPageRank?: (domain: string, key: string) => Promise<OpenPageRankEvidence>;
+  tranco?: (domain: string) => Promise<TrancoEvidence>;
+  majestic?: (domain: string) => Promise<MajesticEvidence>;
+  maxCacheEntries?: number;
+  maxInFlight?: number;
 }
+
+export function createDomainEvidenceService(options: DomainEvidenceServiceOptions = {}) {
+  const store = options.store ?? supabaseDomainEvidenceCache;
+  const now = options.now ?? Date.now;
+  const apiKey = options.apiKey ?? (() => process.env.OPEN_PAGE_RANK_API_KEY);
+  const memory = new Map<string, { payload: DomainEvidencePayload; response: PublicLinkSignals; retryUntil: number; configured: boolean }>();
+  const inFlight = new Map<string, Promise<PublicLinkSignals>>();
+
+  async function loadSignals(domain: string, key: string) {
+    const at = now();
+    let payload = memory.get(domain)?.payload;
+    if (!payload) {
+      try { payload = readEvidenceCacheRow(await store.read(domain), domain, at) ?? { version: 1 }; }
+      catch { payload = { version: 1 }; }
+    }
+    const fresh = (evidence?: ProviderEvidenceSummary) => evidence?.fetchedAt != null && Date.parse(evidence.fetchedAt) + EVIDENCE_FRESH_MS > at;
+    const usableStale = (evidence?: ProviderEvidenceSummary) => evidence?.fetchedAt != null && Date.parse(evidence.fetchedAt) + EVIDENCE_STALE_MS > now();
+    const results = await Promise.allSettled([
+      !key ? Promise.resolve(emptyOpenPageRank(domain, 'not_configured')) : fresh(payload.openPageRank)
+        ? Promise.resolve(payload.openPageRank!) : (options.openPageRank ?? fetchOpenPageRank)(domain, key).then(value => allowlistOpenPageRank(value, domain)),
+      fresh(payload.tranco) ? Promise.resolve(payload.tranco!) : (options.tranco ?? fetchWebRankSnapshot)(domain).then(value => allowlistTranco(value, domain)),
+      fresh(payload.majestic) ? Promise.resolve(payload.majestic!) : (options.majestic ?? fetchMajesticEvidence)(domain).then(value=>allowlistMajestic(value,domain)),
+    ]);
+    const [oprResult, rankResult, majesticResult] = results;
+    const opr: OpenPageRankEvidence = oprResult.status === 'fulfilled' ? oprResult.value
+      : usableStale(payload.openPageRank) ? { ...payload.openPageRank!, status: 'stale' } : emptyOpenPageRank(domain, 'unavailable');
+    const tranco: TrancoEvidence = rankResult.status === 'fulfilled' ? rankResult.value
+      : usableStale(payload.tranco) ? { ...payload.tranco!, status: 'stale' }
+        : { domain, status: 'unavailable', scope: 'domain', fetchedAt: null, datasetDate: null, history: [] };
+    const next: DomainEvidencePayload = { version: 1 };
+    const majestic: MajesticEvidence = majesticResult.status === 'fulfilled' ? majesticResult.value
+      : usableStale(payload.majestic) ? {...payload.majestic!,status:'stale'}
+      : {domain,status:'unavailable',scope:'public_top_million',found:false,fetchedAt:null,datasetDate:null,globalRank:null,tldRank:null,referringSubnets:null,referringIps:null};
+    if (majesticResult.status === 'fulfilled') next.majestic=majestic;
+    else if(usableStale(payload.majestic)) next.majestic=payload.majestic;
+    if (oprResult.status === 'fulfilled' && opr.status !== 'not_configured') next.openPageRank = opr;
+    else if (usableStale(payload.openPageRank)) next.openPageRank = payload.openPageRank;
+    if (rankResult.status === 'fulfilled') next.tranco = tranco;
+    else if (usableStale(payload.tranco)) next.tranco = payload.tranco;
+    const row = makeEvidenceCacheRow(domain, next, now());
+    if (row && ((oprResult.status === 'fulfilled' && opr.fetchedAt !== payload.openPageRank?.fetchedAt)
+      || (rankResult.status === 'fulfilled' && tranco.fetchedAt !== payload.tranco?.fetchedAt)
+      || (majesticResult.status === 'fulfilled' && majestic.fetchedAt !== payload.majestic?.fetchedAt))) {
+      try { await store.write(row); } catch { /* Provider evidence remains usable during cache outages. */ }
+    }
+    const response = publicSignals(domain, opr, tranco, majestic, now());
+    memory.delete(domain);
+    while (memory.size >= Math.max(1, options.maxCacheEntries ?? MAX_CACHE_ENTRIES)) memory.delete(memory.keys().next().value!);
+    memory.set(domain, { payload: row?.payload ?? { version: 1 }, response, retryUntil: now() + ERROR_RETRY_MS, configured: Boolean(key) });
+    return response;
+  }
+
+  return async function getSignals(domainInput: string): Promise<PublicLinkSignals> {
+    const domain = normalizeEvidenceDomain(domainInput);
+    const current = inFlight.get(domain);
+    if (current) return structuredClone(await current);
+    const key = apiKey()?.trim() ?? '';
+    const existing = memory.get(domain);
+    const evidence = existing ? [existing.response.openPageRank!, existing.response.sources!.tranco, existing.response.sources!.majesticMillion] : [];
+    const stillUsable = evidence.every(item => !item.fetchedAt || Date.parse(item.fetchedAt) + EVIDENCE_STALE_MS > now());
+    const allFresh = evidence.every(item => item.status === 'not_configured' || (item.fetchedAt && Date.parse(item.fetchedAt) + EVIDENCE_FRESH_MS > now()));
+    const retryEligible = evidence.every(item => ['unavailable', 'not_configured', 'stale'].includes(item.status)
+      || (item.fetchedAt && Date.parse(item.fetchedAt) + EVIDENCE_FRESH_MS > now()));
+    if (existing && existing.configured === Boolean(key) && stillUsable && (allFresh || (retryEligible && existing.retryUntil > now()))) {
+      return structuredClone(existing.response);
+    }
+    if (inFlight.size >= Math.max(1, options.maxInFlight ?? MAX_IN_FLIGHT)) throw new Error('Domain evidence request capacity reached.');
+    const request = loadSignals(domain, key).finally(() => inFlight.delete(domain));
+    inFlight.set(domain, request);
+    return structuredClone(await request);
+  };
+}
+
+export const getPublicLinkSignals = createDomainEvidenceService();

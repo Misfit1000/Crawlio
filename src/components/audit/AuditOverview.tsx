@@ -6,13 +6,14 @@ import { AuditPageMap } from './AuditPageMap';
 import { completePresentationSummary, samplePresentation } from './audit-presentation';
 import { isTerminalAuditStatus } from '../../lib/audit/audit-time';
 import { Link } from '../../app/router';
-import { isFocusedAudit } from '../../lib/audit/audit-scope';
+import { isFocusedAudit, type AuditScope } from '../../lib/audit/audit-scope';
+import type { DomainStrengthEvidenceSummary } from '../../lib/backlinks/domain-strength';
 import { scopeFindings } from '../../lib/report/scope-presentation';
 import { AuditDeliveryCharts } from './AuditDeliveryCharts';
 const AuditToolsWorkspace = lazy(() => import('../tools/AuditToolsWorkspace'));
 const DomainStrengthCard = lazy(() => import('../backlinks/DomainStrengthCard'));
 
-function VisibleDomainStrength({ domain, auditScores }: { domain: string; auditScores: Record<string, unknown> }) {
+function VisibleDomainStrength({ domain, auditScores, auditScope, evidenceSummary }: { domain: string; auditScores: Record<string, unknown>; auditScope?: AuditScope | null; evidenceSummary?: DomainStrengthEvidenceSummary }) {
   const container = useRef<HTMLElement>(null);
   const [ready, setReady] = useState(false);
   useEffect(() => {
@@ -24,7 +25,7 @@ function VisibleDomainStrength({ domain, auditScores }: { domain: string; auditS
     return () => observer.disconnect();
   }, []);
   return <section ref={container} aria-label="Domain strength and external signals" style={{ minHeight: 240 }}>
-    {ready ? <Suspense fallback={<p className="text-sm text-muted-foreground">Loading domain evidence...</p>}><DomainStrengthCard domain={domain} auditScores={auditScores} /></Suspense> : <h2 className="text-lg font-semibold">Domain strength and external signals</h2>}
+    {ready ? <Suspense fallback={<p className="text-sm text-muted-foreground">Loading domain evidence...</p>}><DomainStrengthCard domain={domain} auditScores={auditScores} auditScope={auditScope} evidenceSummary={evidenceSummary} /></Suspense> : <h2 className="text-lg font-semibold">Site strength and external signals</h2>}
   </section>;
 }
 
@@ -39,7 +40,7 @@ export const AuditOverview = memo(function AuditOverview({ data, onViewFindings,
   const issues = useMemo(() => scopeFindings(data.audit?.scope, data.latestIssues), [data.audit?.scope, data.latestIssues]);
   const sample = useMemo(() => complete ? null : samplePresentation(data.latestPages, issues), [complete, data.latestPages, issues]);
   const presentation = complete || sample!;
-  const firstPage = useMemo(() => data.latestPages.find(page => page.title || page.metaDescription) || data.latestPages[0], [data.latestPages]);
+  const firstPage = useMemo(() => data.latestPages.find(page => page.url === data.audit?.normalizedUrl || page.url === data.audit?.finalUrl), [data.latestPages, data.audit?.normalizedUrl, data.audit?.finalUrl]);
   const recommendationsPending = Boolean(data.audit && !isTerminalAuditStatus(data.audit.status) && data.audit.issuesFound > 0 && !presentation.topRecommendations.length);
   return <div className="audit-overview-content space-y-10">
     <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground" data-presentation-scope={complete ? 'complete' : 'sample'}>
@@ -53,9 +54,9 @@ export const AuditOverview = memo(function AuditOverview({ data, onViewFindings,
     </section>}
     {!showRecommendations && recommendationsPending && <div className="flex flex-wrap items-center justify-between gap-4"><p className="text-sm text-muted-foreground">Recommendations are prepared at finalization.</p><button type="button" className="audit-text-action inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-accent" onClick={onViewFindings}>View findings</button></div>}
     <AuditDeliveryCharts presentation={presentation} scope={data.audit?.scope} complete={Boolean(complete)} />
-    {firstPage && !isFocusedAudit(data.audit) && <SitePreviewSection url={firstPage.url} hostname={data.audit?.hostname} title={firstPage.title} description={firstPage.metaDescription} h1={firstPage.h1} canonicalUrl={firstPage.canonicalUrl} siteName={firstPage.siteName} faviconUrl={firstPage.faviconUrl} openGraphImage={firstPage.openGraphImage} screenshotUrl={firstPage.screenshotUrl} themeColor={firstPage.themeColor} />}
+    {data.audit && <SitePreviewSection auditId={data.audit.id} url={data.audit.normalizedUrl} hostname={data.audit.hostname} title={firstPage?.title} description={firstPage?.metaDescription} h1={firstPage?.h1} canonicalUrl={firstPage?.canonicalUrl} siteName={firstPage?.siteName} faviconUrl={firstPage?.faviconUrl} openGraphImage={firstPage?.openGraphImage} screenshotUrl={firstPage?.screenshotUrl} themeColor={firstPage?.themeColor} />}
     {showMap && <AuditPageMap pages={data.latestPages} issues={issues} audit={data.audit || undefined} />}
     <AuditRelatedTools data={data} />
-    {data.finalReport && data.audit && !isFocusedAudit(data.audit) && data.audit.scope?.coverage !== 'page' && <VisibleDomainStrength key={data.audit.id} domain={data.audit.hostname} auditScores={data.finalReport.scores} />}
+    {data.finalReport && data.audit && !isFocusedAudit(data.audit) && data.audit.scope?.coverage !== 'page' && <VisibleDomainStrength key={data.audit.id} domain={data.audit.hostname} auditScores={data.finalReport.scores} auditScope={data.audit.scope} evidenceSummary={{analysedPages:data.audit.pagesCrawled,discoveredPages:data.audit.pagesDiscovered,sampled:!complete}} />}
   </div>;
 });

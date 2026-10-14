@@ -1,10 +1,10 @@
 import React from 'react';
 import { UpdatedValue } from './UpdatedValue';
-import { AlertTriangle, CheckCircle2, ChevronDown, Globe, Monitor, Search, ShieldCheck, Smartphone } from 'lucide-react';
+import { CheckCircle2, ChevronDown, Search } from 'lucide-react';
 import { safePreviewMediaUrl } from '../../lib/audit/preview-model';
 import { gradeRangeLabel, scoreToGrade, scoreTone as reportScoreTone } from '../../lib/audit/report-insights';
 export { BrandMark, ThemeToggle, LoadingSkeleton } from './chrome';
-import { CompactWebsitePreview, DesktopHomepagePreview, MobileHomepagePreview, PreviewUnavailableState, type CompactPreviewProps } from './compact-site-preview';
+import { CompactWebsitePreview, type CompactPreviewProps } from './compact-site-preview';
 
 export { CompactWebsitePreview, DesktopHomepagePreview, MobileHomepagePreview, PreviewUnavailableState } from './compact-site-preview';
 
@@ -903,9 +903,8 @@ export function HybridSitePreview(props: PreviewProps) {
     <section className="space-y-4">
       <div className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="text-xs font-semibold text-accent">Audited page preview</div>
-          <h2 className="mt-1 text-xl font-semibold sm:text-2xl">Desktop, mobile, and search context</h2>
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">Compact composition from collected metadata or a genuine screenshot when available. It never depends on website embedding.</p>
+          <h2 className="text-xl font-semibold sm:text-2xl">Page preview</h2>
+          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">Desktop and mobile screenshots, with collected search metadata shown separately.</p>
         </div>
         <div className="no-print">
           <a href={frameUrl} target="_blank" rel="noreferrer noopener" className="quiet-button px-3 py-2 text-xs">
@@ -921,18 +920,6 @@ export function HybridSitePreview(props: PreviewProps) {
   );
 }
 
-export function SitePreviewSection({
-  url,
-  title,
-  description,
-  hostname,
-  canonicalUrl,
-  faviconUrl,
-  openGraphImage,
-  screenshotUrl,
-  h1,
-  siteName,
-  themeColor,
-}: PreviewProps) {
-  return <HybridSitePreview url={url} title={title} description={description} hostname={hostname} canonicalUrl={canonicalUrl} faviconUrl={faviconUrl} openGraphImage={openGraphImage} screenshotUrl={screenshotUrl} h1={h1} siteName={siteName} themeColor={themeColor} />;
+export function SitePreviewSection(props: PreviewProps) {
+  return <HybridSitePreview {...props} />;
 }

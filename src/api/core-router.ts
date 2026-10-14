@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { waitUntil } from '@vercel/functions';
 
 import { createHash, randomBytes } from 'node:crypto';
 
@@ -34,6 +35,8 @@ import { findingWorkflowKey, isFindingPriorityOverride, isFindingWorkflowStatus 
 
 import { createPublicPlanProjection } from '../lib/plans/public-plan-presentation';
 import { auditScopeFingerprint, normalizeAuditScope } from '../lib/audit/audit-scope';
+import { atomicAdmissionError, submitAtomicAudit } from '../lib/audit/atomic-admission';
+import { wakeConfiguredWorkers } from '../lib/audit/worker-wake';
 
 
 export const apiRouter = Router();
@@ -302,6 +305,44 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
     throw new ApiError('INVALID_AUDIT_MODE', 'Choose Quick, Standard, or Deep audit mode.', 400);
   }
   const requestedMode = mode;
+  if (isSupabaseAdminEnabled()) {
+    const authStarted = performance.now();
+    const [authUser, botVerified] = await Promise.all([
+      getAuthenticatedUserFromRequest(req), verifyBotToken(String(req.body?.botToken || '')),
+    ]);
+    const authMs = performance.now() - authStarted;
+    const userId = authUser?.id || null;
+    req.requesterUserId = userId;
+    const guest = guestIdentityForRequest(req);
+    const input = { userId, guestKeyHash: userId ? null : guest.guestKeyHash,
+      ipHash: requestNetworkHash(req), submittedInput: String(url || '').trim(), normalizedUrl: normalized.normalizedUrl,
+      hostname: normalized.hostname, mode: requestedMode, scope, projectId: projectId == null ? null : String(projectId), botVerified };
+    const admissionStarted = performance.now();
+    let accepted = await submitAtomicAudit(input);
+    if (accepted.code === 'PROFILE_REQUIRED' && authUser) {
+      await ensureUserProfileFromAuthUser(authUser);
+      accepted = await submitAtomicAudit(input);
+    }
+    if (!accepted.allowed) throw atomicAdmissionError(accepted);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('Server-Timing', `auth;dur=${authMs.toFixed(1)}, admission;dur=${(performance.now()-admissionStarted).toFixed(1)}`);
+    const audit = accepted.audit;
+    if (!audit && accepted.reusedExistingAudit && accepted.auditId) {
+      // A legacy request may still be committing its reservation. Never poll the
+      // database twenty times inside admission; the live client reconciles it.
+      return res.status(202).json({ success: true, data: { auditId: accepted.auditId, status: 'queued', reusedExistingAudit: true } });
+    }
+    if (!audit) throw new ApiError('AUDIT_ADMISSION_UNAVAILABLE', 'Audit startup could not be confirmed. Retry to reopen any accepted audit.', 503);
+    waitUntil(Promise.allSettled([
+      wakeConfiguredWorkers(),
+      import('../lib/preview/server').then(previews => previews.enqueueAuditPreview(audit)),
+    ]).then(() => undefined));
+    return res.json({ success: true, data: {
+      ...auditStartResponseData(audit), initialAudit: accepted.reusedExistingAudit ? undefined : projectAuditAdmission(audit),
+      reusedExistingAudit: Boolean(accepted.reusedExistingAudit), quotaRemaining: accepted.quotaRemaining,
+      queueDepth: accepted.queueDepth ?? null, softQueueWarning: accepted.softQueueWarning ?? false,
+    }});
+  }
   const reuseOrConflict = (existing: ResourceAuditDocument) => {
     if (existing.normalizedUrl !== normalized.normalizedUrl || existing.effectiveMode !== requestedMode || auditScopeFingerprint(existing.scope) !== fingerprint) {
       throw new ApiError('ACTIVE_AUDIT_CONFLICT', 'Another audit is active with different checks, coverage, depth or website. Open it or wait for it to finish before starting this request.', 409, { activeAuditId: existing.id });
@@ -438,7 +479,7 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
       processingTier: decision.processingTier,
       pageLimit: effectivePageLimit,
       queuePriority: decision.queuePriority,
-      estimatedWaitSeconds: admission?.queueDepth ? Math.max(0, admission.queueDepth - 1) * 45 : null,
+      estimatedWaitSeconds: null,
       userId: decision.userId,
       guestKeyHash: decision.userId ? null : guestIdentity.guestKeyHash,
       projectId: validatedProjectId,
@@ -480,6 +521,45 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
 }
 
 apiRouter.post('/audit/start', asyncJsonRoute((req, res) => startQueuedAudit(req, res, 'quick')));
+
+apiRouter.post('/internal/preview/resources', asyncJsonRoute(async (req, res) => {
+  const { proxyPreviewResources } = await import('../lib/preview/resource-proxy');
+  res.setHeader('Cache-Control', 'private, no-store');
+  const result = await proxyPreviewResources(firstHeaderValue(req.headers.authorization), req.body);
+  res.json(result);
+}));
+
+apiRouter.get('/audit/:id/preview', asyncJsonRoute(async (req, res) => {
+  const audit = await auditRepository.getAudit(req.params.id);
+  if (!audit || !(await canAccessAudit(req, audit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
+  const { getAuditPreview } = await import('../lib/preview/server');
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: await getAuditPreview(audit) });
+}));
+
+apiRouter.post('/audit/:id/preview', durableRateLimit({ namespace: 'audit-preview', limit: 30, windowSeconds: 3600 }), asyncJsonRoute(async (req, res) => {
+  const audit = await auditRepository.getAudit(req.params.id);
+  if (!audit || !(await canAccessAudit(req, audit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
+  const { enqueueAuditPreview, getAuditPreview, wakePreviewWorker } = await import('../lib/preview/server');
+  await enqueueAuditPreview(audit, false);
+  waitUntil(wakePreviewWorker());
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: await getAuditPreview(audit) });
+}));
+
+apiRouter.get('/shared-reports/:token/preview', createRateLimiter({ namespace: 'shared-preview', windowMs: 3600000, maxRequests: 120 }), asyncJsonRoute(async (req, res) => {
+  const token = String(req.params.token || '');
+  if (!/^[A-Za-z0-9_-]{32,128}$/.test(token)) throw new ApiError('SHARED_REPORT_NOT_FOUND', 'Shared report not found.', 404);
+  const { data: share, error } = await requireSupabaseAdminClient().from('report_shares').select('audit_id')
+    .eq('token_hash', createHash('sha256').update(token).digest('hex')).is('revoked_at', null)
+    .gt('expires_at', new Date().toISOString()).maybeSingle();
+  if (error || !share) throw new ApiError('SHARED_REPORT_NOT_FOUND', 'Shared report not found.', 404);
+  const audit = await auditRepository.getAudit(share.audit_id);
+  if (!audit) throw new ApiError('SHARED_REPORT_NOT_FOUND', 'Shared report not found.', 404);
+  const { getAuditPreview } = await import('../lib/preview/server');
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: await getAuditPreview(audit) });
+}));
 
 apiRouter.get('/audit/events/:id', asyncJsonRoute(async (req, res) => {
   const auditId = req.params.id;

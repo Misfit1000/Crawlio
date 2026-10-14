@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   BarChart3,
@@ -105,16 +105,6 @@ function whyThisMatters(section: ReportSectionId) {
     accessibility: 'Accessible names, landmarks, language, and predictable focus structure make pages easier to use with assistive technology.',
   };
   return copy[section];
-}
-
-function severityCounts(data: ResourceAuditLiveData | null, fallback: AuditHistoryEntry | null) {
-  const audit = data?.audit;
-  return {
-    critical: audit?.criticalCount ?? fallback?.criticalCount ?? 0,
-    high: audit?.highCount ?? fallback?.highCount ?? 0,
-    medium: audit?.mediumCount ?? fallback?.mediumCount ?? 0,
-    low: audit?.lowCount ?? fallback?.lowCount ?? 0,
-  };
 }
 
 function groupRepresentative(group: RecommendationGroup, issues: ResourceAuditIssue[]) {
@@ -252,9 +242,8 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
   const issues = useMemo(() => scopeFindings(scope, reportData?.latestIssues || selectedHistory?.topIssues || []), [scope, reportData?.latestIssues, selectedHistory?.topIssues]);
   const pages = reportData?.latestPages || [];
   const recommendations = useMemo(() => groupRecommendations(issues), [issues]);
-  const counts = severityCounts(reportData, selectedHistory);
   const pageMetrics = useMemo(() => observedPageMetrics(pages), [pages]);
-  const firstPage = pages.find((page) => page.title || page.metaDescription) || pages[0] || null;
+  const firstPage = pages.find(page => page.url === reportData?.audit?.normalizedUrl || page.url === reportData?.audit?.finalUrl) || null;
   const complete = useMemo(() => completePresentationSummary(reportData?.audit || null, reportData?.finalReport), [reportData]);
   const presentation = useMemo(() => complete || samplePresentation(pages, issues), [complete, pages, issues]);
 
@@ -399,19 +388,20 @@ export default function Reports({ onStartAudit, initialSection }: ReportsProps) 
 
       <AuditDeliveryCharts presentation={presentation} scope={scope} complete={Boolean(complete)} />
 
-      {firstPage && reportData?.audit && !isFocusedAudit({ scope }) && (
+      {reportData?.audit && (
         <SitePreviewSection
-          url={firstPage.url || reportData.audit.normalizedUrl}
+          auditId={reportData.audit.id}
+          url={reportData.audit.normalizedUrl}
           hostname={reportData.audit.hostname}
-          title={firstPage.title}
-          description={firstPage.metaDescription}
-          h1={firstPage.h1}
-          canonicalUrl={firstPage.canonicalUrl}
-          siteName={firstPage.siteName}
-          faviconUrl={firstPage.faviconUrl}
-          openGraphImage={firstPage.openGraphImage}
-          screenshotUrl={firstPage.screenshotUrl}
-          themeColor={firstPage.themeColor}
+          title={firstPage?.title}
+          description={firstPage?.metaDescription}
+          h1={firstPage?.h1}
+          canonicalUrl={firstPage?.canonicalUrl}
+          siteName={firstPage?.siteName}
+          faviconUrl={firstPage?.faviconUrl}
+          openGraphImage={firstPage?.openGraphImage}
+          screenshotUrl={firstPage?.screenshotUrl}
+          themeColor={firstPage?.themeColor}
         />
       )}
 

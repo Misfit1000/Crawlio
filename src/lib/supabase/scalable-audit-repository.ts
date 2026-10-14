@@ -5,6 +5,7 @@ import type { AuditScoreAggregate, AuditScoreCategory } from '../audit/audit-sco
 import type { ResourceAuditDocument, ResourceAuditReport, AuditSeverity, AuditPresentationSummary } from '../audit/resource-types';
 import { EVIDENCE_MAX_PAGE_SIZE, EVIDENCE_PAGE_SIZE } from '../audit/scalable-policy';
 import { isAuditPresentationSection } from '../audit/audit-presentation-summary';
+import { allowedWorkerControlUrl } from '../audit/worker-wake';
 
 export interface CrawlRun {
   audit_id: string;
@@ -60,8 +61,11 @@ export async function scalableReadiness(): Promise<{ ready: boolean; deepReady: 
   if (process.env.SCALABLE_AUDITS_ENABLED !== 'true') return { ready: false, deepReady: false };
   if (readinessCache && readinessCache.until > Date.now()) return readinessCache;
   const client = requireSupabaseAdminClient();
+  const canWake = Boolean(allowedWorkerControlUrl(process.env.AUDIT_WORKER_WAKE_URL, 'render') && (process.env.AUDIT_WORKER_CONTROL_SECRET?.length || 0)>=32)
+    || Boolean(allowedWorkerControlUrl(process.env.SECONDARY_AUDIT_WORKER_URL, 'cloudflare') && (process.env.SECONDARY_AUDIT_CONTROL_SECRET?.length || 0)>=32);
+  const seenAfter = new Date(Date.now() - (canWake ? 24*60*60*1000 : 90_000)).toISOString();
   let result = await client.from('audit_scalable_workers')
-    .select('worker_id,deep_enabled,scope_version,scope_commit_id,commit_id').eq('processing_version', 2).gte('seen_at', new Date(Date.now() - 90_000).toISOString()).limit(20);
+    .select('worker_id,deep_enabled,scope_version,scope_commit_id,commit_id').eq('processing_version', 2).gte('seen_at', seenAfter).limit(20);
   if (result.error && /scope_version|scope_commit_id/.test(result.error.message)) {
     const legacy = await client.from('audit_scalable_workers').select('worker_id,deep_enabled').eq('processing_version', 2).gte('seen_at', new Date(Date.now() - 90_000).toISOString()).limit(20);
     if (legacy.error) return { ready: false, deepReady: false, scopeReady: false };

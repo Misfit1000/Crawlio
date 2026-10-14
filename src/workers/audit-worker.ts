@@ -8,6 +8,7 @@ import { isSameDomain, normalizeUrl, stripTrackingParams } from '../lib/seo/url-
 import { AUDIT_CHECK_COUNT, runAllChecksSafely } from '../lib/seo/checks/runner';
 import { auditRepository } from '../lib/supabase/audit-repository';
 import { startWorkerHealthServer } from './audit-worker-health';
+import { createInterruptibleIdleWait } from '../lib/audit/worker-wake';
 import { isScalableWorkerStopRequested, requestScalableWorkerStop } from './scalable-worker-lifecycle';
 import {
   WORKER_ENV_ERROR,
@@ -1337,12 +1338,14 @@ export async function runAuditWorkerLoop() {
   let exportTask: Promise<void> | null = null;
   let exportTimer: ReturnType<typeof setInterval> | undefined;
   let auditAdmissionIdle = false;
-  const healthServer = startWorkerHealthServer(state, () => workerReady, process.env.WORKER_HEALTH_PORT || process.env.PORT);
+  const idleWait = createInterruptibleIdleWait();
+  const healthServer = startWorkerHealthServer(state, () => workerReady, process.env.WORKER_HEALTH_PORT || process.env.PORT, () => idleWait.wake());
 
   const shutdown = async (signal: NodeJS.Signals) => {
     if (shuttingDown) return;
     shuttingDown = true;
     shutdownRequested = true;
+    idleWait.wake();
     workerReady = false;
     requestScalableWorkerStop(config.workerId);
     if (heartbeatTimer) clearInterval(heartbeatTimer);
@@ -1430,7 +1433,7 @@ export async function runAuditWorkerLoop() {
       }
       if (!claimed) {
         auditAdmissionIdle = true;
-        await wait(config.pollIntervalMs);
+        await idleWait.wait(config.pollIntervalMs);
       }
     } catch (error) {
       if (shutdownRequested) break;
