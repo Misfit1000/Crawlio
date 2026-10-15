@@ -65,7 +65,7 @@ export class ResourceProxy {
     if (++this.calls > CAPTURE_POLICY.maxProxyCalls) throw new PreviewFailure('PROXY_CALL_LIMIT', 'blocked');
     this.api.budget.take(8);
     const response = await this.runtime.fetch(this.api.config.proxyUrl!, {
-      method: 'POST', redirect: 'error', signal: AbortSignal.any([this.signal, AbortSignal.timeout(7000)]),
+      method: 'POST', redirect: 'manual', signal: AbortSignal.any([this.signal, AbortSignal.timeout(7000)]),
       headers: { authorization: `Bearer ${this.api.env.PREVIEW_CONTROL_SECRET!}`, 'content-type': 'application/json' },
       body: JSON.stringify({ captureId: this.job.id, generation: this.job.generation, requests: batch.map(item => item.request) }),
     });

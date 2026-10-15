@@ -27,11 +27,11 @@ export default {
         budgetAuthority: 'claim_site_preview', limits: CAPTURE_POLICY,
       }, config.checks.explicitlyEnabled && (!config.ready || (operational as any)?.browserSafetyBlocked || (operational as any)?.state === 'unavailable') ? 503 : 200);
     }
-    if (path !== '/control/wake' || request.method !== 'POST') return json({ error: 'not_found' }, 404);
+    if (!['/control/wake', '/control/diagnostics'].includes(path) || request.method !== 'POST') return json({ error: 'not_found' }, 404);
     if (!await authorized(request, env.PREVIEW_CONTROL_SECRET)) return json({ error: 'unauthorized' }, 401);
     if (!config.ready) return json({ error: 'not_configured' }, 503);
     try {
-      return await coordinator(env).fetch('https://coordinator.invalid/control/wake', {
+      return await coordinator(env).fetch(`https://coordinator.invalid${path}`, {
         method: 'POST', headers: { authorization: `Bearer ${env.PREVIEW_CONTROL_SECRET}` }, signal: AbortSignal.timeout(2000),
       });
     } catch { return json({ error: 'coordinator_unavailable' }, 503); }

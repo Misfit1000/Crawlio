@@ -93,3 +93,18 @@ test('wake authorization and completion recovery do not expose or delete committ
   assert.equal(state.data.has('completion'), false);
   assert.equal(f.calls.filter(c => c.init.method === 'DELETE').length, 0);
 });
+
+test('restart cleans incomplete uploads without deleting committed artifacts or launching an unconfirmed browser', async () => {
+  for (const committed of [false, true]) {
+    const f = new Fixture(), state = new MemoryState();
+    f.job = null;
+    const desktop = `${JOB.id}/${JOB.generation}/desktop.webp`, mobile = `${JOB.id}/${JOB.generation}/mobile.webp`;
+    state.data.set('uploadIntent', { job: JOB, closureConfirmed: committed });
+    f.current = committed ? [{ desktop_path: desktop, mobile_path: mobile }] : [];
+    await new SitePreviewCoordinator(state, f.env, f.runtime()).alarm();
+    assert.equal(state.data.has('uploadIntent'), false);
+    assert.equal(f.calls.filter(c => c.init.method === 'DELETE').length, committed ? 0 : 1);
+    assert.equal(Boolean(state.data.get('browserSafetyBlocked')), !committed);
+    assert.equal(f.launches, 0);
+  }
+});

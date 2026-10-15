@@ -107,6 +107,7 @@ export class Fixture {
   };
 
   fetch: Runtime['fetch'] = async (input, init = {}) => {
+    assert.notEqual(init.redirect, 'error', 'Workers fetch supports manual redirect rejection, not redirect:error');
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
     const body = typeof init.body === 'string' ? JSON.parse(init.body) : init.body;
     this.calls.push({ url, init, body });
@@ -152,7 +153,10 @@ export class Fixture {
                 headers: () => ({ cookie: 'audit-session=secret', authorization: 'Bearer audit-credential' }),
               }),
               abort: async () => { aborted = true; },
-              fulfill: async value => { fulfilled = value; },
+              fulfill: async value => {
+                assert.ok(Buffer.isBuffer(value.body), 'Playwright binary fulfillment requires a Buffer');
+                fulfilled = value;
+              },
               continue: async () => { this.directRouteCalls++; throw new Error('Direct network'); },
               fetch: async () => { this.directRouteCalls++; throw new Error('Direct network'); },
             } as BrowserRoute);

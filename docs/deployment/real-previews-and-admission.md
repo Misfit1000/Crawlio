@@ -32,9 +32,18 @@ Successful provider evidence is cached for 24 hours. Stale evidence is reused on
 ## Validation Recorded Locally
 
 - TypeScript passed.
-- Production build passed: 80,976 bytes compressed initial JavaScript, 111,035 bytes total CSS; static API dependency graph 984,529 bytes.
+- Production build passed: 80,992 bytes compressed initial JavaScript, 111,069 bytes total CSS; static API dependency graph 984,529 bytes.
 - Focused coverage includes transactional duplicate/quota handling, suspension and ownership, private preview access, stale-generation fencing, global capture budget, isolated mobile/desktop capture, protected resource transport, capture deadlines, completion recovery, provider parsing/cache expiry, hosted-domain coverage, and strength scope isolation.
 - Build sizes are not field loading times. CDN version-response timing is not audit admission or origin execution latency.
+
+## Production Verification
+
+- Migration 037 and its guarded schema-version repair are applied. The repair only advertises schema 16 when the durable scoped-claim contract exists.
+- A controlled Quick / Passive security / This page audit of `https://example.com/` completed with one analysed page and only the selected category in the report.
+- Separate genuine desktop (1440 x 900) and mobile (390 x 844) images were captured and delivered through the authorized preview endpoint. Screenshot failure did not fail the audit during rollout.
+- Open PageRank returned measured root-domain evidence for `example.com`; the hosted Crawlio subdomain remained unlisted rather than inheriting its hosting platform's authority.
+- The preview worker journals interrupted uploads, preserves committed artifacts during recovery, and blocks additional browser launches when shutdown cannot be confirmed. Detailed failures require the private control secret.
+- No production before/after admission or first-page latency improvement is claimed without comparable samples. Render cold wake time remains provider-dependent.
 
 ## Rollback
 

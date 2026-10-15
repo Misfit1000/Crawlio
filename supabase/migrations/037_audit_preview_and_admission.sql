@@ -267,5 +267,16 @@ do $$ declare f record; begin
     execute format('grant execute on function %s to service_role',f.signature);
   end loop;
 end $$;
+-- Earlier additive migrations did not advance the diagnostic version row.
+-- Advertise schema 16 only after its durable scoped-claim contract exists.
+do $$ begin
+  if to_regprocedure('public.claim_scoped_audit(text,boolean)') is null
+    or to_regclass('public.audit_crawl_frontier') is null then
+    raise exception 'SCALABLE_SCOPE_MIGRATION_REQUIRED';
+  end if;
+  update public.deployment_versions set api_schema_version=greatest(api_schema_version,16),
+    audit_engine_version='2026.09',scoring_version='2.2',check_registry_version='3.1',
+    commit_identifier='migration-037',updated_at=now() where component='database';
+end $$;
 notify pgrst,'reload schema';
 commit;

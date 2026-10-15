@@ -64,12 +64,12 @@ export class PreviewApi {
         'content-type': 'application/json',
         ...init.headers,
       },
-      redirect: 'error',
+      redirect: 'manual',
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(3000)]) : AbortSignal.timeout(3000),
     });
     if (!response.ok) {
       await response.body?.cancel().catch(() => {});
-      throw new PreviewFailure(response.status === 429 ? 'SUPABASE_RATE_LIMIT' : 'SUPABASE_UNAVAILABLE');
+      throw new PreviewFailure(response.status === 429 ? 'SUPABASE_RATE_LIMIT' : `SUPABASE_HTTP_${response.status}`);
     }
     return response;
   }

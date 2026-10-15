@@ -16,11 +16,12 @@ export function useSitePreview(container: RefObject<HTMLElement>, auditId?: stri
     let active = true, visible = false, inflight = false, initialized = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const controller = new AbortController();
-    const startedAt = Date.now();
+    let startedAt = 0;
     let terminal = false;
     const url = shareToken ? API_ROUTES.sharedPreview(shareToken) : API_ROUTES.auditPreview(auditId!);
     const refresh = async () => {
       if (!active || !visible || document.hidden || inflight || terminal) return;
+      if (!startedAt) startedAt = Date.now();
       inflight = true;
       setLoading(true);
       try {

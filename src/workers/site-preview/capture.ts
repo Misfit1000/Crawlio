@@ -1,6 +1,7 @@
 import {
   CAPTURE_POLICY, CAPTURE_PROFILES, PreviewFailure, capturePaths, decodeBase64, publicResourceUrl, webpDimensions,
 } from '../../lib/preview/capture-policy';
+import { Buffer } from 'node:buffer';
 import type { BrowserPage, CaptureBrowser, CaptureClaim, CaptureResult, Runtime } from './contracts';
 import { PreviewApi } from './io';
 import { ResourceProxy } from './resource-proxy';
@@ -57,6 +58,7 @@ export interface CaptureOutcome {
   cleanupPaths: string[];
   closureConfirmed: boolean;
   settlement: Promise<unknown>;
+  diagnostic?: string;
 }
 
 export async function capturePair(job: CaptureClaim, api: PreviewApi, runtime: Runtime): Promise<CaptureOutcome> {
@@ -66,6 +68,7 @@ export async function capturePair(job: CaptureClaim, api: PreviewApi, runtime: R
   let browser: CaptureBrowser | undefined, closePromise: Promise<boolean> | undefined;
   let launchSettled = true, launchPromise: Promise<CaptureBrowser> | undefined;
   let failure: PreviewFailure | undefined, result: CaptureResult | undefined;
+  let diagnostic: string | undefined;
   let renderingFinished = false;
   const attemptedUploads: string[] = [];
   const close = () => {
@@ -128,7 +131,7 @@ export async function capturePair(job: CaptureClaim, api: PreviewApi, runtime: R
           const resource = await proxy.request(request.url(), request.resourceType(), viewport);
           if (request.isNavigationRequest() && resource.status >= 400) throw new PreviewFailure('DOCUMENT_BLOCKED', 'blocked');
           if (controller.signal.aborted) { await route.abort('blockedbyclient'); return; }
-          await route.fulfill(resource);
+          await route.fulfill({ ...resource, body: Buffer.from(resource.body) });
         } catch (error) {
           if (!renderingFinished) fail(error);
           await route.abort('blockedbyclient').catch(() => {});
@@ -189,6 +192,7 @@ export async function capturePair(job: CaptureClaim, api: PreviewApi, runtime: R
       desktopBytes: desktop.bytes.byteLength, mobileBytes: mobile.bytes.byteLength, durationMs: 0,
     };
   } catch (error) {
+    diagnostic = error instanceof Error ? `${error.name}: ${error.message}` : 'Unknown capture failure';
     failure ??= captureError(error);
     result = { status: failure.status, failureCode: failure.code, durationMs: 0 };
   } finally {
@@ -202,6 +206,7 @@ export async function capturePair(job: CaptureClaim, api: PreviewApi, runtime: R
   return {
     result: result!, cleanupPaths: result!.status === 'captured' ? [] : attemptedUploads,
     closureConfirmed,
+    diagnostic,
     settlement: launchPromise ? launchPromise.then(() => close(), () => undefined) : Promise.resolve(),
   };
 }

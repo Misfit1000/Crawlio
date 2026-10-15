@@ -23,8 +23,11 @@ test('migration 037 commits admission once, preserves scope/quotas, and fences p
       insert into plan_limits values('free','["quick"]',10,0,0,3,30,1,10),('paid','["quick","standard"]',25,500,0,25,500,2,50);
       create table audit_scalable_workers(worker_id text primary key,processing_version int,scope_version int,scope_commit_id text,commit_id text,deep_enabled boolean,seen_at timestamptz);
       insert into audit_scalable_workers values('render',2,1,'commit','commit',true,now());
-      create table deployment_versions(component text primary key,api_schema_version int,audit_engine_version text,scoring_version text,check_registry_version text);
-      insert into deployment_versions values('database',16,null,null,null),('worker',16,'2026.09','2.2','3.1');
+      create table deployment_versions(component text primary key,api_schema_version int,audit_engine_version text,scoring_version text,check_registry_version text,commit_identifier text,updated_at timestamptz);
+      insert into deployment_versions(component,api_schema_version,audit_engine_version,scoring_version,check_registry_version)
+        values('database',14,null,null,null),('worker',16,'2026.09','2.2','3.1');
+      create table audit_crawl_frontier(audit_id uuid);
+      create function claim_scoped_audit(text,boolean) returns jsonb language sql as $$ select null::jsonb $$;
       create table projects(id uuid primary key,user_id uuid,hostname text);
       create table audit_usage_events(user_id uuid,audit_id uuid,plan text,mode text,pages_limit int);
       create table platform_settings(id text,key text,value jsonb,updated_at timestamptz);
@@ -35,6 +38,7 @@ test('migration 037 commits admission once, preserves scope/quotas, and fences p
     const scoped = await migration('034_focused_audits.sql');
     await db.exec(scoped.slice(scoped.indexOf('create or replace function public.admit_scoped_audit_submission('),scoped.indexOf('-- Preserve the old URL')));
     await db.exec(await migration('037_audit_preview_and_admission.sql'));
+    assert.equal((await db.query<any>("select api_schema_version from deployment_versions where component='database'")).rows[0].api_schema_version,16);
     const user = randomUUID(), other = randomUUID();
     await db.query(`insert into user_profiles(id,plan) values($1,'paid'),($2,'free')`,[user,other]);
     const scope = { version: 1, focus: 'security', coverage: 'page', checkGroups: ['security'] };
