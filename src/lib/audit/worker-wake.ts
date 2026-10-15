@@ -1,4 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
+import { API_SCHEMA_VERSION, AUDIT_ENGINE_VERSION, CHECK_REGISTRY_VERSION, SCORING_VERSION } from '../platform/version';
 
 export function validControlBearer(header: string | undefined, secret: string | undefined): boolean {
   if (!secret || secret.length < 32 || !header?.startsWith('Bearer ')) return false;
@@ -22,6 +23,41 @@ export function allowedWorkerControlUrl(value: string | undefined, kind: 'render
 
 const pending = new Map<string, Promise<void>>();
 const lastAttempt = new Map<string, number>();
+const secondaryCapabilities = new Map<string, { at: number; compatible: boolean }>();
+
+export function compatibleSecondaryCapability(value: unknown): boolean {
+  const item = value as Record<string, unknown> | null;
+  return Boolean(item && item.service === 'crawlio-secondary-audit' && item.executorType === 'cloudflare'
+    && item.status === 'configured' && item.queueConsumer === true && item.apiSchemaVersion === API_SCHEMA_VERSION
+    && item.processingVersion === 2 && item.auditScopeVersion === 1 && item.auditEngineVersion === AUDIT_ENGINE_VERSION
+    && item.scoringVersion === SCORING_VERSION && item.checkRegistryVersion === CHECK_REGISTRY_VERSION);
+}
+
+export async function verifySecondaryWakeCapability(url: string, fetcher: typeof fetch): Promise<boolean> {
+  const cached = secondaryCapabilities.get(url);
+  if (cached && Date.now() - cached.at < 60_000) return cached.compatible;
+  const response = await fetcher(new URL('/capability', url), { redirect: 'error', signal: AbortSignal.timeout(2_000) });
+  if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) { await response.body?.cancel(); return false; }
+  if (Number(response.headers.get('content-length') || 0) > 16_384) { await response.body?.cancel(); return false; }
+  const reader = response.body?.getReader();
+  if (!reader) return false;
+  const decoder = new TextDecoder();
+  let text = '', bytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > 16_384) { await reader.cancel(); return false; }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+  } finally { reader.releaseLock(); }
+  const compatible = compatibleSecondaryCapability(JSON.parse(text));
+  if (secondaryCapabilities.size > 10) secondaryCapabilities.clear();
+  secondaryCapabilities.set(url, { at: Date.now(), compatible });
+  return compatible;
+}
 
 export async function wakeConfiguredWorkers(fetcher: typeof fetch = fetch): Promise<void> {
   const configs = [
@@ -32,10 +68,15 @@ export async function wakeConfiguredWorkers(fetcher: typeof fetch = fetch): Prom
     const url = allowedWorkerControlUrl(config.url, config.kind);
     if (!url || !config.secret || config.secret.length < 32) return;
     if (pending.has(url)) return pending.get(url);
-    if (Date.now() - (lastAttempt.get(url) || 0) < 2_000) return;
+    const elapsed = Date.now() - (lastAttempt.get(url) || 0);
+    if (elapsed >= 0 && elapsed < 2_000) return;
     lastAttempt.set(url, Date.now());
     const operation = (async () => {
       try {
+        if (config.kind === 'cloudflare' && !await verifySecondaryWakeCapability(url, fetcher)) {
+          console.warn(JSON.stringify({ event: 'audit_worker_wake_incompatible', executor: config.kind }));
+          return;
+        }
         const response = await fetcher(url, { method: 'POST', redirect: 'error',
           headers: { authorization: `Bearer ${config.secret}` }, signal: AbortSignal.timeout(3_000) });
         await response.body?.cancel();

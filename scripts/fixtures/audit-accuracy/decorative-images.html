@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <title>Decorative images and named control reference</title>
+  <meta name="description" content="A local negative-control fixture distinguishing decorative image alternatives and accessible names from missing attributes and labels.">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="canonical" href="https://audit-accuracy.invalid/decorative-images">
+</head>
+<body>
+  <main>
+    <h1>Decorative images and named controls</h1>
+    <p>Empty and whitespace-only image alternatives are intentional decoration, not missing attributes. Link and button names can come from labels rather than visible text. Form labels may wrap a field, reference its identifier, or name it directly. Only absent JSON-LD is expected here.</p>
+    <img src="/divider.png" alt="">
+    <img src="/spacer.png" alt="   ">
+    <a href="/next" aria-label="Next page"></a>
+    <button type="button" aria-labelledby="save-label"></button><span id="save-label">Save changes</span>
+    <label>Search query<input type="search"></label>
+    <label for="email">Email address</label><input id="email" type="email">
+    <input aria-label="Postal code">
+    <input type="hidden" name="token">
+  </main>
+</body>
+</html>

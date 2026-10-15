@@ -122,6 +122,7 @@ export class SitePreviewCoordinator {
   private async cleanup(api: PreviewApi, force = false) {
     const due = await this.state.storage.get<number>('cleanupAt') ?? 0;
     if (!force && this.runtime.now() < due) return;
+    await api.rpc('cleanup_resource_evidence', {});
     const candidates = await api.rpc<unknown>('preview_storage_cleanup', {});
     if (!Array.isArray(candidates)) throw new PreviewFailure('INVALID_CLEANUP_RESPONSE');
     for (const candidate of candidates.slice(0, 10)) {
@@ -143,14 +144,14 @@ export class SitePreviewCoordinator {
     await this.recoverUploadIntent(api);
     await this.drainDeletions(api);
     if ((await this.state.storage.get<string[]>('deletions'))?.length) return;
-    if (await this.state.storage.get('browserSafetyBlocked')) { await this.cleanup(api, true); return; }
+    if (await this.state.storage.get('browserSafetyBlocked')) { await this.cleanup(api); return; }
     const nextBrowserAt = await this.state.storage.get<number>('nextBrowserAt') ?? 0;
     if (this.runtime.now() < nextBrowserAt) {
       await this.state.storage.setAlarm(nextBrowserAt);
       return;
     }
     const job = await api.claim();
-    if (job === null) { await this.cleanup(api, true); return; }
+    if (job === null) { await this.cleanup(api); return; }
     await this.state.storage.delete('lastFailure');
     await this.state.storage.delete('lastFailureDetail');
     if (!job || typeof job.target_url !== 'string') throw new PreviewFailure('INVALID_CLAIM');

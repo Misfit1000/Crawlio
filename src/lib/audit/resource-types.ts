@@ -100,6 +100,7 @@ export interface ResourceAuditDocument {
   createdAt: string;
   updatedAt: string;
   startedAt: string | null;
+  firstPageAt?: string | null;
   completedAt: string | null;
   expiresAt: string;
   cancelledAt: string | null;

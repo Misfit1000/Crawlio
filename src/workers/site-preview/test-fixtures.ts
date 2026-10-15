@@ -113,12 +113,13 @@ export class Fixture {
     this.calls.push({ url, init, body });
     if (url.origin === 'https://control.example.com') return this.proxy(body);
     assert.equal(url.origin, this.env.SUPABASE_URL, 'worker fetch must never contact the target');
-    if (url.pathname.endsWith('/claim_site_preview')) return jsonResponse(this.job);
+    if (url.pathname.endsWith('/claim_site_preview_prioritized')) return jsonResponse(this.job);
     if (url.pathname.endsWith('/complete_site_preview')) {
       if (this.completeFails) throw new Error('outage');
       return jsonResponse(this.complete);
     }
     if (url.pathname.endsWith('/preview_storage_cleanup')) return jsonResponse(this.cleanup);
+    if (url.pathname.endsWith('/cleanup_resource_evidence')) return jsonResponse({ evidence: 0 });
     if (url.pathname.endsWith('/finish_preview_cleanup')) return jsonResponse(true);
     if (url.pathname === '/rest/v1/site_preview_captures') return jsonResponse(this.current);
     if (init.method === 'DELETE') return jsonResponse({}, this.deleteFails ? 503 : 200);

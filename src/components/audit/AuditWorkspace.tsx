@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3, CheckCircle2, Clock3, Copy, FileDown, Loader2, RefreshCw, Wrench } from 'lucide-react';
 import { NavLink } from '../../app/router';
 import { auditWorkspacePath, type AuditWorkspaceSection } from '../../app/routes';
@@ -44,18 +44,19 @@ const reportSectionForRoute: Partial<Record<AuditWorkspaceSection, ReturnType<ty
 function modeLabel(mode: AuditMode) { return mode === 'deep' ? 'Deep audit' : mode === 'standard' ? 'Standard audit' : 'Quick audit'; }
 function auditStatusLabel(status: string) { return status === 'queued' ? 'Waiting to start' : status === 'running' ? 'Checking your site' : status.replace(/_/g, ' '); }
 
-function ComparisonPanel() {
+function ComparisonPanel({ comparison, onComparisonChange }: { comparison: AuditComparison | null; onComparisonChange: (value: AuditComparison | null) => void }) {
   const { auditId, data } = useAuditWorkspace();
   const [history, setHistory] = useState<AuditHistoryPage | null>(null);
   const [baselineId, setBaselineId] = useState('');
-  const [comparison, setComparison] = useState<AuditComparison | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const comparisonRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => comparisonRequest.current?.abort(), [auditId]);
   const hostname = data.audit?.hostname;
 
   useEffect(() => {
     let active = true;
-    setHistory(null); setComparison(null); setBaselineId('');
+    setHistory(null); setBaselineId('');
     if (!hostname) return;
     getAuditAccessHeaders()
       .then((headers) => safeJsonFetch<any>(`${API_ROUTES.auditHistory}?hostname=${encodeURIComponent(hostname)}&limit=50`, { headers }))
@@ -73,16 +74,21 @@ function ComparisonPanel() {
   const compare = async () => {
     if (!baselineId || !data.audit || !history?.items.some(item => item.audit.id === baselineId && auditScopesComparable(data.audit!, item.audit))) return;
     setLoading(true);
-    setComparison(null);
+    onComparisonChange(null);
     setError(null);
+    comparisonRequest.current?.abort();
+    const controller = new AbortController();
+    comparisonRequest.current = controller;
     try {
-      const response = await safeJsonFetch<any>(API_ROUTES.auditCompare(auditId, baselineId), { headers: await getAuditAccessHeaders() });
+      const response = await safeJsonFetch<any>(API_ROUTES.auditCompare(auditId, baselineId), { headers: await getAuditAccessHeaders(), signal: controller.signal });
+      if (controller.signal.aborted) return;
       if (!response.success) throw new Error((response as any).error || 'Comparison failed.');
-      setComparison((response.data.data || response.data) as AuditComparison);
+      onComparisonChange((response.data.data || response.data) as AuditComparison);
     } catch (comparisonError) {
+      if (controller.signal.aborted) return;
       setError(comparisonError instanceof Error ? comparisonError.message : 'The audit comparison could not be loaded.');
     } finally {
-      setLoading(false);
+      if (comparisonRequest.current === controller) { comparisonRequest.current = null; setLoading(false); }
     }
   };
 
@@ -114,6 +120,8 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
   const workflow = useFindingWorkflow(auditId, data.latestIssues);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [selectedPage, setSelectedPage] = useState<ResourceAuditPage | null>(null);
+  const [comparison, setComparison] = useState<AuditComparison | null>(null);
+  useEffect(() => setComparison(null), [auditId]);
   const closePage = useCallback(() => setSelectedPage(null), []);
   const viewFindings = useCallback(() => modes.setMode('findings'), [modes.setMode]);
   const liveScore = useMemo(() => audit ? getAuditLiveScore({ audit, events: data.latestEvents, finalReport: data.finalReport }) : null, [audit, data.latestEvents, data.finalReport]);
@@ -147,7 +155,7 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
   if (loading && !audit) return <SurfaceCard className="flex items-center gap-3 p-5"><Loader2 className="h-5 w-5 animate-spin text-accent" />Loading stored audit evidence...</SurfaceCard>;
   if (error && !audit) return <SurfaceCard className="p-5"><Notice tone="danger" title="Audit unavailable">{customerSafeDiagnosticText(error) || 'The stored audit could not be loaded.'}</Notice><div className="mt-4 flex flex-wrap gap-2"><button type="button" className="trust-button" onClick={() => void refresh().catch(() => undefined)}><RefreshCw className="h-4 w-4" />Try again</button><NavLink className="quiet-button" to="/app/audits/history">Audit history</NavLink></div></SurfaceCard>;
   if (!audit) return <EmptyState icon={FileDown} title="Audit not found" description="This audit is unavailable or your account does not have access." />;
-  const workflowProps = { scope: audit.scope, statuses: workflow.statuses, onStatusChange: updateChecklist, workflowRecords: workflow.records, workflowStorage: workflow.storage, workflowError: workflow.error, savingKeys: workflow.savingKeys, onWorkflowSave: workflow.update };
+  const workflowProps = { scope: audit.scope, comparison, statuses: workflow.statuses, onStatusChange: updateChecklist, workflowRecords: workflow.records, workflowStorage: workflow.storage, workflowError: workflow.error, savingKeys: workflow.savingKeys, onWorkflowSave: workflow.update };
   const unavailableChecks = Array.isArray(scoreRecord?.unavailableChecks) ? scoreRecord.unavailableChecks.length : liveScore?.unavailableCount;
   const included = scopeIncludesSection(audit.scope, section);
   const statusTone = isCompletedAuditStatus(audit.status) ? audit.status === 'completed_with_warnings' ? 'warning' : 'success' : audit.status === 'failed' ? 'danger' : 'accent';
@@ -171,9 +179,9 @@ function AuditWorkspaceContent({ section, onRerun }: { section: AuditWorkspaceSe
     {included && (terminal ? <AuditExecutiveSummary audit={audit} score={scores.overall} scoreState={liveScore?.scoreState} scoreDetail={liveScore?.scoreState === 'provisional' ? 'Partial evidence, from analysed pages so far' : 'Stored deterministic score'} categoryScores={categoryScores} unavailableChecks={unavailableChecks} onViewFindings={viewFindings} showFactors={false} /> : liveScore && <AuditLiveSummary audit={audit} score={liveScore} heading={customerSafeDiagnosticText(audit.currentPhase) || undefined} message={customerSafeDiagnosticText(audit.currentCheck) || undefined} connection={connection} />)}
     <AuditWorkspaceModes mode={modes.mode} pathFor={modes.pathFor} categories={categoryRoutes} selectedCategory={categoryRoutes.find(item => item.path === auditWorkspacePath(auditId, section))?.path} />
     {!included && <AuditScopeNotIncluded />}
+    {included && isCompletedAuditStatus(audit.status) && (modes.mode === 'overview' || modes.mode === 'findings') && <ComparisonPanel comparison={comparison} onComparisonChange={setComparison} />}
     {included && modes.mode === 'overview' && <>
       {terminal ? <><AuditScoreFactors categoryScores={categoryScores} /><AuditOverview data={data} onViewFindings={viewFindings} /></> : <><AuditLiveEvidence data={data} categoryScores={categoryScores} target={data.latestEvents.at(-1)?.currentUrl || data.latestPages.at(-1)?.url} onViewFindings={viewFindings} onViewActivity={() => modes.setMode('activity')} /><AuditOverview data={data} onViewFindings={viewFindings} showMap={false} showRecommendations={false} /></>}
-      <ComparisonPanel />
       {data.finalReport?.scores?.scoringVersion && <p className="text-xs text-muted-foreground">Scoring model {String(data.finalReport.scores.scoringVersion)}. Historical scores are preserved.</p>}
     </>}
     {included && modes.mode === 'findings' && <>

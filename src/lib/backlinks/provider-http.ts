@@ -1,6 +1,6 @@
 import './server-only';
 
-const PROVIDER_TIMEOUT_MS = 6_000;
+export const PROVIDER_TIMEOUT_MS = 6_000;
 export const MAX_RANK_RESPONSE_BYTES = 256 * 1024;
 
 export async function boundedResponseText(response: Response, maximumBytes: number) {

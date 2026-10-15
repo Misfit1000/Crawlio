@@ -38,6 +38,7 @@ export interface ActionResult {
 }
 export interface AdminSearchResults { users: AdminRecord[]; audits: AdminRecord[]; schedules: AdminRecord[] }
 export interface AdminResources {
+  capacity?: import('../operations/capacity-types').CapacitySnapshot;
   observedAt: string; relations: Array<{ name: string; bytes: number; approximateRows: number | null; oldestAt: string | null; retentionDays: number | null; retentionDescription?: string; automaticCleanup?: boolean }>;
   quotaAvailability: 'provider-dashboard-only';
 }

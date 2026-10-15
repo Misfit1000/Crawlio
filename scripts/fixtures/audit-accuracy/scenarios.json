@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "labelledChecks": {
+    "missing-title": "on-page",
+    "missing-meta-desc": "on-page",
+    "missing-h1": "on-page",
+    "missing-alt-text": "images",
+    "missing-canonical": "indexability",
+    "relative-canonical": "indexability",
+    "meta-noindex": "indexability",
+    "json-ld-missing": "schema",
+    "invalid-json-ld": "schema",
+    "a11y-document-language": "accessibility",
+    "a11y-unnamed-links": "accessibility",
+    "a11y-unnamed-buttons": "accessibility",
+    "a11y-unlabeled-fields": "accessibility",
+    "a11y-missing-main-landmark": "accessibility",
+    "a11y-duplicate-ids": "accessibility",
+    "a11y-broken-aria-references": "accessibility",
+    "a11y-positive-tabindex": "accessibility",
+    "a11y-hidden-focusable": "accessibility",
+    "a11y-zoom-restricted": "accessibility",
+    "javascript-shell-limited-evidence": "accessibility"
+  },
+  "scenarios": [
+    {
+      "id": "healthy",
+      "file": "healthy.html",
+      "groups": ["seo", "crawlability", "structured-data", "accessibility"],
+      "coverage": "site",
+      "expectedModules": ["images", "indexability", "international", "local", "robots", "schema", "sitemap", "social", "on-page", "content", "accessibility"],
+      "present": [],
+      "absent": ["missing-title", "missing-meta-desc", "missing-h1", "missing-alt-text", "missing-canonical", "relative-canonical", "meta-noindex", "json-ld-missing", "invalid-json-ld", "a11y-document-language", "a11y-unnamed-links", "a11y-unnamed-buttons", "a11y-unlabeled-fields", "a11y-missing-main-landmark", "a11y-duplicate-ids", "a11y-broken-aria-references", "a11y-positive-tabindex", "a11y-hidden-focusable", "a11y-zoom-restricted", "javascript-shell-limited-evidence"],
+      "suppressedPresent": [],
+      "retainedEvidence": ["internalLinks", "externalLinks", "imageCount", "jsonLd", "accessibility"],
+      "omittedEvidence": ["insecureResourceUrls", "insecureFormActionUrls", "topKeywords", "topPhrases"]
+    },
+    {
+      "id": "seo-defects",
+      "file": "seo-defects.html",
+      "groups": ["seo"],
+      "coverage": "page",
+      "expectedModules": ["images", "international", "local", "on-page", "content"],
+      "present": ["missing-title", "missing-meta-desc", "missing-h1", "missing-alt-text"],
+      "absent": ["missing-canonical", "relative-canonical", "meta-noindex", "json-ld-missing", "invalid-json-ld", "a11y-document-language", "a11y-unnamed-links", "a11y-unnamed-buttons", "a11y-unlabeled-fields", "a11y-missing-main-landmark", "a11y-duplicate-ids", "a11y-broken-aria-references", "a11y-positive-tabindex", "a11y-hidden-focusable", "a11y-zoom-restricted", "javascript-shell-limited-evidence"],
+      "suppressedPresent": ["missing-canonical", "meta-noindex", "invalid-json-ld", "a11y-unnamed-buttons"],
+      "retainedEvidence": ["imageCount", "imagesWithoutAlt"],
+      "omittedEvidence": ["internalLinks", "externalLinks", "jsonLd", "accessibility", "insecureResourceUrls", "insecureFormActionUrls", "topKeywords", "topPhrases"]
+    },
+    {
+      "id": "crawlability-defects",
+      "file": "crawlability-defects.html",
+      "groups": ["crawlability"],
+      "coverage": "page",
+      "expectedModules": ["indexability", "robots", "sitemap"],
+      "present": ["relative-canonical", "meta-noindex"],
+      "absent": ["missing-title", "missing-meta-desc", "missing-h1", "missing-alt-text", "missing-canonical", "json-ld-missing", "invalid-json-ld", "a11y-document-language", "a11y-unnamed-links", "a11y-unnamed-buttons", "a11y-unlabeled-fields", "a11y-missing-main-landmark", "a11y-duplicate-ids", "a11y-broken-aria-references", "a11y-positive-tabindex", "a11y-hidden-focusable", "a11y-zoom-restricted", "javascript-shell-limited-evidence"],
+      "suppressedPresent": ["missing-meta-desc", "missing-alt-text", "json-ld-missing", "a11y-unnamed-buttons"],
+      "retainedEvidence": ["canonical", "canonicalRaw", "metaRobots"],
+      "omittedEvidence": ["internalLinks", "externalLinks", "imageCount", "imagesWithoutAlt", "jsonLd", "accessibility", "insecureResourceUrls", "insecureFormActionUrls", "topKeywords", "topPhrases"]
+    },
+    {
+      "id": "schema-defects",
+      "file": "schema-defects.html",
+      "groups": ["structured-data"],
+      "coverage": "page",
+      "expectedModules": ["schema", "social"],
+      "present": ["invalid-json-ld"],
+      "absent": ["missing-title", "missing-meta-desc", "missing-h1", "missing-alt-text", "missing-canonical", "relative-canonical", "meta-noindex", "json-ld-missing", "a11y-document-language", "a11y-unnamed-links", "a11y-unnamed-buttons", "a11y-unlabeled-fields", "a11y-missing-main-landmark", "a11y-duplicate-ids", "a11y-broken-aria-references", "a11y-positive-tabindex", "a11y-hidden-focusable", "a11y-zoom-restricted", "javascript-shell-limited-evidence"],
+      "suppressedPresent": ["missing-title", "missing-meta-desc", "missing-alt-text", "a11y-unnamed-buttons"],
+      "retainedEvidence": ["jsonLd"],
+      "omittedEvidence": ["internalLinks", "externalLinks", "imageCount", "imagesWithoutAlt", "accessibility", "insecureResourceUrls", "insecureFormActionUrls", "topKeywords", "topPhrases"]
+    },
+    {
+      "id": "accessibility-defects",
+      "file": "accessibility-defects.html",
+      "groups": ["accessibility"],
+      "coverage": "page",
+      "expectedModules": ["accessibility"],
+      "present": ["a11y-document-language", "a11y-unnamed-links", "a11y-unnamed-buttons", "a11y-unlabeled-fields", "a11y-missing-main-landmark", "a11y-duplicate-ids", "a11y-broken-aria-references", "a11y-positive-tabindex", "a11y-hidden-focusable", "a11y-zoom-restricted", "javascript-shell-limited-evidence"],
+      "absent": ["missing-title", "missing-meta-desc", "missing-h1", "missing-alt-text", "missing-canonical", "relative-canonical", "meta-noindex", "json-ld-missing", "invalid-json-ld"],
+      "suppressedPresent": ["missing-title", "missing-meta-desc", "missing-h1", "missing-alt-text", "missing-canonical", "meta-noindex", "invalid-json-ld"],
+      "retainedEvidence": ["accessibility", "likelyJavascriptShell"],
+      "omittedEvidence": ["internalLinks", "externalLinks", "imageCount", "imagesWithoutAlt", "jsonLd", "insecureResourceUrls", "insecureFormActionUrls", "topKeywords", "topPhrases"]
+    },
+    {
+      "id": "decorative-images",
+      "file": "decorative-images.html",
+      "groups": ["seo", "crawlability", "structured-data", "accessibility"],
+      "coverage": "page",
+      "expectedModules": ["images", "indexability", "international", "local", "robots", "schema", "sitemap", "social", "on-page", "content", "accessibility"],
+      "present": ["json-ld-missing"],
+      "absent": ["missing-title", "missing-meta-desc", "missing-h1", "missing-alt-text", "missing-canonical", "relative-canonical", "meta-noindex", "invalid-json-ld", "a11y-document-language", "a11y-unnamed-links", "a11y-unnamed-buttons", "a11y-unlabeled-fields", "a11y-missing-main-landmark", "a11y-duplicate-ids", "a11y-broken-aria-references", "a11y-positive-tabindex", "a11y-hidden-focusable", "a11y-zoom-restricted", "javascript-shell-limited-evidence"],
+      "suppressedPresent": [],
+      "retainedEvidence": ["imageCount", "imagesWithoutAlt", "imagesWithEmptyAlt", "jsonLd", "accessibility"],
+      "omittedEvidence": ["internalLinks", "externalLinks", "insecureResourceUrls", "insecureFormActionUrls", "topKeywords", "topPhrases"]
+    }
+  ]
+}

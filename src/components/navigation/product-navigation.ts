@@ -41,7 +41,7 @@ export function clientNavigationPath(tab: TabType, pathname: string, search: str
   return path === pathname.replace(/\/$/, '') || audit && section ? `${path}${search}${hash}` : path;
 }
 
-export type AdminSection = 'overview' | 'users' | 'audits' | 'queue' | 'workers' | 'diagnostics' | 'settings' | 'plans' | 'blog';
+export type AdminSection = 'overview' | 'users' | 'audits' | 'queue' | 'workers' | 'diagnostics' | 'resources' | 'settings' | 'plans' | 'blog';
 export interface AdminNavigationSection { id: AdminSection; label: string; path: string }
 export interface AdminNavigationGroup {
   label: string;
@@ -58,6 +58,7 @@ export const adminNavigation: AdminNavigationGroup[] = [
     { id: 'queue', label: 'Queue', path: '/admin/queue' },
     { id: 'workers', label: 'Workers', path: '/admin/workers' },
     { id: 'diagnostics', label: 'Diagnostics', path: '/admin/diagnostics' },
+    { id: 'resources', label: 'Resources and speed', path: '/admin/resources' },
   ] },
   { label: 'Settings', icon: Settings, sections: [
     { id: 'settings', label: 'Platform settings', path: '/admin/settings' },

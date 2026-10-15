@@ -2,8 +2,9 @@ import './server-only';
 import { load } from 'cheerio';
 import { EVIDENCE_FRESH_MS, EVIDENCE_STALE_MS, makeEvidenceCacheRow, readEvidenceCacheRow, supabaseDomainEvidenceCache, type DomainEvidenceCacheStore, type DomainEvidencePayload } from './domain-evidence-cache';
 import { fetchOpenPageRank } from './open-page-rank';
+import { evidenceRefreshOwner, supabaseEvidenceRefreshCoordinator, type EvidenceRefreshCoordinator } from './refresh-coordinator';
 import { allowlistMajestic, allowlistOpenPageRank, allowlistTranco, emptyOpenPageRank, normalizeEvidenceDomain, parseTrancoEvidence } from './provider-evidence';
-import { boundedResponseText, fetchProviderJson } from './provider-http';
+import { boundedResponseText, fetchProviderJson, PROVIDER_TIMEOUT_MS } from './provider-http';
 import type { MajesticEvidence, OpenPageRankEvidence, ProviderEvidenceSummary, PublicLinkSignals, TrancoEvidence } from './types';
 
 const LINK_PROVIDER_ORIGIN = 'https://majestic.com';
@@ -82,15 +83,20 @@ let rankProviderQueue: Promise<void> = Promise.resolve();
 let lastRankProviderRequestAt = 0;
 
 async function fetchWebRankSnapshot(domain: string) {
+  const deadline = Date.now() + 15_000;
   const request = rankProviderQueue.catch(() => undefined).then(async () => {
     const delay = Math.max(0, RANK_PROVIDER_INTERVAL_MS - (Date.now() - lastRankProviderRequestAt));
+    if (Date.now() + delay + PROVIDER_TIMEOUT_MS >= deadline) throw new Error('Rank provider queue is busy.');
     if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+    if (Date.now() + PROVIDER_TIMEOUT_MS >= deadline) throw new Error('Rank provider queue timed out.');
     lastRankProviderRequestAt = Date.now();
     const url = new URL(`/api/ranks/domain/${encodeURIComponent(domain)}`, RANK_PROVIDER_ORIGIN);
     return parseTrancoEvidence(await fetchProviderJson(url.toString()), domain);
   });
   rankProviderQueue = request.then(() => undefined, () => undefined);
-  return request;
+  let timer: ReturnType<typeof setTimeout>;
+  try { return await Promise.race([request, new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new Error('Rank provider queue timed out.')), 15_000); })]); }
+  finally { clearTimeout(timer!); }
 }
 
 function summary(evidence: ProviderEvidenceSummary): ProviderEvidenceSummary {
@@ -136,6 +142,7 @@ function publicSignals(domain: string, opr: OpenPageRankEvidence, tranco: Tranco
 
 interface DomainEvidenceServiceOptions {
   store?: DomainEvidenceCacheStore;
+  coordinator?: EvidenceRefreshCoordinator;
   now?: () => number;
   apiKey?: () => string | undefined;
   openPageRank?: (domain: string, key: string) => Promise<OpenPageRankEvidence>;
@@ -149,6 +156,7 @@ export function createDomainEvidenceService(options: DomainEvidenceServiceOption
   const store = options.store ?? supabaseDomainEvidenceCache;
   const now = options.now ?? Date.now;
   const apiKey = options.apiKey ?? (() => process.env.OPEN_PAGE_RANK_API_KEY);
+  const coordinator = options.coordinator ?? (options.store ? undefined : supabaseEvidenceRefreshCoordinator);
   const memory = new Map<string, { payload: DomainEvidencePayload; response: PublicLinkSignals; retryUntil: number; configured: boolean }>();
   const inFlight = new Map<string, Promise<PublicLinkSignals>>();
 
@@ -159,13 +167,27 @@ export function createDomainEvidenceService(options: DomainEvidenceServiceOption
       try { payload = readEvidenceCacheRow(await store.read(domain), domain, at) ?? { version: 1 }; }
       catch { payload = { version: 1 }; }
     }
+    let claim: Awaited<ReturnType<EvidenceRefreshCoordinator['claim']>> | undefined;
+    let refreshAvailability: PublicLinkSignals['refreshAvailability'];
+    const owner = evidenceRefreshOwner();
+    const sourceFresh = (source?: ProviderEvidenceSummary) => source?.fetchedAt != null && Date.parse(source.fetchedAt) + EVIDENCE_FRESH_MS > at;
+    const needsRefresh = !sourceFresh(payload.tranco) || !sourceFresh(payload.majestic) || Boolean(key && !sourceFresh(payload.openPageRank));
+    if (coordinator && needsRefresh) {
+      try {
+        claim = await coordinator.claim(domain, owner, Boolean(key));
+        payload = readEvidenceCacheRow(claim.cache, domain, at) ?? payload;
+        refreshAvailability = claim.reason ?? (claim.state === 'busy' || claim.state === 'cooldown' ? 'refresh_in_progress' : undefined);
+      } catch { refreshAvailability = 'coordination_unavailable'; }
+    }
+    const canRefresh = !coordinator || !needsRefresh || claim?.state === 'claimed';
     const fresh = (evidence?: ProviderEvidenceSummary) => evidence?.fetchedAt != null && Date.parse(evidence.fetchedAt) + EVIDENCE_FRESH_MS > at;
     const usableStale = (evidence?: ProviderEvidenceSummary) => evidence?.fetchedAt != null && Date.parse(evidence.fetchedAt) + EVIDENCE_STALE_MS > now();
     const results = await Promise.allSettled([
       !key ? Promise.resolve(emptyOpenPageRank(domain, 'not_configured')) : fresh(payload.openPageRank)
-        ? Promise.resolve(payload.openPageRank!) : (options.openPageRank ?? fetchOpenPageRank)(domain, key).then(value => allowlistOpenPageRank(value, domain)),
-      fresh(payload.tranco) ? Promise.resolve(payload.tranco!) : (options.tranco ?? fetchWebRankSnapshot)(domain).then(value => allowlistTranco(value, domain)),
-      fresh(payload.majestic) ? Promise.resolve(payload.majestic!) : (options.majestic ?? fetchMajesticEvidence)(domain).then(value=>allowlistMajestic(value,domain)),
+        ? Promise.resolve(payload.openPageRank!) : canRefresh && (!coordinator || claim?.openPageRankAllowed)
+          ? (options.openPageRank ?? fetchOpenPageRank)(domain, key).then(value => allowlistOpenPageRank(value, domain)) : Promise.reject(new Error('Provider refresh deferred.')),
+      fresh(payload.tranco) ? Promise.resolve(payload.tranco!) : canRefresh ? (options.tranco ?? fetchWebRankSnapshot)(domain).then(value => allowlistTranco(value, domain)) : Promise.reject(new Error('Provider refresh deferred.')),
+      fresh(payload.majestic) ? Promise.resolve(payload.majestic!) : canRefresh ? (options.majestic ?? fetchMajesticEvidence)(domain).then(value=>allowlistMajestic(value,domain)) : Promise.reject(new Error('Provider refresh deferred.')),
     ]);
     const [oprResult, rankResult, majesticResult] = results;
     const opr: OpenPageRankEvidence = oprResult.status === 'fulfilled' ? oprResult.value
@@ -184,15 +206,20 @@ export function createDomainEvidenceService(options: DomainEvidenceServiceOption
     if (rankResult.status === 'fulfilled') next.tranco = tranco;
     else if (usableStale(payload.tranco)) next.tranco = payload.tranco;
     const row = makeEvidenceCacheRow(domain, next, now());
-    if (row && ((oprResult.status === 'fulfilled' && opr.fetchedAt !== payload.openPageRank?.fetchedAt)
+    const changed = (oprResult.status === 'fulfilled' && opr.fetchedAt !== payload.openPageRank?.fetchedAt)
       || (rankResult.status === 'fulfilled' && tranco.fetchedAt !== payload.tranco?.fetchedAt)
-      || (majesticResult.status === 'fulfilled' && majestic.fetchedAt !== payload.majestic?.fetchedAt))) {
+      || (majesticResult.status === 'fulfilled' && majestic.fetchedAt !== payload.majestic?.fetchedAt);
+    if (coordinator && claim?.state === 'claimed') {
+      try { await coordinator.finish(domain, owner, changed ? row : null, results.some(result => result.status === 'rejected') ? 60 : 0); }
+      catch { /* Fenced cache writes may fail without changing already measured evidence. */ }
+    } else if (!coordinator && row && changed) {
       try { await store.write(row); } catch { /* Provider evidence remains usable during cache outages. */ }
     }
     const response = publicSignals(domain, opr, tranco, majestic, now());
+    if (refreshAvailability) response.refreshAvailability = refreshAvailability;
     memory.delete(domain);
     while (memory.size >= Math.max(1, options.maxCacheEntries ?? MAX_CACHE_ENTRIES)) memory.delete(memory.keys().next().value!);
-    memory.set(domain, { payload: row?.payload ?? { version: 1 }, response, retryUntil: now() + ERROR_RETRY_MS, configured: Boolean(key) });
+    memory.set(domain, { payload: row?.payload ?? { version: 1 }, response, retryUntil: now() + (refreshAvailability === 'refresh_in_progress' ? 5_000 : ERROR_RETRY_MS), configured: Boolean(key) });
     return response;
   }
 

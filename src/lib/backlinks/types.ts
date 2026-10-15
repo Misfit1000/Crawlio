@@ -57,6 +57,7 @@ export interface DomainSignalAttribution {
 }
 
 export interface PublicLinkSignals {
+  refreshAvailability?: 'monthly_budget' | 'minute_budget' | 'refresh_in_progress' | 'coordination_unavailable';
   domain: string;
   found: boolean;
   globalRank: number | null;

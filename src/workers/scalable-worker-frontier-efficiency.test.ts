@@ -3,7 +3,6 @@ import { test, type TestContext } from 'node:test';
 import { auditRepository, toAuditDocument, toAuditPage } from '../lib/supabase/audit-repository';
 import { frontierItem, type CrawlRun, type FrontierItem } from '../lib/supabase/scalable-audit-repository';
 import { SCORING_VERSION } from '../lib/platform/version';
-import { parseHtml } from '../lib/seo/html-parser';
 import { HostRequestScheduler } from './host-request-scheduler';
 import { runScalableSlice } from './scalable-audit-worker';
 
@@ -49,9 +48,9 @@ function fixture(context: TestContext, items: FrontierItem[]) {
     if (url.pathname.startsWith('/rest/v1/rpc/')) {
       const args = JSON.parse(await request.text());
       switch (url.pathname.split('/').at(-1)) {
-        case 'claim_scalable_audit':
+        case 'claim_efficient_scoped_audit':
           run.owner = args.p_worker;
-          return json({ audit: row, run });
+          return json({ audit: row, run, scoreGroups: [], pending: state.pending.length > 0 });
         case 'read_scalable_audit_frontier': {
           assert.equal(args.p_audit, audit.id);
           state.limits.push(args.p_limit);
@@ -69,7 +68,7 @@ function fixture(context: TestContext, items: FrontierItem[]) {
           }
           return json([]);
         }
-        case 'scalable_audit_commit': {
+        case 'scalable_audit_commit_efficient': {
           assert.equal(args.p_worker, run.owner);
           assert.equal(args.p_generation, 7);
           if (state.loseOwnership) return json({ message: 'AUDIT_OWNERSHIP_LOST' }, 400);
@@ -90,7 +89,7 @@ function fixture(context: TestContext, items: FrontierItem[]) {
             run.last_score_pages = run.analysed;
             run.last_score_at = payload.score.updatedAt;
           }
-          return json(run);
+          return json({ run, scoreGroups: [], pending: state.pending.length > 0 });
         }
         case 'scalable_audit_finish_slice':
           assert.equal(args.p_worker, run.owner);
@@ -118,11 +117,11 @@ function fixture(context: TestContext, items: FrontierItem[]) {
     await flush();
     state.inFlight--;
     if (url.endsWith('/robots.txt') || url.endsWith('/sitemap.xml')) {
-      return { status: 200, body: url.endsWith('/robots.txt') ? 'User-agent: *\nDisallow:\n' : '<urlset></urlset>', headers: {} };
+      return { finalUrl: url, status: 200, body: url.endsWith('/robots.txt') ? 'User-agent: *\nDisallow:\n' : '<urlset></urlset>', headers: {}, durationMs: 10, bodyBytes: 40, contentType: 'text/plain' };
     }
     const html = '<!doctype html><html lang="en"><head><title>Fixture page</title></head><body><h1>Fixture</h1><p>Measured content.</p></body></html>';
-    return { url, finalUrl: url, statusCode: 200, responseTimeMs: 10, pageSizeBytes: html.length,
-      headers: {}, contentType: 'text/html', html, parsed: parseHtml(html, url) };
+    return { finalUrl: url, status: 200, durationMs: 10, bodyBytes: html.length,
+      headers: {}, contentType: 'text/html', body: html };
   });
   return state;
 }
@@ -140,6 +139,7 @@ test('single-RPC selection preserves first-page score, two-item batches, stable 
   assert.equal(state.commits[firstScore].score.pagesAnalysed, 1);
   assert.equal(state.commits[firstScore - 1].items[0].key, root.key);
   assert.equal(state.commits[firstScore + 1].items[0].key, frontierItem(`${origin}/sitemap.xml`, 'sitemap').key);
+  assert.ok(state.commits.some(payload => payload.items?.length === 2));
   assert.equal(state.maxInFlight, 2);
   assert.equal(new Set(state.pages.map(page => page.id)).size, 3);
   assert.ok(state.pages.every(page => /^[a-f0-9]{40}$/.test(page.id)));

@@ -28,9 +28,9 @@ export async function wakePreviewWorker() {
   } catch { console.warn(JSON.stringify({ event: 'preview_wake_unconfirmed' })); }
 }
 
-export async function enqueueAuditPreview(audit: Pick<ResourceAuditDocument, 'id' | 'normalizedUrl'>, wake = true): Promise<void> {
+export async function enqueueAuditPreview(audit: Pick<ResourceAuditDocument, 'id' | 'normalizedUrl'>, wake = true, visible = false): Promise<void> {
   if (!previewsConfigured() || !previewTargetAllowed(audit.normalizedUrl)) return;
-  const { data, error } = await requireSupabaseAdminClient().rpc('request_audit_preview', { p_audit: audit.id });
+  const { data, error } = await requireSupabaseAdminClient().rpc(visible ? 'request_visible_audit_preview' : 'request_audit_preview', { p_audit: audit.id });
   if (error) { console.warn(JSON.stringify({ event: 'preview_queue_unavailable' })); return; }
   if (wake && (data?.status === 'queued' || data?.status === 'running')) await wakePreviewWorker();
 }

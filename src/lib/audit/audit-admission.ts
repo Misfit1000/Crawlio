@@ -22,7 +22,7 @@ export function projectAuditAdmission(audit: ResourceAuditDocument): AuditAdmiss
 }
 
 const STATUS_FIELDS = [...ADMISSION_FIELDS, 'presentationSummary', 'warningCount', 'failureCounts',
-  'usedHttpFallback', 'recoveryAttempts', 'lastRecoveredAt', 'checkpointPagesCrawled', 'checkpointUpdatedAt'] as const satisfies readonly (keyof ResourceAuditDocument)[];
+  'usedHttpFallback', 'recoveryAttempts', 'lastRecoveredAt', 'checkpointPagesCrawled', 'checkpointUpdatedAt', 'firstPageAt'] as const satisfies readonly (keyof ResourceAuditDocument)[];
 export type AuditStatusSummary = Pick<ResourceAuditDocument, typeof STATUS_FIELDS[number]>;
 export function projectAuditStatus(audit: ResourceAuditDocument): AuditStatusSummary {
   return Object.fromEntries(STATUS_FIELDS.map(key => [key, audit[key]])) as unknown as AuditStatusSummary;

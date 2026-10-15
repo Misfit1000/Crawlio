@@ -68,6 +68,10 @@ export function AuditLaunchProvider({ children }: { children: ReactNode }) {
     originPath.current = pathname;
     performance.mark('crawlio:audit-submit-click');
     setLaunch({ phase: 'submitting', url: normalized.normalizedUrl, mode: request.mode, scope });
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (current.signal.aborted || document.hidden) return;
+      performance.measure('crawlio:audit-feedback-frame', 'crawlio:audit-submit-click');
+    }));
     void loadLiveAuditScreen().catch(() => undefined);
     const timeout = window.setTimeout(() => current.abort('timeout'), 30_000);
     try {

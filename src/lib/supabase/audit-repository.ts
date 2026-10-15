@@ -33,7 +33,7 @@ const AUDIT_HISTORY_SUMMARY_SELECT = [
   'current_phase', 'current_url', 'current_check', 'page_limit', 'pages_discovered',
   'pages_crawled', 'checks_total', 'checks_completed', 'issues_found', 'critical_count',
   'high_count', 'medium_count', 'low_count', 'created_at', 'updated_at', 'started_at',
-  'completed_at', 'expires_at', 'cancelled_at', 'error', 'used_http_fallback',
+  'completed_at', 'first_page_at', 'expires_at', 'cancelled_at', 'error', 'used_http_fallback',
   'warning_count', 'failure_counts', 'archived_at', 'deleted_at', 'recovery_attempts',
   'last_recovered_at', 'checkpoint_pages_crawled', 'checkpoint_updated_at',
 ].join(',');
@@ -214,6 +214,7 @@ export function toAuditDocument(row: DbRow | null | undefined): ResourceAuditDoc
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     startedAt: row.started_at ?? null,
+    firstPageAt: row.first_page_at ?? null,
     completedAt: row.completed_at ?? null,
     expiresAt: row.expires_at,
     cancelledAt: row.cancelled_at ?? null,

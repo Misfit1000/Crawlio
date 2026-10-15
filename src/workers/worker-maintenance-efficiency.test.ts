@@ -92,6 +92,17 @@ test('failed maintenance attempts observe cadence and do not create a rapid retr
   assert.equal(calls, 2);
 });
 
+test('resource maintenance runs independently of expired exports at most every fifteen minutes', async () => {
+  let now=0, idle=true, calls=0;
+  const maintenance=createScalableExportMaintenance('worker',()=>idle,{
+    now:()=>now,runExport:async()=>false,cleanup:async()=>0,cleanupEvidence:async()=>{calls++;},
+  });
+  for(now=0;now<900_000;now+=4000) await maintenance.tick();
+  assert.equal(calls,1);
+  idle=false;now=900_000;await maintenance.tick();assert.equal(calls,1);
+  idle=true;await maintenance.tick();assert.equal(calls,2);
+});
+
 test('registration shares one in-flight write and keeps a per-worker 30-second attempt cadence', async context => {
   setup(context);
   let now = 0, writes = 0, fail = false;
@@ -169,13 +180,14 @@ test('export yield does not write errors or release a checkpoint during active a
     if (url.pathname.endsWith('/audit_export_jobs')) {
       return json(url.searchParams.get('select') === 'id' ? { id: job.id } : [{ ...job, state: 'queued', lease_until: null }]);
     }
+    if (url.pathname.endsWith('/audits')) return json({id:job.audit_id,status:'completed',normalized_url:'https://example.com/',page_limit:1});
     assert.equal(url.pathname, '/rest/v1/audit_pages');
     idle = false;
     return json([]);
   });
   assert.equal(await runScalableExportWorkerOnce('worker', () => idle), true);
   assert.equal(requests.filter(item => item.startsWith('PATCH')).length, 1, 'only the existing claim write is allowed');
-  assert.equal(requests.length, 4);
+  assert.equal(requests.length, 5, 'includes the authoritative terminal audit read');
 });
 
 test('cleanup does no work when busy and stops before storage removal if an audit starts', async context => {
@@ -201,7 +213,7 @@ test('cleanup does no work when busy and stops before storage removal if an audi
 test('main worker retains admission polling and never waits for background export maintenance', async () => {
   const source = await readFile(new URL('./audit-worker.ts', import.meta.url), 'utf8');
   assert.match(source, /auditAdmissionIdle = false;\s*const claimed = await runOneAudit/);
-  assert.match(source, /if \(!claimed\) \{\s*auditAdmissionIdle = true;\s*await wait\(config.pollIntervalMs\)/);
+  assert.match(source, /if \(!claimed\) \{\s*auditAdmissionIdle = true;\s*await idleWait.wait\(config.pollIntervalMs\)/);
   assert.match(source, /exportTask = maintenance.tick\(\)/);
   const pollingLoop = source.slice(source.indexOf('while (!shutdownRequested)'));
   assert.doesNotMatch(pollingLoop.slice(0, pollingLoop.indexOf('clearInterval(heartbeatTimer)')), /await exportTask|await maintenance/);

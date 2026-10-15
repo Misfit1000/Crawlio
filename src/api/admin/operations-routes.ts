@@ -8,6 +8,9 @@ import { classifyOperationalFailure, csvCell, presentAdminOperations, safeAdminA
 import { resolveSentryBuildConfiguration } from '../../lib/monitoring/sentry-build';
 import { durableRateLimit } from '../../lib/api/production-controls';
 import { searchConsoleConfigured } from '../../lib/search-console/server';
+import type { AdminResources } from '../../lib/admin/types';
+import type { CapacitySnapshot } from '../../lib/operations/capacity-types';
+import { allowedWorkerControlUrl } from '../../lib/audit/worker-wake';
 
 type AdminGuard = (req: Request, res: Response) => Promise<unknown>;
 type Actor = { userId: string };
@@ -17,6 +20,7 @@ const pendingSummaries = new Map<string, { expires: number; promise: Promise<Rec
 export async function operationRpc<T>(name: string, args: Record<string, unknown>): Promise<T> {
   const { data, error } = await requireSupabaseAdminClient().rpc(name, args);
   if (error) {
+    if (name === 'admin_capacity_snapshot') throw new ApiError('CAPACITY_UNAVAILABLE', /PGRST202|42883/.test(error.code || '') ? 'Apply migration 038 to enable resource and timing observations.' : 'Resource and timing observations are temporarily unavailable.', 503);
     const code = error.message.match(/\b(?:ADMIN_REQUIRED|USER_NOT_FOUND|AUDIT_NOT_FOUND|PLAN_NOT_FOUND|CONFIGURATION_NOT_FOUND|ADMIN_REASON_REQUIRED|ADMIN_REQUEST_CONFLICT|AUDIT_NOT_STALE|AUDIT_NOT_CANCELLABLE|AUDIT_NOT_RETRYABLE|INVALID_QUEUE_PRIORITY|LEGACY_PRIORITY_UNSUPPORTED|ACTIVE_RETRY_EXISTS|ACTIVE_AUDIT_EXISTS|ACCOUNT_DISABLED|AUDIT_MODE_DISABLED|SCALABLE_AUDIT_UNAVAILABLE|QUEUE_FULL|CONFIRMATION_REQUIRED|PREVIEW_EXPIRED|PREVIEW_CHANGED|SELF_ROLE_CHANGE_FORBIDDEN|LAST_ADMIN_PROTECTED|INVALID_ADMIN_UPDATE|UNSUPPORTED_ADMIN_ACTION|INVALID_RANGE)\b/)?.[0];
     if (code) throw new ApiError(code, code.toLowerCase().replace(/_/g, ' ') + '. Refresh the record and review the action.', code === 'ADMIN_REQUIRED' ? 403 : /NOT_FOUND/.test(code) ? 404 : 409);
     throw new ApiError('ADMIN_OPERATIONS_UNAVAILABLE', 'Operations are unavailable. Verify migration 028 and database connectivity.', 503);
@@ -201,7 +205,15 @@ export function createAdminOperationsRouter(requireAdmin: AdminGuard) {
     res.json({ success: true, data: { users: users.data, audits: audits.data, schedules: schedules.data } });
   }));
   router.get('/resources', endpoint(async (_req, res, actor) => {
-    res.json({ success: true, data: await operationRpc('admin_resource_inventory', { p_actor: actor.userId }) });
+    const [inventory, capacity] = await Promise.all([
+      operationRpc<AdminResources>('admin_resource_inventory', { p_actor: actor.userId }),
+      operationRpc<CapacitySnapshot>('admin_capacity_snapshot', { p_actor: actor.userId }),
+    ]);
+    capacity.configured = {
+      previews: process.env.SITE_PREVIEWS_ENABLED === 'true', openPageRank: Boolean(process.env.OPEN_PAGE_RANK_API_KEY?.trim()),
+      secondaryWake: Boolean(allowedWorkerControlUrl(process.env.SECONDARY_AUDIT_WORKER_URL, 'cloudflare') && (process.env.SECONDARY_AUDIT_CONTROL_SECRET?.length || 0) >= 32),
+    };
+    res.json({ success: true, data: { ...inventory, capacity } });
   }));
   router.post('/retention/preview', endpoint(async (_req, res, actor) => {
     res.json({ success: true, data: await operationRpc('admin_retention_preview', { p_actor: actor.userId }) });

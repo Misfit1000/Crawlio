@@ -24,7 +24,7 @@ export default {
       return json({
         enabled: config.checks.explicitlyEnabled, configured: config.ready, configuration: config.checks,
         operational, providerReachability: 'not_probed', browserGuards: 'required_and_installed_per_capture',
-        budgetAuthority: 'claim_site_preview', limits: CAPTURE_POLICY,
+        budgetAuthority: 'claim_site_preview_prioritized', limits: CAPTURE_POLICY,
       }, config.checks.explicitlyEnabled && (!config.ready || (operational as any)?.browserSafetyBlocked || (operational as any)?.state === 'unavailable') ? 503 : 200);
     }
     if (!['/control/wake', '/control/diagnostics'].includes(path) || request.method !== 'POST') return json({ error: 'not_found' }, 404);

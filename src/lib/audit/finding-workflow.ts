@@ -6,6 +6,16 @@ export const FINDING_PRIORITY_OVERRIDES = ['critical', 'high', 'medium', 'low', 
 export type FindingWorkflowStatus = typeof FINDING_WORKFLOW_STATUSES[number];
 export type FindingPriorityOverride = typeof FINDING_PRIORITY_OVERRIDES[number];
 
+export function findingWorkflowStatusLabel(status: FindingWorkflowStatus) {
+  return status === 'fixed' ? 'Marked fixed' : status.replace(/_/g, ' ');
+}
+
+export function findingWorkflowResolutionDetail(status: FindingWorkflowStatus) {
+  return status === 'fixed'
+    ? 'Marked fixed by a user or administrator. This is a workflow update, not audit-verified resolution. Run a comparable audit to check the change.'
+    : null;
+}
+
 export interface FindingWorkflowRecord {
   id: string;
   auditId: string;

@@ -2,7 +2,7 @@ import { Loader2,Settings } from 'lucide-react';
 import { useEffect,useRef,useState } from 'react';
 import type { ActionResult, AdminRecord } from '../../lib/admin/types';
 import { adminGet, adminPost, adminRecord } from './client';
-import AdminResources from './AdminResources';
+import { Link } from '../../app/router';
 import { ActionFeedback, DataNotice } from './operations-shared';
 import { Notice } from '../ui/page-system';
 import { useAdminActionReason } from './AdminActionDialog';
@@ -65,6 +65,6 @@ export default function AdminSettings() {
         <fieldset className="border-t border-border pt-6 md:col-span-2"><legend className="sr-only">Temporarily disabled audit types</legend><h3 className="text-sm font-semibold">Temporarily disabled audit types</h3><div className="mt-3 flex flex-wrap gap-6">{['quick', 'standard', 'deep'].map((mode) => { const disabled = Array.isArray(draft.value?.disabledAuditModes) && draft.value.disabledAuditModes.includes(mode); return <label key={mode} className="flex min-h-11 items-center gap-3 text-sm capitalize"><input type="checkbox" checked={disabled} onChange={(event) => { const current = Array.isArray(draft.value?.disabledAuditModes) ? draft.value.disabledAuditModes : []; const disabledAuditModes = event.target.checked ? [...new Set([...current, mode])] : current.filter((item: string) => item !== mode); setDraft({ ...draft, value: { ...(draft.value || {}), disabledAuditModes } }); }} className="h-4 w-4 accent-[var(--accent)]" />{mode}</label>; })}</div></fieldset>
       </fieldset>}
       <button type="button" onClick={save} disabled={saving || !settings.data} className="trust-button mt-5 min-h-11">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Settings className="h-4 w-4" />} Save settings</button>
-    </Panel><AdminResources /></div>
+    </Panel><Link to="/admin/resources" className="quiet-button min-h-11">Resources, audit speed, and data retention</Link></div>
   );
 }

@@ -7,6 +7,7 @@ import { useAdminData } from './useAdminData';
 import { adminGet, adminPost } from './client';
 import { ActionFeedback, DataNotice, timestamp } from './operations-shared';
 import { Empty, Loading, Panel } from './shared';
+import AdminCapacity from './AdminCapacity';
 
 function bytes(value: number) { return value < 1024 ? `${value} B` : value < 1024 ** 2 ? `${(value / 1024).toFixed(1)} KB` : value < 1024 ** 3 ? `${(value / 1024 ** 2).toFixed(1)} MB` : `${(value / 1024 ** 3).toFixed(2)} GB`; }
 export default function AdminResources() {
@@ -44,7 +45,7 @@ export default function AdminResources() {
     finally { busy.current = false; setPending(null); }
   };
   const expired = preview && Date.parse(preview.expiresAt) <= Date.now();
-  return <div className="space-y-10"><Panel title="Database resources" description="Relation sizes and approximate counts, not provider quotas." icon={Database}>
+  return <div className="space-y-10">{resources.data?.capacity && <AdminCapacity data={resources.data.capacity} />}<Panel title="Database resources" description="Relation sizes and approximate counts, not provider quotas." icon={Database}>
     <DataNotice {...resources} />
     <Notice tone="info">Storage allowance, bandwidth, and Realtime quota usage are available only in the provider dashboard. Relation sizes are not a quota estimate.</Notice>
     {resources.loading && !resources.data ? <Loading /> : resources.data?.relations.length ? <div className="mt-4 max-w-full overflow-x-auto"><table className="suite-table min-w-[660px] w-full"><caption className="sr-only">Database resource inventory observed {timestamp(resources.data.observedAt)}</caption><thead><tr>{['Relation', 'Size', 'Approx. rows', 'Oldest record', 'Retention'].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead><tbody>{resources.data.relations.map(row => <tr key={row.name}><th scope="row" className="break-all font-mono">{row.name}</th><td>{bytes(row.bytes)}</td><td>{row.approximateRows == null ? 'Unavailable' : row.approximateRows.toLocaleString()}</td><td>{timestamp(row.oldestAt)}</td><td className="max-w-xs"><div>{row.retentionDays == null ? 'No automatic cleanup' : `${row.retentionDays} days`}</div><details className="mt-2"><summary className="min-h-11 cursor-pointer text-xs font-semibold">Policy details<span className="sr-only"> for {row.name}</span></summary><p className="whitespace-normal break-words text-xs text-muted-foreground">{row.retentionDescription || (row.retentionDays == null ? 'Retained until deletion; no automatic cleanup policy.' : 'Automatic cleanup follows the recorded retention policy.')}</p></details></td></tr>)}</tbody></table></div> : <Empty text="No resource inventory available." />}

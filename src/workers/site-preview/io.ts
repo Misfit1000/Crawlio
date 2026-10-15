@@ -79,7 +79,7 @@ export class PreviewApi {
     return readJsonLimited(response, 128 * 1024) as Promise<T>;
   }
 
-  claim() { return this.rpc<CaptureClaim | null>('claim_site_preview', { p_worker: 'cloudflare-site-preview-global-v1' }); }
+  claim() { return this.rpc<CaptureClaim | null>('claim_site_preview_prioritized', { p_worker: 'cloudflare-site-preview-global-v1' }); }
   complete(job: CaptureClaim, result: CaptureResult) {
     return this.rpc<boolean>('complete_site_preview', { p_id: job.id, p_generation: job.generation, p_result: result });
   }

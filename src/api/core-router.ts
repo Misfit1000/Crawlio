@@ -289,6 +289,7 @@ apiRouter.get('/plans/public', asyncJsonRoute(async (req, res) => {
 }));
 
 async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'quick') {
+  const requestStarted = performance.now();
   const { url, mode = defaultMode, projectId = null } = req.body || {};
   let scope;
   try { scope = normalizeAuditScope(req.body?.scope, req.body?.type); }
@@ -324,8 +325,9 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
       accepted = await submitAtomicAudit(input);
     }
     if (!accepted.allowed) throw atomicAdmissionError(accepted);
+    const admissionMs = performance.now() - admissionStarted;
     res.setHeader('Cache-Control', 'private, no-store');
-    res.setHeader('Server-Timing', `auth;dur=${authMs.toFixed(1)}, admission;dur=${(performance.now()-admissionStarted).toFixed(1)}`);
+    res.setHeader('Server-Timing', `auth;dur=${authMs.toFixed(1)}, admission;dur=${admissionMs.toFixed(1)}`);
     const audit = accepted.audit;
     if (!audit && accepted.reusedExistingAudit && accepted.auditId) {
       // A legacy request may still be committing its reservation. Never poll the
@@ -333,9 +335,12 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
       return res.status(202).json({ success: true, data: { auditId: accepted.auditId, status: 'queued', reusedExistingAudit: true } });
     }
     if (!audit) throw new ApiError('AUDIT_ADMISSION_UNAVAILABLE', 'Audit startup could not be confirmed. Retry to reopen any accepted audit.', 503);
+    const responsePreparationMs = performance.now() - requestStarted;
     waitUntil(Promise.allSettled([
       wakeConfiguredWorkers(),
       import('../lib/preview/server').then(previews => previews.enqueueAuditPreview(audit)),
+      accepted.reusedExistingAudit ? Promise.resolve() : import('../lib/audit/launch-observations')
+        .then(observations => observations.recordAuditLaunchObservation(audit.id, authMs, admissionMs, responsePreparationMs)),
     ]).then(() => undefined));
     return res.json({ success: true, data: {
       ...auditStartResponseData(audit), initialAudit: accepted.reusedExistingAudit ? undefined : projectAuditAdmission(audit),
@@ -545,7 +550,7 @@ apiRouter.post('/audit/:id/preview', durableRateLimit({ namespace: 'audit-previe
   const audit = await auditRepository.getAudit(req.params.id);
   if (!audit || !(await canAccessAudit(req, audit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
   const { enqueueAuditPreview, getAuditPreview, wakePreviewWorker } = await import('../lib/preview/server');
-  await enqueueAuditPreview(audit, false);
+  await enqueueAuditPreview(audit, false, true);
   waitUntil(wakePreviewWorker());
   res.json({ success: true, data: await getAuditPreview(audit) });
 }));

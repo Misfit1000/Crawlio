@@ -81,7 +81,7 @@ export function useFindingWorkflow(auditId: string, issues: ResourceAuditIssue[]
   const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set());
   const recordsRef = useRef(records);
   recordsRef.current = records;
-  const issueKeys = useMemo(() => issues.map(issueSignature).sort(), [issues]);
+  const issueKeys = useMemo(() => [...new Set(issues.map(issueSignature))].sort(), [issues]);
   const issueKeyToken = issueKeys.join('\n');
 
   const load = useCallback(async () => {
@@ -94,6 +94,7 @@ export function useFindingWorkflow(auditId: string, issues: ResourceAuditIssue[]
       isFindingWorkflowStatus(localStatuses[key]) ? localStatuses[key] : 'not_started',
       String(localNotes[key] || '').slice(0, 2000),
     )]));
+    recordsRef.current = deviceRecords;
     setRecords(deviceRecords);
 
     const response = await safeJsonFetch<any>(API_ROUTES.auditFindingWorkflow(auditId), {
@@ -114,6 +115,7 @@ export function useFindingWorkflow(auditId: string, issues: ResourceAuditIssue[]
     const payload = response.data as any;
     const remoteRecords = (payload.data?.records || payload.records || []) as FindingWorkflowRecord[];
     let next = recordsByKey(remoteRecords);
+    recordsRef.current = next;
     setRecords(next);
     setStorage('supabase');
     setError(null);
@@ -136,6 +138,7 @@ export function useFindingWorkflow(auditId: string, issues: ResourceAuditIssue[]
         const saved = await saveRemoteRecord(auditId, key, undefined, { status: local.status, notes: local.notes });
         next = { ...next, [key]: saved };
       }
+      recordsRef.current = next;
       setRecords(next);
       clearChecklist(auditId);
       clearFindingNotes(auditId);
@@ -168,6 +171,8 @@ export function useFindingWorkflow(auditId: string, issues: ResourceAuditIssue[]
       notes: String(patch.notes ?? current?.notes ?? '').slice(0, 2000),
       updatedAt: new Date().toISOString(),
     } as FindingWorkflowRecord;
+    // Batch actions can update several keys before React renders again.
+    recordsRef.current = { ...recordsRef.current, [key]: optimistic };
     setRecords((value) => ({ ...value, [key]: optimistic }));
 
     if (storage !== 'supabase') {
@@ -181,10 +186,14 @@ export function useFindingWorkflow(auditId: string, issues: ResourceAuditIssue[]
     setSavingKeys((value) => new Set(value).add(key));
     try {
       const saved = await saveRemoteRecord(auditId, key, current, patch);
+      recordsRef.current = { ...recordsRef.current, [key]: saved };
       setRecords((value) => ({ ...value, [key]: saved }));
       setError(null);
       return saved;
     } catch (saveError) {
+      const restored = { ...recordsRef.current };
+      if (current) restored[key] = current; else delete restored[key];
+      recordsRef.current = restored;
       setRecords((value) => {
         const next = { ...value };
         if (current) next[key] = current; else delete next[key];

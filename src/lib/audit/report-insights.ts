@@ -1,8 +1,10 @@
 import type {
+  AuditComparison,
   AuditSeverity,
   ResourceAuditIssue,
   ResourceAuditPage,
 } from './resource-types';
+import { findingWorkflowKey } from './finding-workflow';
 
 export type ReportScoreKey = 'overall' | 'seo' | 'technical' | 'crawlability' | 'internalLinks' | 'performance' | 'security' | 'structuredData' | 'accessibility';
 export type ReportSectionId =
@@ -124,22 +126,30 @@ export function classifyReportSection(issue: Pick<ResourceAuditIssue, 'category'
   return 'on-page';
 }
 
-function groupKey(issue: ResourceAuditIssue) {
-  return `${classifyReportSection(issue)}|${issue.category}|${issue.title}`.trim().toLowerCase();
+export function findingFixBatchKey(issue: ResourceAuditIssue) {
+  // Similar titles alone do not guarantee the same check, failure, or fix.
+  return JSON.stringify([
+    classifyReportSection(issue), issue.checkId || '', issue.failureCode || '',
+    issue.category, issue.title, issue.recommendation,
+  ].map(value => value.trim()));
 }
 
 export function groupRecommendations(issues: ResourceAuditIssue[]): RecommendationGroup[] {
   const groups = new Map<string, RecommendationGroup>();
+  const urlsByKey = new Map<string, Set<string>>();
+  const evidenceByKey = new Map<string, Set<string>>();
 
   issues.forEach((issue) => {
-    const key = groupKey(issue);
+    const key = findingFixBatchKey(issue);
     const current = groups.get(key);
     const affectedUrl = String(issue.affectedUrl || '').trim();
     const evidence = String(issue.evidence || '').trim();
 
     if (!current) {
+      urlsByKey.set(key, new Set(affectedUrl ? [affectedUrl] : []));
+      evidenceByKey.set(key, new Set(evidence ? [evidence] : []));
       groups.set(key, {
-        id: key.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+        id: key,
         title: issue.title,
         category: issue.category,
         severity: issue.severity,
@@ -154,8 +164,14 @@ export function groupRecommendations(issues: ResourceAuditIssue[]): Recommendati
     }
 
     if (SEVERITY_WEIGHT[issue.severity] > SEVERITY_WEIGHT[current.severity]) current.severity = issue.severity;
-    if (affectedUrl && !current.affectedUrls.includes(affectedUrl)) current.affectedUrls.push(affectedUrl);
-    if (evidence && !current.evidence.includes(evidence)) current.evidence.push(evidence);
+    if (affectedUrl && !urlsByKey.get(key)!.has(affectedUrl)) {
+      urlsByKey.get(key)!.add(affectedUrl);
+      current.affectedUrls.push(affectedUrl);
+    }
+    if (evidence && !evidenceByKey.get(key)!.has(evidence)) {
+      evidenceByKey.get(key)!.add(evidence);
+      current.evidence.push(evidence);
+    }
     current.affectedCount = current.affectedUrls.length;
   });
 
@@ -165,6 +181,52 @@ export function groupRecommendations(issues: ResourceAuditIssue[]): Recommendati
     const reach = right.affectedCount - left.affectedCount;
     return reach || left.title.localeCompare(right.title);
   });
+}
+
+export interface FindingFixBatch extends RecommendationGroup {
+  issues: ResourceAuditIssue[];
+  representative: ResourceAuditIssue;
+}
+
+export function groupFindingFixBatches(issues: ResourceAuditIssue[]): FindingFixBatch[] {
+  const members = new Map<string, ResourceAuditIssue[]>();
+  for (const issue of issues) {
+    const key = findingFixBatchKey(issue);
+    const batch = members.get(key);
+    if (batch) batch.push(issue); else members.set(key, [issue]);
+  }
+  return groupRecommendations(issues).map(group => {
+    const batchIssues = members.get(group.id)!;
+    const representative = batchIssues.reduce((best, issue) => {
+      const priority = SEVERITY_WEIGHT[issue.severity] - SEVERITY_WEIGHT[best.severity];
+      return priority > 0 || (priority === 0 && !best.evidence && issue.evidence) ? issue : best;
+    });
+    return { ...group, issues: batchIssues, representative };
+  });
+}
+
+export type FindingComparisonChange = 'new' | 'resolved' | 'remaining';
+
+export function findingComparisonInsights(comparison: AuditComparison | null | undefined, auditId: string) {
+  if (!comparison || !auditId || !comparison.baselineAuditId || comparison.currentAuditId !== auditId || comparison.baselineAuditId === auditId) return null;
+  const changes = new Map<string, FindingComparisonChange>();
+  // Aggregate responses intentionally contain no per-finding evidence.
+  if (!comparison.aggregateOnly) {
+    for (const issue of comparison.resolvedIssues) changes.set(findingWorkflowKey(issue), 'resolved');
+    for (const issue of comparison.newIssues) changes.set(findingWorkflowKey(issue), 'new');
+    for (const { current } of comparison.persistentIssues) changes.set(findingWorkflowKey(current), 'remaining');
+  }
+  const validCount = (value: number | undefined, fallback: number) => Number.isSafeInteger(value) && value! >= 0 ? value! : comparison.aggregateOnly ? null : fallback;
+  return {
+    changes,
+    aggregateOnly: Boolean(comparison.aggregateOnly),
+    baselineAuditId: comparison.baselineAuditId,
+    counts: {
+      new: validCount(comparison.issueCounts?.new, comparison.newIssues.length),
+      resolved: validCount(comparison.issueCounts?.resolved, comparison.resolvedIssues.length),
+      remaining: validCount(comparison.issueCounts?.persistent, comparison.persistentIssues.length),
+    },
+  };
 }
 
 export function findingImpact(issue: Pick<ResourceAuditIssue, 'severity' | 'affectedPageCount'>) {

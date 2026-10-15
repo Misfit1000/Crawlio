@@ -190,14 +190,22 @@ export async function cleanupScalableExportsOnce(shouldContinue = () => true): P
 
 export const EXPORT_POLL_INTERVAL_MS = 15_000;
 export const EXPORT_CLEANUP_INTERVAL_MS = 5 * 60_000;
+export const RESOURCE_CLEANUP_INTERVAL_MS = 15 * 60_000;
+
+async function cleanupResourceEvidenceOnce() {
+  const { error } = await requireSupabaseAdminClient().rpc('cleanup_resource_evidence').abortSignal(AbortSignal.timeout(2_000));
+  if (error) throw new Error('Resource evidence maintenance is unavailable.');
+}
 
 export function createScalableExportMaintenance(
   workerId: string,
   isIdle: () => boolean,
-  dependencies = { now: Date.now, runExport: runScalableExportWorkerOnce, cleanup: cleanupScalableExportsOnce },
+  dependencies: { now: () => number; runExport: typeof runScalableExportWorkerOnce; cleanup: typeof cleanupScalableExportsOnce; cleanupEvidence?: () => Promise<void> }
+    = { now: Date.now, runExport: runScalableExportWorkerOnce, cleanup: cleanupScalableExportsOnce, cleanupEvidence: cleanupResourceEvidenceOnce },
 ) {
   let lastExport = -Infinity;
   let lastCleanup = -Infinity;
+  let lastEvidenceCleanup = -Infinity;
   let task: Promise<void> | undefined;
   const run = async () => {
     if (!isIdle()) return;
@@ -209,6 +217,10 @@ export function createScalableExportMaintenance(
     if (dependencies.now() - lastCleanup >= EXPORT_CLEANUP_INTERVAL_MS) {
       lastCleanup = dependencies.now();
       await dependencies.cleanup(isIdle);
+    }
+    if (isIdle() && dependencies.cleanupEvidence && dependencies.now() - lastEvidenceCleanup >= RESOURCE_CLEANUP_INTERVAL_MS) {
+      lastEvidenceCleanup = dependencies.now();
+      await dependencies.cleanupEvidence();
     }
   };
   return {

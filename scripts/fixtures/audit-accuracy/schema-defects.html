@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="canonical" href="https://audit-accuracy.invalid/schema-defects">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage"}</script>
+  <script type="application/ld+json">{"@type":"Product",}</script>
+</head>
+<body>
+  <main>
+    <h1>Mixed valid and invalid JSON syntax</h1>
+    <p>One script has valid JSON syntax and another has a trailing comma. The title, description, and image alternative are absent, but those defects and the unnamed button must not leak into a structured-data-only audit.</p>
+    <img src="/product.png">
+    <button type="button"></button>
+    <a href="/next">Next page</a>
+  </main>
+</body>
+</html>

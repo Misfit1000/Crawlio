@@ -16,6 +16,7 @@ const AdminAudits = React.lazy(() => import('./admin/AdminAudits'));
 const AdminQueue = React.lazy(() => import('./admin/AdminQueue'));
 const AdminWorkers = React.lazy(() => import('./admin/AdminWorkers'));
 const AdminDiagnostics = React.lazy(() => import('./admin/AdminDiagnostics'));
+const AdminResources = React.lazy(() => import('./admin/AdminResources'));
 const AdminSettings = React.lazy(() => import('./admin/AdminSettings'));
 const AdminPlans = React.lazy(() => import('./admin/AdminPlans'));
 
@@ -53,6 +54,7 @@ export default function AdminDashboard() {
       {activeTab === 'queue' && <AdminQueue adminUserId={user.id} />}
       {activeTab === 'workers' && <AdminWorkers />}
       {activeTab === 'diagnostics' && <AdminDiagnostics />}
+      {activeTab === 'resources' && <AdminResources />}
       {activeTab === 'settings' && <AdminSettings />}
       {activeTab === 'plans' && <AdminPlans adminUserId={user.id} />}
       {activeTab === 'blog' && (
