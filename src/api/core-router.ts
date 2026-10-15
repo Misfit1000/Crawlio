@@ -522,6 +522,11 @@ async function startQueuedAudit(req: any, res: any, defaultMode: AuditMode = 'qu
 
 apiRouter.post('/audit/start', asyncJsonRoute((req, res) => startQueuedAudit(req, res, 'quick')));
 
+apiRouter.use(['/audit/:id/preview', '/shared-reports/:token/preview'], (_req, res, next) => {
+  res.setHeader('Cache-Control', 'private, no-store');
+  next();
+});
+
 apiRouter.post('/internal/preview/resources', asyncJsonRoute(async (req, res) => {
   const { proxyPreviewResources } = await import('../lib/preview/resource-proxy');
   res.setHeader('Cache-Control', 'private, no-store');
@@ -533,7 +538,6 @@ apiRouter.get('/audit/:id/preview', asyncJsonRoute(async (req, res) => {
   const audit = await auditRepository.getAudit(req.params.id);
   if (!audit || !(await canAccessAudit(req, audit))) throw new ApiError('AUDIT_NOT_FOUND', 'Audit not found.', 404);
   const { getAuditPreview } = await import('../lib/preview/server');
-  res.setHeader('Cache-Control', 'private, no-store');
   res.json({ success: true, data: await getAuditPreview(audit) });
 }));
 
@@ -543,7 +547,6 @@ apiRouter.post('/audit/:id/preview', durableRateLimit({ namespace: 'audit-previe
   const { enqueueAuditPreview, getAuditPreview, wakePreviewWorker } = await import('../lib/preview/server');
   await enqueueAuditPreview(audit, false);
   waitUntil(wakePreviewWorker());
-  res.setHeader('Cache-Control', 'private, no-store');
   res.json({ success: true, data: await getAuditPreview(audit) });
 }));
 
@@ -557,7 +560,6 @@ apiRouter.get('/shared-reports/:token/preview', createRateLimiter({ namespace: '
   const audit = await auditRepository.getAudit(share.audit_id);
   if (!audit) throw new ApiError('SHARED_REPORT_NOT_FOUND', 'Shared report not found.', 404);
   const { getAuditPreview } = await import('../lib/preview/server');
-  res.setHeader('Cache-Control', 'private, no-store');
   res.json({ success: true, data: await getAuditPreview(audit) });
 }));
 
