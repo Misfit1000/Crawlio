@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test, afterEach } from 'node:test';
 import { clearInflightReads, inflightRead } from './inflight-read';
 
-afterEach(clearInflightReads);
+afterEach(() => clearInflightReads());
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>(done => { resolve = done; });
@@ -60,4 +60,21 @@ test('account invalidation rejects old consumers even when their loader ignores 
   await assert.rejects(old, { name: 'AbortError' });
   result.resolve(7);
   assert.equal(await inflightRead('/profile', { Authorization: 'new' }, async () => 8), 8);
+});
+
+test('session hydration preserves reads already using the new token and still aborts older accounts', async () => {
+  const result = deferred<number>();
+  let calls = 0;
+  const read = async () => { calls++; return result.promise; };
+  const old = inflightRead('/profile', { Authorization: 'Bearer old' }, read);
+  const current = inflightRead('/audit/result', { Authorization: 'Bearer current' }, read);
+  clearInflightReads('Bearer current');
+  await assert.rejects(old, { name: 'AbortError' });
+  const joined = inflightRead('/audit/result', { Authorization: 'Bearer current' }, read);
+  result.resolve(9);
+  assert.deepEqual(await Promise.all([current, joined]), [9, 9]);
+  assert.equal(calls, 2, 'Hydration must not force a duplicate current-session request.');
+  const logout = inflightRead('/audit/result', { Authorization: 'Bearer current' }, () => new Promise(() => {}));
+  clearInflightReads();
+  await assert.rejects(logout, { name: 'AbortError' });
 });

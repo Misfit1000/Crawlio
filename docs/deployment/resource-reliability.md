@@ -10,13 +10,20 @@ API schema 16, audit processing version 2, scoring 2.2, and existing plan allowa
 4. Deploy the compatible secondary executor from `src/workers/cloudflare-audit` with `EXECUTOR_ENABLED=true` and the release commit. Render and Cloudflare share the same item analysis, parsing and report helpers; transport and runtime controls remain isolated.
 5. Release the application through `main`; verify the public version, private Resources view, a small scoped audit, and optional evidence.
 
+Production validation found the assignment column from migration 023 absent. Apply
+`040_finding_workflow_assignment.sql` to repair only that dependency without
+replaying older schema metadata or retention routines. It preserves existing
+workflow rows, owner policies and audit-evidence validation.
+
 ## Measurements
 
 - First-page timestamps are set during the existing audit update, without another page-event write. Existing reports are not backfilled with invented timings.
 - New accepted jobs record one bounded background launch observation. Retries reopening the same job do not overwrite the initial sample.
 - Resources shows sample counts, median and 95th-percentile server preparation, admission, queue, first-page and successful completion timings. Samples cover the latest 5,000 audits within seven days.
 - Browser performance entries measure the feedback frame separately. They add no telemetry request and are not labelled field Core Web Vitals.
-- Recorded local build: initial compressed JavaScript 81,049 bytes, total CSS 111,129 bytes, static API shell graph 984,608 bytes. Relative to the previous release: +57 bytes initial JavaScript, +60 bytes CSS, +79 bytes static API graph. These are build sizes, not production loading times.
+- Recorded local build after production follow-ups: initial compressed JavaScript 81,133 bytes, total CSS 111,129 bytes, static API shell graph 984,608 bytes. Relative to the previous release: +141 bytes initial JavaScript, +60 bytes CSS, +79 bytes static API graph. These are build sizes, not production loading times.
+- The controlled security-only page audit accepted on 2026-10-15 took 0.71 seconds to first claim, 2.47 seconds to its first analysed page, and 4.02 seconds to successful completion. This is one warm production observation, not a comparative speed guarantee.
+- Session hydration invalidates reads from older accounts/tokens while retaining already-started reads for the new verified token. Realtime rows retain immutable focus, coverage, plan allowance and first-page timing.
 
 ## Free-Provider Guardrails
 

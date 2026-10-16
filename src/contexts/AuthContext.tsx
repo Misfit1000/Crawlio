@@ -238,7 +238,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (retry || sessionRef.current?.user.id !== session?.user.id || sessionRef.current?.access_token !== session?.access_token) {
       generationRef.current += 1;
       clearRecentHydration();
-      clearInflightReads();
+      // Route reads may already use the newly hydrated token. Invalidate older
+      // accounts/tokens without cancelling requests for this verified session.
+      clearInflightReads(session ? `Bearer ${session.access_token}` : undefined);
     }
     sessionRef.current = session;
     const generation = generationRef.current;

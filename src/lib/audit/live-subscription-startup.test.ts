@@ -106,6 +106,25 @@ test('authenticated live subscriptions initialize access and reconcile final evi
     assert.equal(f.calls.filter(call => call === 'read').length, 1);
     stop();
   });
+  await context.test('Realtime rows retain focused scope, plan allowance and first-page timing', async () => {
+    const f = fixture();
+    const received: any[] = [];
+    const scope = { version: 1, focus: 'security', checkGroups: ['security'], coverage: 'page' };
+    const stop = subscribeToAuditLiveData('fixture-audit', value => received.push(value), undefined, undefined, f.snapshot);
+    f.resolveSession(); await settle();
+    f.handlers.get('audits')!({ new: {
+      id: 'fixture-audit', status: 'running', processing_version: 2, audit_scope: scope,
+      scope_fingerprint: 'fixture-scope', plan_page_limit: 1000, page_limit: 1,
+      pages_crawled: 1, issues_found: 2, first_page_at: '2026-10-15T00:00:02Z',
+    } });
+    await settle();
+    assert.deepEqual(received.at(-1).audit.scope, scope);
+    assert.equal(received.at(-1).audit.scopeFingerprint, 'fixture-scope');
+    assert.equal(received.at(-1).audit.planPageLimit, 1000);
+    assert.equal(received.at(-1).audit.pageLimit, 1);
+    assert.equal(received.at(-1).audit.firstPageAt, '2026-10-15T00:00:02Z');
+    stop();
+  });
   await context.test('permanent access errors close the channel without retries', async () => {
     const f = fixture();
     const stop = subscribeToAuditLiveData('fixture-audit', () => {}, () => {}, undefined, f.snapshot);

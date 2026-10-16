@@ -1,4 +1,5 @@
 interface PendingRead {
+  authorization?: string;
   controller: AbortController;
   promise: Promise<unknown>;
   consumers: Set<() => void>;
@@ -17,7 +18,8 @@ export function inflightRead<T>(url: string, headers: Record<string, string>, re
   let entry = pending.get(key);
   if (!entry) {
     const controller = new AbortController();
-    entry = { controller, promise: Promise.resolve(), consumers: new Set(), settled: false };
+    entry = { controller, promise: Promise.resolve(), consumers: new Set(), settled: false,
+      authorization: Object.entries(headers).find(([name]) => name.toLowerCase() === 'authorization')?.[1] };
     const current = entry;
     activeReads.add(current);
     current.promise = Promise.resolve().then(() => read(controller.signal)).finally(() => {
@@ -50,11 +52,14 @@ export function inflightRead<T>(url: string, headers: Record<string, string>, re
   });
 }
 
-export function clearInflightReads() {
+export function clearInflightReads(keepAuthorization?: string) {
   for (const entry of activeReads) {
+    if (keepAuthorization && entry.authorization === keepAuthorization) continue;
     for (const cancel of [...entry.consumers]) cancel();
     entry.controller.abort();
+    activeReads.delete(entry);
   }
-  pending.clear();
-  activeReads.clear();
+  for (const [key, entry] of pending) {
+    if (!keepAuthorization || entry.authorization !== keepAuthorization) pending.delete(key);
+  }
 }

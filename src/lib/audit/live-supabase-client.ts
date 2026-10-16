@@ -8,6 +8,7 @@ import { readAuditPresentationSummary } from './audit-presentation-summary';
 import { readToolEvidence } from '../tools/audit-tools';
 import { hasUsableAuditReport, isTerminalAuditStatus } from './audit-time';
 import { createLiveEmissionScheduler } from './live-emission';
+import { auditScopeFingerprint, normalizeAuditScope } from './audit-scope';
 import type {
   ResourceAuditDocument,
   ResourceAuditEvent,
@@ -33,6 +34,9 @@ function toAuditDocument(row: DbRow | null | undefined): ResourceAuditDocument |
   return {
     id: row.id,
     processingVersion: row.processing_version === 2 ? 2 : 1,
+    scope: normalizeAuditScope(row.audit_scope) || null,
+    scopeFingerprint: row.scope_fingerprint || auditScopeFingerprint(normalizeAuditScope(row.audit_scope)),
+    planPageLimit: row.plan_page_limit ?? row.page_limit,
     presentationSummary: readAuditPresentationSummary(row.presentation_summary),
     userId: row.user_id ?? null,
     guestKeyHash: row.guest_key_hash ?? null,
@@ -68,6 +72,7 @@ function toAuditDocument(row: DbRow | null | undefined): ResourceAuditDocument |
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     startedAt: row.started_at ?? null,
+    firstPageAt: row.first_page_at ?? null,
     completedAt: row.completed_at ?? null,
     expiresAt: row.expires_at,
     cancelledAt: row.cancelled_at ?? null,
