@@ -173,7 +173,8 @@
 .clarity-url-row { display: flex; align-items: center; gap: 16px; padding: 7px 7px 7px 20px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--background); }
 .clarity-url-row:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 .clarity-url-row:has(button:focus-visible) { outline: none; }
-.clarity-url-row input { min-width: 0; flex: 1; height: 44px; background: transparent; outline: none; box-shadow: none; font-size: 16px; }
+.clarity-url-row input { min-width: 0; flex: 1; height: 44px; background: transparent; color: var(--foreground); outline: none; box-shadow: none; font-size: 16px; }
+.clarity-url-row input::placeholder { color: var(--muted-foreground); opacity: 1; }
 .clarity-url-row input:focus, .clarity-url-row input:focus-visible { outline: none; box-shadow: none; }
 .clarity-url-row button { flex-shrink: 0; min-height: 48px; padding-inline: 24px; font-size: 16px; }
 .audit-mode-picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
